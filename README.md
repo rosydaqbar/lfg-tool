@@ -1,49 +1,88 @@
-# Discord Voice Join Logger
+# Discord LFG Voice Bot + Dashboard
 
-Logs when users join a voice channel and posts the `userId` and `voiceChannelId` to a text channel.
+Join-to-Create voice bot with LFG flow and a dashboard to manage channels.
 
-## Setup
+## Features
+- Voice join logging with a per-channel watchlist
+- Join-to-Create lobbies (creates per-user channel, copies settings, deletes when empty)
+- LFG flow (prompt in voice chat, modal custom message, posts to LFG channel)
+- LFG post cooldown: 10 minutes per user
+- Persistent LFG message in LFG channel (refreshes every 1 minute)
+- Active temp channel tracking and disband edits
+- Dashboard configuration + resource monitor (bot + dashboard)
+
+## Setup (Bot)
 1. Install dependencies:
    - `npm install`
 2. Configure environment:
    - `cp .env.example .env`
-   - Fill in `DISCORD_TOKEN` in `.env` (used by bot and dashboard)
-   - Optional: set `LOG_CHANNEL_ID` as a fallback log channel
-   - Optional: set `VOICE_CHANNEL_ID` to only log a specific voice channel
-   - Optional: set `DEBUG=true` to print voice event diagnostics
-   - Optional: set `DATABASE_PATH` if you want a custom SQLite location (relative to repo root)
-   - Optional: set `CONFIG_CACHE_TTL_MS` to control config refresh
+   - Set `DISCORD_TOKEN` (used by bot and dashboard)
+   - Optional: `LOG_CHANNEL_ID` fallback log channel
+   - Optional: `VOICE_CHANNEL_ID` fallback single-channel logging
+   - Optional: `DEBUG=true`
+   - Optional: `DATABASE_PATH` (relative to repo root)
+   - Optional: `CONFIG_CACHE_TTL_MS`
 3. Start the bot:
    - `npm start`
 
 ## Required Intents and Permissions
 - Gateway intents: `Guilds`, `GuildVoiceStates`
-- Bot permissions in the log channel: `View Channel`, `Send Messages`
+- Bot permissions:
+  - `View Channel`, `Send Messages` (log channel, LFG channel, voice channel chat)
+  - `Manage Channels`, `Move Members` (Join-to-Create)
 
-## Notes
-- The bot only logs joins (not moves or leaves).
-- If the dashboard sets a watchlist, only those channels are logged.
-- If no watchlist exists, `VOICE_CHANNEL_ID` is honored as a fallback.
-- `DEBUG=true` will log voice state transitions to help troubleshoot.
-- Optional file logging can be added under `logs/` if you want to persist events.
-- Join-to-Create lobbies can be configured in the dashboard; the bot will create temporary voice channels and move users.
+## LFG Flow
+- User joins a Join-to-Create lobby:
+  - Bot creates a voice channel named after the user, copies settings, and moves them.
+  - Bot sends a prompt in that voice channel chat referencing the LFG channel.
+- User clicks "Send LFG Post":
+  - Modal collects a custom message.
+  - Post is sent to the LFG channel (or log channel if not set).
+
+LFG message format:
+```text
+<@&ROLE_ID>
+<@user> mencari squad, join: https://discordapp.com/channels/{guildID}/{voiceChannelID}
+
+-# Pesan:
+> user message
+
+-# Dibuat pada: <t:timestamp:f>
+-# Info lebih lanjut: <@user>
+```
+
+## Persistent LFG Message
+Every 1 minute the bot ensures a message at the bottom of the LFG channel:
+```text
+Untuk mencari teman/squad baru, silahkan buat voice channel terlebih dahulu: <links>
+```
+The red embed lists active temp channels and available slots, or:
+`*Tidak ada squad yang tersedia*`
+Footer: `Klik salah satu voice diatas untuk join squad`
 
 ## Dashboard (Next.js + shadcn/ui)
 The dashboard lives in `dashboard` and controls logging configuration stored in SQLite.
-It is currently locked to guild ID `670147766839803924` in the UI.
+It is locked to guild ID `670147766839803924` in the UI.
 
-- LFG Channel (optional) controls where the LFG post is sent; if unset it falls back to the Log Channel.
+Key controls:
+- Log Channel and LFG Channel (optional; fallback to log channel)
+- Join-to-Create lobby toggles
+- Voice log watchlist
+- Active temp channel list (clickable voice tags)
+- Resource monitor for bot + dashboard (updates every 5s)
 
+Setup:
 1. Install dependencies:
    - `cd dashboard`
    - `npm install`
 2. Configure environment:
-   - The dashboard will load the repo root `.env` automatically.
-   - Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in the root `.env`
-   - Ensure `DISCORD_TOKEN` is set for channel discovery
-   - Set `NEXTAUTH_SECRET` and `NEXTAUTH_URL`
-   - Set `ADMIN_DISCORD_USER_ID` (defaults to your admin ID)
+   - The dashboard loads the repo root `.env` automatically.
+   - Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in the root `.env`.
+   - Ensure `DISCORD_TOKEN` is set for channel discovery.
+   - Set `NEXTAUTH_SECRET` and `NEXTAUTH_URL`.
+   - Set `ADMIN_DISCORD_USER_ID`.
 3. Start the dashboard:
    - `npm run dev`
 
-The shared database is stored at `data/discord.db` by default.
+## Data
+The shared SQLite database is stored at `data/discord.db` by default.
