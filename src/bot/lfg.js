@@ -77,7 +77,11 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     const links = lobbyIds.map(
       (id) => `https://discordapp.com/channels/${guildId}/${id}`
     );
-    return `Untuk mencari teman/squad baru, silahkan buat voice channel terlebih dahulu: ${links.join(' ')}`;
+    return [
+      '### Buat atau cari squad',
+      'Untuk mencari teman/squad baru, silahkan buat voice channel terlebih dahulu:',
+      links.join(' '),
+    ].join('\n');
   }
 
   async function buildPersistentLfgEmbed(guildId) {
