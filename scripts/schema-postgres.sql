@@ -42,17 +42,6 @@ CREATE TABLE IF NOT EXISTS lfg_persistent_message (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS process_metrics (
-  service TEXT PRIMARY KEY,
-  pid INTEGER NOT NULL,
-  cpu_percent REAL NOT NULL,
-  memory_rss BIGINT NOT NULL,
-  memory_heap_used BIGINT NOT NULL,
-  memory_heap_total BIGINT NOT NULL,
-  uptime_seconds BIGINT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL
-);
-
 CREATE INDEX IF NOT EXISTS idx_voice_watchlist_guild ON voice_watchlist(guild_id);
 CREATE INDEX IF NOT EXISTS idx_jtc_lobbies_guild ON join_to_create_lobbies(guild_id);
 CREATE INDEX IF NOT EXISTS idx_temp_voice_guild ON temp_voice_channels(guild_id);

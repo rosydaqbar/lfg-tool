@@ -69,7 +69,6 @@ Key controls:
 - Join-to-Create lobby role pairing (required per lobby)
 - Voice log watchlist
 - Active temp channel list (clickable voice tags)
-- Resource monitor for bot + dashboard (updates every 5s)
 
 Setup:
 1. Install dependencies:

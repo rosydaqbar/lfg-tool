@@ -92,51 +92,6 @@ async function clearPersistentLfgMessage(guildId) {
   ]);
 }
 
-async function setProcessMetrics(service, metrics) {
-  await query(
-    `
-      INSERT INTO process_metrics (
-        service,
-        pid,
-        cpu_percent,
-        memory_rss,
-        memory_heap_used,
-        memory_heap_total,
-        uptime_seconds,
-        updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-      ON CONFLICT(service) DO UPDATE SET
-        pid = EXCLUDED.pid,
-        cpu_percent = EXCLUDED.cpu_percent,
-        memory_rss = EXCLUDED.memory_rss,
-        memory_heap_used = EXCLUDED.memory_heap_used,
-        memory_heap_total = EXCLUDED.memory_heap_total,
-        uptime_seconds = EXCLUDED.uptime_seconds,
-        updated_at = EXCLUDED.updated_at
-    `,
-    [
-      service,
-      metrics.pid,
-      metrics.cpuPercent,
-      metrics.memoryRss,
-      metrics.memoryHeapUsed,
-      metrics.memoryHeapTotal,
-      metrics.uptimeSeconds,
-    ]
-  );
-}
-
-async function getProcessMetrics() {
-  const res = await query(
-    `
-      SELECT service, pid, cpu_percent, memory_rss, memory_heap_used,
-             memory_heap_total, uptime_seconds, updated_at
-      FROM process_metrics
-    `
-  );
-  return res.rows;
-}
 
 async function addTempChannel(guildId, channelId, ownerId, roleId = null) {
   await query(
@@ -216,13 +171,11 @@ module.exports = {
   addTempChannel,
   clearPersistentLfgMessage,
   getPersistentLfgMessage,
-  getProcessMetrics,
   getTempChannelsForGuild,
   getTempChannelByOwner,
   getTempChannelOwner,
   getTempChannelInfo,
   removeTempChannel,
-  setProcessMetrics,
   setPersistentLfgMessage,
   updateTempChannelMessage,
 };

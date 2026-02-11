@@ -7,7 +7,6 @@ const { requireToken, DISCORD_TOKEN, LOG_CHANNEL_ID, VOICE_CHANNEL_ID, DEBUG } =
 const { createJoinToCreateManager } = require('./bot/join-to-create');
 const { createLfgManager } = require('./bot/lfg');
 const { createLogChannelFetcher } = require('./bot/log-channel');
-const { createMetricsReporter } = require('./bot/metrics');
 const { createVoiceLogger } = require('./bot/voice-log');
 const { createHealthServer } = require('./bot/health-server');
 
@@ -40,9 +39,6 @@ const voiceLogger = createVoiceLogger({
   debugLog,
   env: { LOG_CHANNEL_ID, VOICE_CHANNEL_ID },
 });
-const metricsReporter = createMetricsReporter({
-  setProcessMetrics: configStore.setProcessMetrics,
-});
 const healthServer = createHealthServer();
 
 healthServer.start();
@@ -50,7 +46,6 @@ healthServer.start();
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
   lfgManager.startPersistentLoop();
-  metricsReporter.start();
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

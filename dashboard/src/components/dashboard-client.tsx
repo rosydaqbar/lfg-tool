@@ -87,16 +87,6 @@ type TempChannel = {
   lfgMessageId: string | null;
 };
 
-type ProcessMetric = {
-  service: string;
-  pid: number;
-  cpuPercent: number;
-  memoryRss: number;
-  memoryHeapUsed: number;
-  memoryHeapTotal: number;
-  uptimeSeconds: number;
-  updatedAt: string;
-};
 
 const GUILD_ID = "670147766839803924";
 
@@ -125,9 +115,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [error, setError] = useState<string | null>(null);
   const [tempChannels, setTempChannels] = useState<TempChannel[]>([]);
   const tempChannelsLoadedOnce = useRef(false);
-  const [metrics, setMetrics] = useState<ProcessMetric[]>([]);
-  const [metricsError, setMetricsError] = useState<string | null>(null);
-  const [metricsLoading, setMetricsLoading] = useState(true);
 
   useEffect(() => {
     if (!selectedGuildId) return;
@@ -183,35 +170,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
       active = false;
     };
   }, [selectedGuildId]);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadMetrics = async (showLoader: boolean) => {
-      if (showLoader) setMetricsLoading(true);
-      try {
-        const response = await fetch("/api/metrics", { cache: "no-store" });
-        if (!response.ok) throw new Error("Failed to load metrics");
-        const data = (await response.json()) as { metrics: ProcessMetric[] };
-        if (!active) return;
-        setMetrics(data.metrics ?? []);
-        setMetricsError(null);
-      } catch (err) {
-        if (!active) return;
-        setMetricsError(err instanceof Error ? err.message : "Failed to load metrics");
-      } finally {
-        if (active) setMetricsLoading(false);
-      }
-    };
-
-    loadMetrics(true);
-    const interval = setInterval(() => loadMetrics(false), 5000);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
 
   useEffect(() => {
     if (!selectedGuildId) return;
@@ -387,23 +345,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
     (channel) => !enabledVoiceIds.includes(channel.id)
   );
   const availableLobbyChannels = voiceChannels;
-  const botMetric = metrics.find((item) => item.service === "bot") ?? null;
-  const dashboardMetric =
-    metrics.find((item) => item.service === "dashboard") ?? null;
 
-  const formatBytes = (value: number) => {
-    const mb = value / (1024 * 1024);
-    return `${mb.toFixed(1)} MB`;
-  };
-
-  const formatUptime = (seconds: number) => {
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
-  };
 
   return (
     <div className="flex flex-col gap-10">
@@ -431,61 +373,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
           <SignOutButton />
         </div>
       </header>
-
-      <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur">
-        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">Resource monitor</CardTitle>
-          <div className="text-xs text-muted-foreground">
-            Updates every 5s
-          </div>
-        </CardHeader>
-        <CardContent>
-          {metricsError ? (
-            <div className="text-xs text-destructive">{metricsError}</div>
-          ) : metricsLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {[
-                { label: "Bot", metric: botMetric },
-                { label: "Dashboard", metric: dashboardMetric },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-xl border border-border bg-muted/30 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-medium">{item.label}</div>
-                    <Badge variant={item.metric ? "secondary" : "outline"}>
-                      {item.metric ? "Online" : "No data"}
-                    </Badge>
-                  </div>
-                  {item.metric ? (
-                    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                      <div>
-                        CPU: {item.metric.cpuPercent.toFixed(1)}% · RSS: {formatBytes(item.metric.memoryRss)} · Heap: {formatBytes(item.metric.memoryHeapUsed)} / {formatBytes(item.metric.memoryHeapTotal)}
-                      </div>
-                      <div>
-                        PID: {item.metric.pid} · Uptime: {formatUptime(item.metric.uptimeSeconds)}
-                      </div>
-                      <div>
-                        Updated: {new Date(item.metric.updatedAt).toLocaleTimeString()}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Waiting for metrics...
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {error ? (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">

@@ -42,7 +42,6 @@ async function main() {
   const jtcLobbies = readTable('join_to_create_lobbies');
   const tempVoice = readTable('temp_voice_channels');
   const persistent = readTable('lfg_persistent_message');
-  const metrics = readTable('process_metrics');
 
   const client = await pool.connect();
   await client.query('BEGIN');
@@ -51,7 +50,6 @@ async function main() {
     await client.query('DELETE FROM join_to_create_lobbies');
     await client.query('DELETE FROM temp_voice_channels');
     await client.query('DELETE FROM lfg_persistent_message');
-    await client.query('DELETE FROM process_metrics');
     await client.query('DELETE FROM guild_config');
 
     for (const row of guildConfig) {
@@ -122,34 +120,6 @@ async function main() {
           VALUES ($1, $2, $3, $4)
         `,
         [row.guild_id, row.channel_id, row.message_id, row.updated_at]
-      );
-    }
-
-    for (const row of metrics) {
-      await client.query(
-        `
-          INSERT INTO process_metrics (
-            service,
-            pid,
-            cpu_percent,
-            memory_rss,
-            memory_heap_used,
-            memory_heap_total,
-            uptime_seconds,
-            updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `,
-        [
-          row.service,
-          row.pid,
-          row.cpu_percent,
-          row.memory_rss,
-          row.memory_heap_used,
-          row.memory_heap_total,
-          row.uptime_seconds,
-          row.updated_at,
-        ]
       );
     }
 
