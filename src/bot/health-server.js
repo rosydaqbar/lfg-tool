@@ -1,6 +1,6 @@
 const http = require('http');
 
-function createHealthServer({ port = process.env.PORT, host = '0.0.0.0' } = {}) {
+function createHealthServer({ port, host = '0.0.0.0' } = {}) {
   let server = null;
 
   function handleRequest(req, res) {
@@ -29,21 +29,53 @@ function createHealthServer({ port = process.env.PORT, host = '0.0.0.0' } = {}) 
   }
 
   function start() {
-    const resolvedPort = Number(port);
-    if (!resolvedPort || Number.isNaN(resolvedPort)) {
-      console.log('Health server disabled: PORT not set.');
-      return;
-    }
-
     if (server) return;
 
-    server = http.createServer(handleRequest);
-    server.on('error', (error) => {
-      console.error('Health server error:', error);
-    });
-    server.listen(resolvedPort, host, () => {
-      console.log(`Health server listening on ${host}:${resolvedPort}`);
-    });
+    const explicitPort = port ?? process.env.PORT ?? process.env.HEALTH_PORT;
+    const ports = [];
+    if (explicitPort !== undefined && explicitPort !== null && `${explicitPort}`.length) {
+      const resolvedPort = Number(explicitPort);
+      if (!resolvedPort || Number.isNaN(resolvedPort)) {
+        console.log('Health server disabled: invalid PORT.');
+        return;
+      }
+      ports.push(resolvedPort);
+    } else {
+      ports.push(80, 8000);
+    }
+
+    const tryListen = (index) => {
+      if (index >= ports.length) {
+        console.log('Health server disabled: no available port.');
+        return;
+      }
+
+      const targetPort = ports[index];
+      const nextServer = http.createServer(handleRequest);
+
+      nextServer.on('error', (error) => {
+        if (
+          ports.length > 1 &&
+          (error.code === 'EACCES' || error.code === 'EADDRINUSE')
+        ) {
+          nextServer.close(() => {
+            if (server === nextServer) server = null;
+            tryListen(index + 1);
+          });
+          return;
+        }
+        console.error('Health server error:', error);
+      });
+
+      nextServer.listen(targetPort, host, () => {
+        server = nextServer;
+        console.log(`Health server listening on ${host}:${targetPort}`);
+      });
+
+      server = nextServer;
+    };
+
+    tryListen(0);
   }
 
   function stop() {
