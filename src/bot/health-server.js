@@ -4,6 +4,12 @@ function createHealthServer({ port = process.env.PORT, host = '0.0.0.0' } = {}) 
   let server = null;
 
   function handleRequest(req, res) {
+    const userAgent = req.headers["user-agent"] || "";
+    const remoteAddress = req.socket?.remoteAddress || "unknown";
+    console.log(
+      `Health check ${req.method} ${req.url} from ${remoteAddress} ${userAgent}`
+    );
+
     if (req.method === 'HEAD') {
       res.statusCode = 200;
       res.end();

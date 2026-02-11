@@ -11,4 +11,23 @@ jobs:
     steps:
       - name: Ping Koyeb app
         run: |
-          curl -fsS --max-time 20 "https://inevitable-marj-ocid-349c510b.koyeb.app" > /dev/null
+          set -euo pipefail
+          BASE_URL="https://inevitable-marj-ocid-349c510b.koyeb.app"
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+          headers=(
+            -A "$UA"
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            -H "Accept-Language: en-US,en;q=0.9"
+            -H "Cache-Control: no-cache"
+            -H "Pragma: no-cache"
+            -H "Upgrade-Insecure-Requests: 1"
+          )
+
+          ping() {
+            curl -sS -L --max-time 20 "${headers[@]}" "$1" -o /dev/null \
+              -w "status=%{http_code} url=%{url_effective}\n"
+          }
+
+          if ! ping "${BASE_URL}:8000/"; then
+            ping "${BASE_URL}/"
+          fi
