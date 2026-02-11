@@ -40,9 +40,9 @@ export async function GET() {
     uptimeSeconds: Math.floor(process.uptime()),
   };
 
-  setProcessMetrics("dashboard", metrics);
+  await setProcessMetrics("dashboard", metrics);
 
-  const rows = getProcessMetrics();
+  const rows = await getProcessMetrics();
   return NextResponse.json({
     metrics: rows.map((row) => ({
       service: row.service,

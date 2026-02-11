@@ -14,7 +14,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const config = getGuildConfig(id);
+  const config = await getGuildConfig(id);
   return NextResponse.json({
     logChannelId: config.logChannelId,
     lfgChannelId: config.lfgChannelId,
@@ -63,7 +63,7 @@ export async function PUT(
     : [];
 
   try {
-    saveGuildConfig(id, {
+    await saveGuildConfig(id, {
       logChannelId: body.logChannelId,
       lfgChannelId,
       enabledVoiceChannelIds,

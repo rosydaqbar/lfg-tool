@@ -21,7 +21,7 @@ function createMetricsReporter({ setProcessMetrics, intervalMs = 5000 }) {
 
   function update() {
     const memory = process.memoryUsage();
-    setProcessMetrics('bot', {
+    return setProcessMetrics('bot', {
       pid: process.pid,
       cpuPercent: getCpuPercent(),
       memoryRss: memory.rss,
@@ -32,9 +32,15 @@ function createMetricsReporter({ setProcessMetrics, intervalMs = 5000 }) {
   }
 
   function start() {
-    update();
+    update().catch((error) => {
+      console.error('Failed to update bot metrics:', error);
+    });
     if (interval) clearInterval(interval);
-    interval = setInterval(update, intervalMs);
+    interval = setInterval(() => {
+      update().catch((error) => {
+        console.error('Failed to update bot metrics:', error);
+      });
+    }, intervalMs);
   }
 
   function stop() {

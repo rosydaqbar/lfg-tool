@@ -14,7 +14,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const rows = getTempChannels(id);
+  const rows = await getTempChannels(id);
   return NextResponse.json({
     tempChannels: rows.map((row) => ({
       channelId: row.channel_id,

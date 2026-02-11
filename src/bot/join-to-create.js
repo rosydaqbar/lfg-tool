@@ -20,32 +20,36 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
   }
 
   async function cleanupTempChannel(oldState) {
-    const oldChannelId = oldState.channelId;
-    if (!oldChannelId) return;
-
-    const info = configStore.getTempChannelInfo(oldChannelId);
-    if (!info) return;
-
-    const channel = oldState.channel;
-    if (!channel || !channel.isVoiceBased()) {
-      await lfgManager.editLfgDisbandedMessage(info);
-      configStore.removeTempChannel(oldChannelId);
-      return;
-    }
-
-    if (channel.members.size > 0) return;
-
-    let deleted = false;
     try {
-      await channel.delete('Join-to-Create temp channel cleanup');
-      deleted = true;
-    } catch (error) {
-      console.error('Failed to delete temp channel:', error);
-    }
+      const oldChannelId = oldState.channelId;
+      if (!oldChannelId) return;
 
-    if (deleted) {
-      await lfgManager.editLfgDisbandedMessage(info);
-      configStore.removeTempChannel(oldChannelId);
+      const info = await configStore.getTempChannelInfo(oldChannelId);
+      if (!info) return;
+
+      const channel = oldState.channel;
+      if (!channel || !channel.isVoiceBased()) {
+        await lfgManager.editLfgDisbandedMessage(info);
+        await configStore.removeTempChannel(oldChannelId);
+        return;
+      }
+
+      if (channel.members.size > 0) return;
+
+      let deleted = false;
+      try {
+        await channel.delete('Join-to-Create temp channel cleanup');
+        deleted = true;
+      } catch (error) {
+        console.error('Failed to delete temp channel:', error);
+      }
+
+      if (deleted) {
+        await lfgManager.editLfgDisbandedMessage(info);
+        await configStore.removeTempChannel(oldChannelId);
+      }
+    } catch (error) {
+      console.error('Failed to cleanup temp channel:', error);
     }
   }
 
@@ -66,7 +70,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
     joinToCreatePending.add(pendingKey);
 
     try {
-      const existingTempId = configStore.getTempChannelByOwner(
+      const existingTempId = await configStore.getTempChannelByOwner(
         guildId,
         member.id
       );
@@ -78,7 +82,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
           await newState.setChannel(existingChannel);
           return;
         }
-        configStore.removeTempChannel(existingTempId);
+        await configStore.removeTempChannel(existingTempId);
       }
 
       const lobbyChannel = newState.channel;
@@ -100,7 +104,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
         videoQualityMode: lobbyChannel.videoQualityMode,
       });
 
-      configStore.addTempChannel(guildId, createdChannel.id, member.id);
+      await configStore.addTempChannel(guildId, createdChannel.id, member.id);
       await newState.setChannel(createdChannel);
       const lfgChannelId =
         config.lfgChannelId || config.logChannelId || env.LOG_CHANNEL_ID;

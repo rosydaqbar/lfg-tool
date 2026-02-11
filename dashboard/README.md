@@ -16,6 +16,7 @@ Admin-only dashboard to manage which voice channels are logged, which channels a
    - Set `DISCORD_TOKEN` (bot token used for channel discovery)
    - Set `ADMIN_DISCORD_USER_ID`
    - Set `NEXTAUTH_SECRET` and `NEXTAUTH_URL`
+   - Set `DATABASE_URL` (Supabase Postgres, use `?sslmode=require`)
 3. Start the dashboard:
    - `npm run dev`
 
@@ -24,9 +25,7 @@ For local dev, add this to your Discord app:
 - `http://localhost:3000/api/auth/callback/discord`
 
 ## Data
-The dashboard writes to SQLite (shared with the bot):
-- Default path: `data/discord.db` at the repo root
-- Override with `DATABASE_PATH` (relative to repo root)
+The dashboard writes to Postgres via `DATABASE_URL`.
 
 ## Notes
 - This dashboard is locked to a single guild ID in the UI.

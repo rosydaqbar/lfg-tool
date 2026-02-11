@@ -35,12 +35,12 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       .setCustomId(`${LFG_MODAL_PREFIX}:${channelId}`)
       .setTitle('LFG Post');
 
-  const messageInput = new TextInputBuilder()
-    .setCustomId(LFG_MESSAGE_INPUT_ID)
-    .setLabel('Pesan (cth: -3 Redsec Battle royale)')
-    .setStyle(TextInputStyle.Paragraph)
-    .setRequired(false)
-    .setMaxLength(700);
+    const messageInput = new TextInputBuilder()
+      .setCustomId(LFG_MESSAGE_INPUT_ID)
+      .setLabel('Pesan (cth: -3 Redsec Battle royale)')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(false)
+      .setMaxLength(700);
 
     const row = new ActionRowBuilder().addComponents(messageInput);
     modal.addComponents(row);
@@ -82,7 +82,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
   }
 
   async function buildPersistentLfgEmbed(guildId) {
-    const tempChannels = configStore.getTempChannelsForGuild(guildId);
+    const tempChannels = await configStore.getTempChannelsForGuild(guildId);
     const items = await Promise.all(
       tempChannels.map(async (row) => {
         const channel = await client.channels.fetch(row.channel_id).catch(() => null);
@@ -143,18 +143,18 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
         joinToCreateLobbyIds: [],
       };
       try {
-        config = configStore.getGuildConfig(guildId);
+        config = await configStore.getGuildConfig(guildId);
       } catch (error) {
         console.error('Failed to read dashboard config:', error);
       }
 
       const lobbyIds = config.joinToCreateLobbyIds || [];
-      const record = configStore.getPersistentLfgMessage(guildId);
+      const record = await configStore.getPersistentLfgMessage(guildId);
 
       if (lobbyIds.length === 0) {
         if (record) {
           await tryDeleteMessage(record.channelId, record.messageId);
-          configStore.clearPersistentLfgMessage(guildId);
+          await configStore.clearPersistentLfgMessage(guildId);
         }
         return;
       }
@@ -188,7 +188,11 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
           .catch(() => null);
         if (existing && latestMessageId === record.messageId) {
           await existing.edit({ content, embeds: [embed] });
-          configStore.setPersistentLfgMessage(guildId, channel.id, record.messageId);
+          await configStore.setPersistentLfgMessage(
+            guildId,
+            channel.id,
+            record.messageId
+          );
           return;
         }
       }
@@ -197,7 +201,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       if (record) {
         await tryDeleteMessage(record.channelId, record.messageId);
       }
-      configStore.setPersistentLfgMessage(guildId, channel.id, sent.id);
+      await configStore.setPersistentLfgMessage(guildId, channel.id, sent.id);
     } catch (error) {
       console.error('Failed to ensure persistent LFG message:', error);
     } finally {
@@ -346,7 +350,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
         joinToCreateLobbyIds: [],
       };
       try {
-        config = configStore.getGuildConfig(guildId);
+        config = await configStore.getGuildConfig(guildId);
       } catch (error) {
         console.error('Failed to read dashboard config:', error);
       }
@@ -402,7 +406,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
           content: lines.join('\n'),
           allowedMentions: { roles: [LFG_ROLE_ID], users: [interaction.user.id] },
         });
-        configStore.updateTempChannelMessage(
+        await configStore.updateTempChannelMessage(
           channelId,
           logChannelId,
           lfgMessage.id

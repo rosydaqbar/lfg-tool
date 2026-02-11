@@ -9,6 +9,7 @@ const { createLfgManager } = require('./bot/lfg');
 const { createLogChannelFetcher } = require('./bot/log-channel');
 const { createMetricsReporter } = require('./bot/metrics');
 const { createVoiceLogger } = require('./bot/voice-log');
+const { createHealthServer } = require('./bot/health-server');
 
 requireToken();
 
@@ -42,6 +43,9 @@ const voiceLogger = createVoiceLogger({
 const metricsReporter = createMetricsReporter({
   setProcessMetrics: configStore.setProcessMetrics,
 });
+const healthServer = createHealthServer();
+
+healthServer.start();
 
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -77,7 +81,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     joinToCreateLobbyIds: [],
   };
   try {
-    config = configStore.getGuildConfig(guildId);
+    config = await configStore.getGuildConfig(guildId);
   } catch (error) {
     console.error('Failed to read dashboard config:', error);
   }

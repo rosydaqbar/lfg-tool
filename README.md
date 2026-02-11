@@ -17,11 +17,10 @@ Join-to-Create voice bot with LFG flow and a dashboard to manage channels.
 2. Configure environment:
    - `cp .env.example .env`
    - Set `DISCORD_TOKEN` (used by bot and dashboard)
+   - Set `DATABASE_URL` (Supabase Postgres, use `?sslmode=require`)
    - Optional: `LOG_CHANNEL_ID` fallback log channel
    - Optional: `VOICE_CHANNEL_ID` fallback single-channel logging
    - Optional: `DEBUG=true`
-   - Optional: `DATABASE_PATH` (relative to repo root)
-   - Optional: `CONFIG_CACHE_TTL_MS`
 3. Start the bot:
    - `npm start`
 
@@ -61,7 +60,7 @@ The red embed lists active temp channels and available slots, or:
 Footer: `Klik salah satu voice diatas untuk join squad`
 
 ## Dashboard (Next.js + shadcn/ui)
-The dashboard lives in `dashboard` and controls logging configuration stored in SQLite.
+The dashboard lives in `dashboard` and controls logging configuration stored in Postgres.
 It is locked to guild ID `670147766839803924` in the UI.
 
 Key controls:
@@ -81,8 +80,14 @@ Setup:
    - Ensure `DISCORD_TOKEN` is set for channel discovery.
    - Set `NEXTAUTH_SECRET` and `NEXTAUTH_URL`.
    - Set `ADMIN_DISCORD_USER_ID`.
+   - Set `DATABASE_URL` (same as bot).
 3. Start the dashboard:
    - `npm run dev`
 
 ## Data
-The shared SQLite database is stored at `data/discord.db` by default.
+Primary storage is Postgres via `DATABASE_URL` (Supabase).
+
+One-time migration from SQLite:
+```bash
+DATABASE_URL="postgresql://..." SQLITE_PATH=./data/discord.db node scripts/migrate-sqlite-to-postgres.js
+```
