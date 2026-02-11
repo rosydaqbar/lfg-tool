@@ -102,18 +102,25 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
       const targetPosition =
         typeof lobbyChannel.position === 'number'
           ? lobbyChannel.position + 1
-          : undefined;
+          : null;
       const createdChannel = await newState.guild.channels.create({
         name: channelName,
         type: channelType,
         parent: lobbyChannel.parentId ?? undefined,
-        position: targetPosition,
         permissionOverwrites: getPermissionOverwrites(lobbyChannel),
         bitrate: lobbyChannel.bitrate,
         userLimit: lobbyChannel.userLimit,
         rtcRegion: lobbyChannel.rtcRegion ?? undefined,
         videoQualityMode: lobbyChannel.videoQualityMode,
       });
+
+      if (typeof targetPosition === 'number') {
+        await createdChannel
+          .setPosition(targetPosition)
+          .catch((error) => {
+            console.error('Failed to position temp channel:', error);
+          });
+      }
 
       await configStore.addTempChannel(
         guildId,
