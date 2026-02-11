@@ -19,7 +19,7 @@ export async function GET(
     logChannelId: config.logChannelId,
     lfgChannelId: config.lfgChannelId,
     enabledVoiceChannelIds: config.enabledVoiceChannelIds,
-    joinToCreateLobbyIds: config.joinToCreateLobbyIds,
+    joinToCreateLobbies: config.joinToCreateLobbies,
   });
 }
 
@@ -37,7 +37,7 @@ export async function PUT(
     logChannelId?: string;
     lfgChannelId?: string | null;
     enabledVoiceChannelIds?: string[];
-    joinToCreateLobbyIds?: string[];
+    joinToCreateLobbies?: { channelId?: string; roleId?: string }[];
   };
 
   if (!body.logChannelId) {
@@ -56,18 +56,40 @@ export async function PUT(
       )
     : [];
 
-  const joinToCreateLobbyIds = Array.isArray(body.joinToCreateLobbyIds)
-    ? Array.from(
-        new Set(body.joinToCreateLobbyIds.filter((id) => typeof id === "string"))
-      )
+  const joinToCreateLobbiesRaw = Array.isArray(body.joinToCreateLobbies)
+    ? body.joinToCreateLobbies
     : [];
+  const joinToCreateLobbies = Array.from(
+    new Map(
+      joinToCreateLobbiesRaw
+        .filter(
+          (item) =>
+            item &&
+            typeof item.channelId === "string" &&
+            item.channelId.trim().length > 0
+        )
+        .map((item) => [
+          item.channelId!.trim(),
+          {
+            channelId: item.channelId!.trim(),
+            roleId: typeof item.roleId === "string" ? item.roleId.trim() : "",
+          },
+        ])
+    ).values()
+  );
+  if (joinToCreateLobbies.some((item) => item.roleId.length === 0)) {
+    return NextResponse.json(
+      { error: "Each Join-to-Create lobby requires a role." },
+      { status: 400 }
+    );
+  }
 
   try {
     await saveGuildConfig(id, {
       logChannelId: body.logChannelId,
       lfgChannelId,
       enabledVoiceChannelIds,
-      joinToCreateLobbyIds,
+      joinToCreateLobbies,
     });
   } catch (error) {
     return NextResponse.json(

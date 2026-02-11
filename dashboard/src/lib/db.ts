@@ -5,7 +5,7 @@ type GuildConfig = {
   logChannelId: string | null;
   lfgChannelId: string | null;
   enabledVoiceChannelIds: string[];
-  joinToCreateLobbyIds: string[];
+  joinToCreateLobbies: { channelId: string; roleId: string | null }[];
 };
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -46,7 +46,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
   );
 
   const lobbyRes = await query(
-    "SELECT lobby_channel_id FROM join_to_create_lobbies WHERE guild_id = $1",
+    "SELECT lobby_channel_id, role_id FROM join_to_create_lobbies WHERE guild_id = $1",
     [guildId]
   );
 
@@ -56,13 +56,19 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
     enabledVoiceChannelIds: watchlistRes.rows.map(
       (row) => row.voice_channel_id
     ),
-    joinToCreateLobbyIds: lobbyRes.rows.map((row) => row.lobby_channel_id),
+    joinToCreateLobbies: lobbyRes.rows.map((row) => ({
+      channelId: row.lobby_channel_id,
+      roleId: row.role_id ?? null,
+    })),
   };
 }
 
 export async function saveGuildConfig(guildId: string, config: GuildConfig) {
   if (!config.logChannelId) {
     throw new Error("logChannelId is required");
+  }
+  if (config.joinToCreateLobbies.some((item) => !item.roleId)) {
+    throw new Error("joinToCreateLobbies requires a role for each lobby");
   }
 
   const db = await getPool();
@@ -94,10 +100,10 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
     await client.query("DELETE FROM join_to_create_lobbies WHERE guild_id = $1", [
       guildId,
     ]);
-    for (const lobbyId of config.joinToCreateLobbyIds) {
+    for (const lobby of config.joinToCreateLobbies) {
       await client.query(
-        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id) VALUES ($1, $2)",
-        [guildId, lobbyId]
+        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id) VALUES ($1, $2, $3)",
+        [guildId, lobby.channelId, lobby.roleId]
       );
     }
 

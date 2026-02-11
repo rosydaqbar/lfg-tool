@@ -37,9 +37,16 @@ async function getGuildConfig(guildId) {
     [guildId]
   );
   const lobbyRes = await query(
-    'SELECT lobby_channel_id FROM join_to_create_lobbies WHERE guild_id = $1',
+    'SELECT lobby_channel_id, role_id FROM join_to_create_lobbies WHERE guild_id = $1',
     [guildId]
   );
+  const joinToCreateLobbies = lobbyRes.rows.map((row) => ({
+    channelId: row.lobby_channel_id,
+    roleId: row.role_id ?? null,
+  }));
+  const joinToCreateLobbyIds = joinToCreateLobbies
+    .filter((row) => row.roleId)
+    .map((row) => row.channelId);
 
   return {
     logChannelId: configRow.log_channel_id ?? null,
@@ -47,7 +54,8 @@ async function getGuildConfig(guildId) {
     enabledVoiceChannelIds: watchlistRes.rows.map(
       (row) => row.voice_channel_id
     ),
-    joinToCreateLobbyIds: lobbyRes.rows.map((row) => row.lobby_channel_id),
+    joinToCreateLobbyIds,
+    joinToCreateLobbies,
   };
 }
 
@@ -130,17 +138,24 @@ async function getProcessMetrics() {
   return res.rows;
 }
 
-async function addTempChannel(guildId, channelId, ownerId) {
+async function addTempChannel(guildId, channelId, ownerId, roleId = null) {
   await query(
     `
-      INSERT INTO temp_voice_channels (guild_id, channel_id, owner_id, created_at)
-      VALUES ($1, $2, $3, NOW())
+      INSERT INTO temp_voice_channels (
+        guild_id,
+        channel_id,
+        owner_id,
+        created_at,
+        role_id
+      )
+      VALUES ($1, $2, $3, NOW(), $4)
       ON CONFLICT(channel_id) DO UPDATE SET
         guild_id = EXCLUDED.guild_id,
         owner_id = EXCLUDED.owner_id,
-        created_at = EXCLUDED.created_at
+        created_at = EXCLUDED.created_at,
+        role_id = EXCLUDED.role_id
     `,
-    [guildId, channelId, ownerId]
+    [guildId, channelId, ownerId, roleId]
   );
 }
 
@@ -170,7 +185,7 @@ async function getTempChannelOwner(channelId) {
 
 async function getTempChannelInfo(channelId) {
   const res = await query(
-    'SELECT owner_id, lfg_channel_id, lfg_message_id FROM temp_voice_channels WHERE channel_id = $1',
+    'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id FROM temp_voice_channels WHERE channel_id = $1',
     [channelId]
   );
   const row = res.rows[0];
@@ -179,6 +194,7 @@ async function getTempChannelInfo(channelId) {
     ownerId: row.owner_id,
     lfgChannelId: row.lfg_channel_id ?? null,
     lfgMessageId: row.lfg_message_id ?? null,
+    roleId: row.role_id ?? null,
   };
 }
 

@@ -82,10 +82,10 @@ async function main() {
     for (const row of jtcLobbies) {
       await client.query(
         `
-          INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id)
-          VALUES ($1, $2)
+          INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id)
+          VALUES ($1, $2, $3)
         `,
-        [row.guild_id, row.lobby_channel_id]
+        [row.guild_id, row.lobby_channel_id, null]
       );
     }
 
@@ -98,9 +98,10 @@ async function main() {
             owner_id,
             created_at,
             lfg_channel_id,
-            lfg_message_id
+            lfg_message_id,
+            role_id
           )
-          VALUES ($1, $2, $3, $4, $5, $6)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
         `,
         [
           row.guild_id,
@@ -109,6 +110,7 @@ async function main() {
           row.created_at,
           row.lfg_channel_id ?? null,
           row.lfg_message_id ?? null,
+          null,
         ]
       );
     }

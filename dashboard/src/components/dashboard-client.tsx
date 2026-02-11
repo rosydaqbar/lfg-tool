@@ -9,6 +9,7 @@ import {
   ChevronsUpDown,
   Loader2,
   MessageSquareText,
+  Plus,
   Radio,
   Volume2,
   X,
@@ -35,7 +36,6 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -56,12 +56,27 @@ type ConfigResponse = {
   logChannelId: string | null;
   lfgChannelId: string | null;
   enabledVoiceChannelIds: string[];
-  joinToCreateLobbyIds: string[];
+  joinToCreateLobbies: { channelId: string; roleId: string | null }[];
 };
 
 type ChannelsResponse = {
   voiceChannels: Channel[];
   textChannels: Channel[];
+};
+
+type RolesResponse = {
+  roles: Role[];
+};
+
+type Role = {
+  id: string;
+  name: string;
+  color: number;
+};
+
+type JoinToCreateLobby = {
+  channelId: string;
+  roleId: string | null;
 };
 
 type TempChannel = {
@@ -89,13 +104,21 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const selectedGuildId = GUILD_ID;
   const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
   const [textChannels, setTextChannels] = useState<Channel[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [logChannelId, setLogChannelId] = useState<string>("");
   const [lfgChannelId, setLfgChannelId] = useState<string>("");
   const [enabledVoiceIds, setEnabledVoiceIds] = useState<string[]>([]);
-  const [joinToCreateLobbyIds, setJoinToCreateLobbyIds] = useState<string[]>([]);
+  const [joinToCreateLobbies, setJoinToCreateLobbies] = useState<
+    JoinToCreateLobby[]
+  >([]);
   const [logChannelOpen, setLogChannelOpen] = useState(false);
   const [lfgChannelOpen, setLfgChannelOpen] = useState(false);
-  const [voiceFilter, setVoiceFilter] = useState<string>("");
+  const [logVoicePickerOpen, setLogVoicePickerOpen] = useState(false);
+  const [lobbyPickerOpen, setLobbyPickerOpen] = useState(false);
+  const [selectedLogVoiceId, setSelectedLogVoiceId] = useState<string>("");
+  const [selectedLobbyVoiceId, setSelectedLobbyVoiceId] = useState<string>("");
+  const [lobbyRolePickerOpen, setLobbyRolePickerOpen] = useState(false);
+  const [selectedLobbyRoleId, setSelectedLobbyRoleId] = useState<string>("");
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [loadingTempChannels, setLoadingTempChannels] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -113,11 +136,14 @@ export default function DashboardClient({ userName }: { userName: string }) {
     setError(null);
     setVoiceChannels([]);
     setTextChannels([]);
+    setRoles([]);
     setEnabledVoiceIds([]);
-    setJoinToCreateLobbyIds([]);
+    setJoinToCreateLobbies([]);
     setLogChannelId("");
     setLfgChannelId("");
-    setVoiceFilter("");
+    setSelectedLogVoiceId("");
+    setSelectedLobbyVoiceId("");
+    setSelectedLobbyRoleId("");
     setTempChannels([]);
     setLoadingTempChannels(true);
 
@@ -130,15 +156,20 @@ export default function DashboardClient({ userName }: { userName: string }) {
         if (!response.ok) throw new Error("Failed to load config");
         return response.json() as Promise<ConfigResponse>;
       }),
+      fetch(`/api/guilds/${selectedGuildId}/roles`).then(async (response) => {
+        if (!response.ok) throw new Error("Failed to load roles");
+        return response.json() as Promise<RolesResponse>;
+      }),
     ])
-      .then(([channels, config]) => {
+      .then(([channels, config, rolesResponse]) => {
         if (!active) return;
         setVoiceChannels(channels.voiceChannels);
         setTextChannels(channels.textChannels);
+        setRoles(rolesResponse.roles ?? []);
         setLogChannelId(config.logChannelId ?? "");
         setLfgChannelId(config.lfgChannelId ?? "");
         setEnabledVoiceIds(config.enabledVoiceChannelIds ?? []);
-        setJoinToCreateLobbyIds(config.joinToCreateLobbyIds ?? []);
+        setJoinToCreateLobbies(config.joinToCreateLobbies ?? []);
       })
       .catch((err) => {
         if (!active) return;
@@ -215,65 +246,36 @@ export default function DashboardClient({ userName }: { userName: string }) {
     };
   }, [selectedGuildId]);
 
-  useEffect(() => {
-    if (!selectedGuildId || loadingConfig) return;
+  const handleAddLoggingChannel = (channelId: string) => {
+    if (!channelId) return;
+    setEnabledVoiceIds((prev) =>
+      prev.includes(channelId) ? prev : [...prev, channelId]
+    );
+  };
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target) {
-        const tagName = target.tagName;
-        const isEditable =
-          tagName === "INPUT" ||
-          tagName === "TEXTAREA" ||
-          tagName === "SELECT" ||
-          target.isContentEditable;
-        if (isEditable) return;
+  const handleRemoveLoggingChannel = (channelId: string) => {
+    setEnabledVoiceIds((prev) => prev.filter((id) => id !== channelId));
+  };
+
+  const handleAddLobbyChannel = (channelId: string, roleId: string) => {
+    if (!channelId || !roleId) return;
+    setJoinToCreateLobbies((prev) => {
+      const existingIndex = prev.findIndex(
+        (item) => item.channelId === channelId
+      );
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = { channelId, roleId };
+        return next;
       }
-
-      if (event.key === "Escape") {
-        setVoiceFilter("");
-        return;
-      }
-
-      if (event.key === "Backspace") {
-        event.preventDefault();
-        setVoiceFilter((prev) => prev.slice(0, -1));
-        return;
-      }
-
-      if (
-        event.key.length === 1 &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey
-      ) {
-        event.preventDefault();
-        setVoiceFilter((prev) => (prev + event.key).slice(0, 40));
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [selectedGuildId, loadingConfig]);
-
-  const handleToggle = (channelId: string, checked: boolean) => {
-    setEnabledVoiceIds((prev) => {
-      if (checked) {
-        return prev.includes(channelId) ? prev : [...prev, channelId];
-      }
-      return prev.filter((id) => id !== channelId);
+      return [...prev, { channelId, roleId }];
     });
   };
 
-  const handleLobbyToggle = (channelId: string, checked: boolean) => {
-    setJoinToCreateLobbyIds((prev) => {
-      if (checked) {
-        return prev.includes(channelId) ? prev : [...prev, channelId];
-      }
-      return prev.filter((id) => id !== channelId);
-    });
+  const handleRemoveLobbyChannel = (channelId: string) => {
+    setJoinToCreateLobbies((prev) =>
+      prev.filter((item) => item.channelId !== channelId)
+    );
   };
 
   const handleSave = async () => {
@@ -291,13 +293,23 @@ export default function DashboardClient({ userName }: { userName: string }) {
       )
     );
 
-    const joinToCreateLobbyIdsPayload = Array.from(
-      new Set(
-        joinToCreateLobbyIds
-          .map((id) => id.trim())
-          .filter((value) => value.length > 0)
-      )
-    );
+    if (joinToCreateLobbies.some((item) => !item.roleId)) {
+      toast.error("Save failed", {
+        description: "Each Join-to-Create lobby requires a role.",
+      });
+      setSaving(false);
+      return;
+    }
+    const joinToCreateLobbiesPayload = Array.from(
+      new Map(
+        joinToCreateLobbies
+          .filter((item) => item.channelId)
+          .map((item) => [item.channelId, item])
+      ).values()
+    ).map((item) => ({
+      channelId: item.channelId.trim(),
+      roleId: (item.roleId ?? "").trim(),
+    }));
 
     try {
       const response = await fetch(`/api/guilds/${trimmedGuildId}/config`, {
@@ -307,7 +319,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
           logChannelId: trimmedLogChannelId,
           lfgChannelId: trimmedLfgChannelId.length > 0 ? trimmedLfgChannelId : null,
           enabledVoiceChannelIds,
-          joinToCreateLobbyIds: joinToCreateLobbyIdsPayload,
+          joinToCreateLobbies: joinToCreateLobbiesPayload,
         }),
       });
 
@@ -345,18 +357,39 @@ export default function DashboardClient({ userName }: { userName: string }) {
     : lfgChannelId
       ? `ID: ${lfgChannelId}`
       : "Use log channel";
+  const selectedLogVoiceChannel = voiceChannels.find(
+    (channel) => channel.id === selectedLogVoiceId
+  );
+  const logVoiceLabel = selectedLogVoiceChannel
+    ? selectedLogVoiceChannel.name
+    : selectedLogVoiceId
+      ? `ID: ${selectedLogVoiceId}`
+      : "Select a voice channel";
+  const selectedLobbyVoiceChannel = voiceChannels.find(
+    (channel) => channel.id === selectedLobbyVoiceId
+  );
+  const lobbyVoiceLabel = selectedLobbyVoiceChannel
+    ? selectedLobbyVoiceChannel.name
+    : selectedLobbyVoiceId
+      ? `ID: ${selectedLobbyVoiceId}`
+      : "Select a lobby channel";
+  const selectedLobbyRole = roles.find((role) => role.id === selectedLobbyRoleId);
+  const lobbyRoleLabel = selectedLobbyRole
+    ? selectedLobbyRole.name
+    : selectedLobbyRoleId
+      ? `ID: ${selectedLobbyRoleId}`
+      : "Select a role";
+  const joinToCreateLobbyIds = joinToCreateLobbies.map((item) => item.channelId);
+  const hasMissingLobbyRole = joinToCreateLobbies.some(
+    (item) => !item.roleId
+  );
+  const availableLogChannels = voiceChannels.filter(
+    (channel) => !enabledVoiceIds.includes(channel.id)
+  );
+  const availableLobbyChannels = voiceChannels;
   const botMetric = metrics.find((item) => item.service === "bot") ?? null;
   const dashboardMetric =
     metrics.find((item) => item.service === "dashboard") ?? null;
-  const voiceFilterValue = voiceFilter.trim().toLowerCase();
-  const filteredVoiceChannels = voiceFilterValue
-    ? voiceChannels.filter(
-        (channel) =>
-          channel.name.toLowerCase().includes(voiceFilterValue) ||
-          channel.id.includes(voiceFilterValue) ||
-          channel.type.includes(voiceFilterValue)
-      )
-    : voiceChannels;
 
   const formatBytes = (value: number) => {
     const mb = value / (1024 * 1024);
@@ -655,7 +688,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
                 Voice channel settings
               </CardTitle>
               <CardDescription>
-                Toggle channels for logging and Join-to-Create lobbies.
+                Select channels for logging and Join-to-Create lobbies.
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -665,35 +698,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
               <Badge variant="secondary" className="rounded-full px-4 py-1">
                 Join-to-Create {joinToCreateLobbyIds.length}
               </Badge>
-              {voiceFilter ? (
-                <Badge variant="outline" className="gap-2 rounded-full px-3 py-1">
-                  Filter: <span className="font-mono">{voiceFilter}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setVoiceFilter("")}
-                    aria-label="Clear voice channel filter"
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </Badge>
-              ) : null}
             </div>
           </div>
           <Separator />
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4">
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                Type to filter voice channels (Esc clears, Backspace deletes)
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Showing {filteredVoiceChannels.length} of {voiceChannels.length}
-              </div>
-            </div>
-          </div>
-
+        <CardContent className="space-y-6">
           {loadingConfig ? (
             <div className="space-y-2">
               <Skeleton className="h-10 w-full" />
@@ -701,59 +710,303 @@ export default function DashboardClient({ userName }: { userName: string }) {
               <Skeleton className="h-10 w-full" />
             </div>
           ) : voiceChannels.length ? (
-            filteredVoiceChannels.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Channel</TableHead>
-                    <TableHead className="text-right">Log joins</TableHead>
-                    <TableHead className="text-right">Join-to-Create</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredVoiceChannels.map((channel) => {
-                    const checked = enabledVoiceIds.includes(channel.id);
-                    const lobbyChecked = joinToCreateLobbyIds.includes(channel.id);
-                    return (
-                      <TableRow key={channel.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Badge variant="outline" className="uppercase">
-                              {channel.type}
-                            </Badge>
-                            <span className="text-sm font-medium">
-                              {channel.name}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Switch
-                            checked={checked}
-                            onCheckedChange={(value) =>
-                              handleToggle(channel.id, value)
-                            }
-                            disabled={loadingConfig}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Switch
-                            checked={lobbyChecked}
-                            onCheckedChange={(value) =>
-                              handleLobbyToggle(channel.id, value)
-                            }
-                            disabled={loadingConfig}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
-                No voice channels match your search.
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">Log joins</div>
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Selected {enabledCount}
+                  </Badge>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Popover
+                    open={logVoicePickerOpen}
+                    onOpenChange={setLogVoicePickerOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={logVoicePickerOpen}
+                        className="w-full justify-between sm:flex-1"
+                        disabled={availableLogChannels.length === 0}
+                      >
+                        {logVoiceLabel}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search voice channels..." />
+                        <CommandEmpty>No channels available.</CommandEmpty>
+                        <CommandList>
+                          <CommandGroup>
+                            {availableLogChannels.map((channel) => (
+                              <CommandItem
+                                key={channel.id}
+                                value={`${channel.name} ${channel.id}`}
+                                onSelect={() => {
+                                  setSelectedLogVoiceId(channel.id);
+                                  setLogVoicePickerOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedLogVoiceId === channel.id
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                <span>{channel.name}</span>
+                                <span className="ml-auto text-xs text-muted-foreground font-mono">
+                                  {channel.id}
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      handleAddLoggingChannel(selectedLogVoiceId);
+                      setSelectedLogVoiceId("");
+                    }}
+                    disabled={
+                      !selectedLogVoiceId ||
+                      enabledVoiceIds.includes(selectedLogVoiceId)
+                    }
+                    className="sm:shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add
+                  </Button>
+                </div>
+                {enabledVoiceIds.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {enabledVoiceIds.map((channelId) => {
+                      const channel = voiceChannels.find(
+                        (item) => item.id === channelId
+                      );
+                      return (
+                        <div
+                          key={channelId}
+                          className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs"
+                        >
+                          <span className="font-medium">
+                            {channel?.name ?? channelId}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => handleRemoveLoggingChannel(channelId)}
+                            aria-label={`Remove ${channel?.name ?? channelId}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    No channels selected. The bot will log all joins by default.
+                  </div>
+                )}
               </div>
-            )
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">Join-to-Create lobbies</div>
+                  <Badge variant="secondary" className="rounded-full px-3 py-1">
+                    Selected {joinToCreateLobbyIds.length}
+                  </Badge>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
+                  <Popover open={lobbyPickerOpen} onOpenChange={setLobbyPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={lobbyPickerOpen}
+                        className="w-full justify-between"
+                        disabled={availableLobbyChannels.length === 0}
+                      >
+                        {lobbyVoiceLabel}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search voice channels..." />
+                        <CommandEmpty>No channels available.</CommandEmpty>
+                        <CommandList>
+                          <CommandGroup>
+                            {availableLobbyChannels.map((channel) => (
+                              <CommandItem
+                                key={channel.id}
+                                value={`${channel.name} ${channel.id}`}
+                                onSelect={() => {
+                                  setSelectedLobbyVoiceId(channel.id);
+                                  setLobbyPickerOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedLobbyVoiceId === channel.id
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                <span>{channel.name}</span>
+                                <span className="ml-auto text-xs text-muted-foreground font-mono">
+                                  {channel.id}
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <Popover
+                    open={lobbyRolePickerOpen}
+                    onOpenChange={setLobbyRolePickerOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={lobbyRolePickerOpen}
+                        className="w-full justify-between"
+                        disabled={roles.length === 0}
+                      >
+                        {lobbyRoleLabel}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search roles..." />
+                        <CommandEmpty>No roles available.</CommandEmpty>
+                        <CommandList>
+                          <CommandGroup>
+                            {roles.map((role) => (
+                              <CommandItem
+                                key={role.id}
+                                value={`${role.name} ${role.id}`}
+                                onSelect={() => {
+                                  setSelectedLobbyRoleId(role.id);
+                                  setLobbyRolePickerOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedLobbyRoleId === role.id
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                <span>{role.name}</span>
+                                <span className="ml-auto text-xs text-muted-foreground font-mono">
+                                  {role.id}
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      handleAddLobbyChannel(selectedLobbyVoiceId, selectedLobbyRoleId);
+                      setSelectedLobbyVoiceId("");
+                      setSelectedLobbyRoleId("");
+                    }}
+                    disabled={
+                      !selectedLobbyVoiceId ||
+                      !selectedLobbyRoleId
+                    }
+                    className="sm:shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add
+                  </Button>
+                </div>
+                {joinToCreateLobbies.length ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Lobby channel</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {joinToCreateLobbies.map((lobby) => {
+                        const channel = voiceChannels.find(
+                          (item) => item.id === lobby.channelId
+                        );
+                        const role = roles.find((item) => item.id === lobby.roleId);
+                        return (
+                          <TableRow key={lobby.channelId}>
+                            <TableCell>
+                              <div className="text-sm font-medium">
+                                {channel?.name ?? lobby.channelId}
+                              </div>
+                              <div className="text-xs text-muted-foreground font-mono">
+                                {lobby.channelId}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm font-medium">
+                                {role?.name ?? lobby.roleId ?? "Missing role"}
+                              </div>
+                              {lobby.roleId ? (
+                                <div className="text-xs text-muted-foreground font-mono">
+                                  {lobby.roleId}
+                                </div>
+                              ) : null}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => handleRemoveLobbyChannel(lobby.channelId)}
+                                aria-label={`Remove ${channel?.name ?? lobby.channelId}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    No lobbies selected yet. Users will need a lobby to create
+                    squads.
+                  </div>
+                )}
+                {roles.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    No roles were found. The bot token needs permission to read
+                    roles.
+                  </div>
+                ) : null}
+                <div className="text-xs text-muted-foreground">
+                  Join-to-Create lobbies create a temporary channel per user.
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
               No voice channels were found for this guild.
@@ -762,18 +1015,20 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground">
-              If no channels are selected, the bot will log all joins by
-              default.
+              Add channels and roles with the dropdowns, then save.
             </div>
-            <div className="text-xs text-muted-foreground">
-              Join-to-Create lobbies create a temporary channel per user.
-            </div>
+            {hasMissingLobbyRole ? (
+              <div className="text-xs text-destructive">
+                Each Join-to-Create lobby requires a role.
+              </div>
+            ) : null}
             <Button
               onClick={handleSave}
               disabled={
                 saving ||
                 loadingConfig ||
-                logChannelId.trim().length === 0
+                logChannelId.trim().length === 0 ||
+                hasMissingLobbyRole
               }
             >
               {saving ? (

@@ -15,8 +15,12 @@ CREATE TABLE IF NOT EXISTS voice_watchlist (
 CREATE TABLE IF NOT EXISTS join_to_create_lobbies (
   guild_id TEXT NOT NULL,
   lobby_channel_id TEXT NOT NULL,
+  role_id TEXT,
   PRIMARY KEY (guild_id, lobby_channel_id)
 );
+
+ALTER TABLE IF EXISTS join_to_create_lobbies
+  ADD COLUMN IF NOT EXISTS role_id TEXT;
 
 CREATE TABLE IF NOT EXISTS temp_voice_channels (
   guild_id TEXT NOT NULL,
@@ -24,8 +28,12 @@ CREATE TABLE IF NOT EXISTS temp_voice_channels (
   owner_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   lfg_channel_id TEXT,
-  lfg_message_id TEXT
+  lfg_message_id TEXT,
+  role_id TEXT
 );
+
+ALTER TABLE IF EXISTS temp_voice_channels
+  ADD COLUMN IF NOT EXISTS role_id TEXT;
 
 CREATE TABLE IF NOT EXISTS lfg_persistent_message (
   guild_id TEXT PRIMARY KEY,

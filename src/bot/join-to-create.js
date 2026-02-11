@@ -62,6 +62,12 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
     if (oldState.channelId === lobbyChannelId) return;
     if (!lobbyIds.includes(lobbyChannelId)) return;
 
+    const lobbyEntry = (config.joinToCreateLobbies || []).find(
+      (entry) => entry.channelId === lobbyChannelId
+    );
+    const lobbyRoleId = lobbyEntry?.roleId ?? null;
+    if (!lobbyRoleId) return;
+
     const member = newState.member;
     if (!member || member.user?.bot) return;
 
@@ -104,7 +110,12 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
         videoQualityMode: lobbyChannel.videoQualityMode,
       });
 
-      await configStore.addTempChannel(guildId, createdChannel.id, member.id);
+      await configStore.addTempChannel(
+        guildId,
+        createdChannel.id,
+        member.id,
+        lobbyRoleId
+      );
       await newState.setChannel(createdChannel);
       const lfgChannelId =
         config.lfgChannelId || config.logChannelId || env.LOG_CHANNEL_ID;

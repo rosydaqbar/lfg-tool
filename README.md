@@ -40,8 +40,8 @@ Join-to-Create voice bot with LFG flow and a dashboard to manage channels.
 
 LFG message format:
 ```text
-<@&ROLE_ID>
-<@user> mencari squad, join: https://discordapp.com/channels/{guildID}/{voiceChannelID}
+<@&ROLE_ID_FROM_LOBBY>
+<@user> sedang mencari squad, join: https://discordapp.com/channels/{guildID}/{voiceChannelID}
 
 -# Pesan:
 > user message
@@ -66,6 +66,7 @@ It is locked to guild ID `670147766839803924` in the UI.
 Key controls:
 - Log Channel and LFG Channel (optional; fallback to log channel)
 - Join-to-Create lobby toggles
+- Join-to-Create lobby role pairing (required per lobby)
 - Voice log watchlist
 - Active temp channel list (clickable voice tags)
 - Resource monitor for bot + dashboard (updates every 5s)

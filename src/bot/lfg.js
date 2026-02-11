@@ -9,7 +9,6 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const LFG_ROLE_ID = '1448150505661403181';
 const LFG_SEND_PREFIX = 'jtc_send';
 const LFG_MODAL_PREFIX = 'jtc_modal';
 const LFG_MESSAGE_INPUT_ID = 'lfg_custom_message';
@@ -379,6 +378,16 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
           LFG_MESSAGE_INPUT_ID
         );
         const customMessage = rawCustomMessage.trim();
+        const tempInfo = await configStore.getTempChannelInfo(channelId);
+        const roleId = tempInfo?.roleId ?? null;
+        if (!roleId) {
+          await interaction.reply({
+            content:
+              'Role LFG untuk lobby ini belum dikonfigurasi. Hubungi admin.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
         const channel = await interaction.guild.channels
           .fetch(channelId)
           .catch(() => null);
@@ -392,8 +401,8 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
               .map((line) => `> ${line}`)
           : ['>'];
         const lines = [
-          `-# <@&${LFG_ROLE_ID}>`,
-          `<@${interaction.user.id}> mencari squad, join: ${voiceLink}`,
+          `-# <@&${roleId}>`,
+          `<@${interaction.user.id}> sedang mencari squad, join: ${voiceLink}`,
           '',
           '-# Pesan:',
           ...quoteLines,
@@ -404,7 +413,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
 
         const lfgMessage = await logChannel.send({
           content: lines.join('\n'),
-          allowedMentions: { roles: [LFG_ROLE_ID], users: [interaction.user.id] },
+          allowedMentions: { roles: [roleId], users: [interaction.user.id] },
         });
         await configStore.updateTempChannelMessage(
           channelId,

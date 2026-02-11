@@ -1,6 +1,6 @@
 # Voice Log Dashboard
 
-Admin-only dashboard to manage which voice channels are logged, which channels are Join-to-Create lobbies, and where logs/LFG posts are sent.
+Admin-only dashboard to manage which voice channels are logged, which channels are Join-to-Create lobbies (with per-lobby role pairing), and where logs/LFG posts are sent.
 
 ## Requirements
 - Node.js 18+
@@ -13,7 +13,7 @@ Admin-only dashboard to manage which voice channels are logged, which channels a
 2. Configure environment:
    - The dashboard loads the repo root `.env` automatically.
    - Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET`
-   - Set `DISCORD_TOKEN` (bot token used for channel discovery)
+   - Set `DISCORD_TOKEN` (bot token used for channel/role discovery)
    - Set `ADMIN_DISCORD_USER_ID`
    - Set `NEXTAUTH_SECRET` and `NEXTAUTH_URL`
    - Set `DATABASE_URL` (Supabase Postgres, use `?sslmode=require`)

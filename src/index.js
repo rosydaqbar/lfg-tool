@@ -79,6 +79,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     lfgChannelId: null,
     enabledVoiceChannelIds: [],
     joinToCreateLobbyIds: [],
+    joinToCreateLobbies: [],
   };
   try {
     config = await configStore.getGuildConfig(guildId);
