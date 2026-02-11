@@ -338,10 +338,15 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       }
 
       const remaining = getCooldownRemainingMs(guildId, interaction.user.id);
+      try {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      } catch (error) {
+        console.error('Failed to defer LFG modal reply:', error);
+        return;
+      }
       if (remaining > 0) {
-        await interaction.reply({
+        await interaction.editReply({
           content: `Please wait ${formatCooldown(remaining)} before sending another LFG post.`,
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -361,18 +366,16 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       const logChannelId =
         config.lfgChannelId || config.logChannelId || env.LOG_CHANNEL_ID;
       if (!logChannelId) {
-        await interaction.reply({
+        await interaction.editReply({
           content: 'No log channel is configured.',
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
 
       const logChannel = await getLogChannel(logChannelId);
       if (!logChannel) {
-        await interaction.reply({
+        await interaction.editReply({
           content: 'Unable to access the log channel.',
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -385,10 +388,9 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
         const tempInfo = await configStore.getTempChannelInfo(channelId);
         const roleId = tempInfo?.roleId ?? null;
         if (!roleId) {
-          await interaction.reply({
+          await interaction.editReply({
             content:
               'Role LFG untuk lobby ini belum dikonfigurasi. Hubungi admin.',
-            flags: MessageFlags.Ephemeral,
           });
           return;
         }
@@ -425,16 +427,18 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
           lfgMessage.id
         );
         setCooldown(guildId, interaction.user.id);
-        await interaction.reply({
+        await interaction.editReply({
           content: 'LFG post sent.',
-          flags: MessageFlags.Ephemeral,
         });
       } catch (error) {
         console.error('Failed to send LFG post:', error);
-        await interaction.reply({
-          content: 'Failed to send the LFG post.',
-          flags: MessageFlags.Ephemeral,
-        });
+        await interaction
+          .editReply({
+            content: 'Failed to send the LFG post.',
+          })
+          .catch((replyError) => {
+            console.error('Failed to reply to LFG modal:', replyError);
+          });
       }
     }
   }
