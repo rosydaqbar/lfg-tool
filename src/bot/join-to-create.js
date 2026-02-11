@@ -99,10 +99,15 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
         lobbyChannel.type === ChannelType.GuildStageVoice
           ? ChannelType.GuildStageVoice
           : ChannelType.GuildVoice;
+      const targetPosition =
+        typeof lobbyChannel.position === 'number'
+          ? lobbyChannel.position + 1
+          : undefined;
       const createdChannel = await newState.guild.channels.create({
         name: channelName,
         type: channelType,
         parent: lobbyChannel.parentId ?? undefined,
+        position: targetPosition,
         permissionOverwrites: getPermissionOverwrites(lobbyChannel),
         bitrate: lobbyChannel.bitrate,
         userLimit: lobbyChannel.userLimit,
