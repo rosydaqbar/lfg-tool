@@ -93,12 +93,16 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
           return null;
         }
         const userLimit = channel.userLimit ?? 0;
-        const available = userLimit > 0
-          ? Math.max(userLimit - channel.members.size, 0)
-          : '\u221e';
+        const availableCount = Math.max(userLimit - channel.members.size, 0);
+        let availabilityLabel = '\u221e';
+        if (userLimit > 0) {
+          availabilityLabel = availableCount === 0
+            ? 'Full'
+            : `${availableCount}/${userLimit}`;
+        }
         return {
           channelId: channel.id,
-          available,
+          availabilityLabel,
         };
       })
     );
@@ -107,7 +111,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
 
     const availableLines = items
       .filter(Boolean)
-      .map((item) => `- <#${item.channelId}> ${doubleTick}${item.available}${doubleTick}`);
+      .map((item) => `- <#${item.channelId}> ${doubleTick}${item.availabilityLabel}${doubleTick}`);
 
     if (availableLines.length === 0) {
       availableLines.push('*Tidak ada squad yang tersedia*');
