@@ -409,15 +409,15 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
           ? customMessage
               .split(/\r?\n/)
               .map((line) => `> ${line}`)
-          : ['>'];
+          : [];
         const lines = [
           `-# <@&${roleId}>`,
           `<@${interaction.user.id}> sedang mencari squad, join: ${voiceLink}`,
           '',
-          '-# Pesan:',
-          ...quoteLines,
-          '',
         ];
+        if (quoteLines.length > 0) {
+          lines.push('-# Pesan:', ...quoteLines, '');
+        }
         lines.push(`-# Dibuat pada: <t:${createdTimestamp}:f>`);
         lines.push(`-# Info lebih lanjut: <@${interaction.user.id}>`);
 
