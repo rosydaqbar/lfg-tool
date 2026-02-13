@@ -1,4 +1,4 @@
-const { ChannelType } = require('discord.js');
+const { ChannelType, OverwriteType } = require('discord.js');
 
 function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
   const joinToCreatePending = new Set();
@@ -12,11 +12,29 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
   }
 
   function getPermissionOverwrites(channel) {
-    return channel.permissionOverwrites.cache.map((overwrite) => ({
-      id: overwrite.id,
-      allow: overwrite.allow,
-      deny: overwrite.deny,
-    }));
+    const guild = channel.guild;
+    return channel.permissionOverwrites.cache
+      .map((overwrite) => {
+        const isRole =
+          overwrite.type === OverwriteType.Role || overwrite.type === 'role';
+        const isMember =
+          overwrite.type === OverwriteType.Member || overwrite.type === 'member';
+
+        if (isRole && !guild?.roles.cache.has(overwrite.id)) {
+          return null;
+        }
+        if (isMember && !guild?.members.cache.has(overwrite.id)) {
+          return null;
+        }
+
+        return {
+          id: overwrite.id,
+          allow: overwrite.allow,
+          deny: overwrite.deny,
+          type: overwrite.type,
+        };
+      })
+      .filter(Boolean);
   }
 
   async function cleanupTempChannel(oldState) {
