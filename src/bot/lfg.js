@@ -305,6 +305,22 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
           return;
         }
 
+        const tempInfo = await configStore.getTempChannelInfo(channelId);
+        if (!tempInfo?.ownerId) {
+          await interaction.reply({
+            content: 'Channel squad sudah tidak aktif.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        if (interaction.user.id !== tempInfo.ownerId) {
+          await interaction.reply({
+            content: 'Hanya pemilik Voice yang bisa mengirim pesan LFG',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
         const remaining = getCooldownRemainingMs(guildId, interaction.user.id);
         if (remaining > 0) {
           await interaction.reply({
@@ -348,6 +364,21 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
         console.error('Failed to defer LFG modal reply:', error);
         return;
       }
+
+      const tempInfo = await configStore.getTempChannelInfo(channelId);
+      if (!tempInfo?.ownerId) {
+        await interaction.editReply({
+          content: 'Channel squad sudah tidak aktif.',
+        });
+        return;
+      }
+      if (interaction.user.id !== tempInfo.ownerId) {
+        await interaction.editReply({
+          content: 'Hanya pemilik Voice yang bisa mengirim pesan LFG',
+        });
+        return;
+      }
+
       if (remaining > 0) {
         await interaction.editReply({
           content: `Please wait ${formatCooldown(remaining)} before sending another LFG post.`,
@@ -389,7 +420,6 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
           LFG_MESSAGE_INPUT_ID
         );
         const customMessage = rawCustomMessage.trim();
-        const tempInfo = await configStore.getTempChannelInfo(channelId);
         const roleId = tempInfo?.roleId ?? null;
         if (!roleId) {
           await interaction.editReply({
