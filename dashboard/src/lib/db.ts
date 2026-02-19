@@ -5,7 +5,11 @@ type GuildConfig = {
   logChannelId: string | null;
   lfgChannelId: string | null;
   enabledVoiceChannelIds: string[];
-  joinToCreateLobbies: { channelId: string; roleId: string | null }[];
+  joinToCreateLobbies: {
+    channelId: string;
+    roleId: string | null;
+    lfgEnabled: boolean;
+  }[];
 };
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -46,7 +50,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
   );
 
   const lobbyRes = await query(
-    "SELECT lobby_channel_id, role_id FROM join_to_create_lobbies WHERE guild_id = $1",
+    "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = $1",
     [guildId]
   );
 
@@ -59,6 +63,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
     joinToCreateLobbies: lobbyRes.rows.map((row) => ({
       channelId: row.lobby_channel_id,
       roleId: row.role_id ?? null,
+      lfgEnabled: row.lfg_enabled ?? true,
     })),
   };
 }
@@ -102,8 +107,8 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
     ]);
     for (const lobby of config.joinToCreateLobbies) {
       await client.query(
-        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id) VALUES ($1, $2, $3)",
-        [guildId, lobby.channelId, lobby.roleId]
+        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES ($1, $2, $3, $4)",
+        [guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ?? true]
       );
     }
 

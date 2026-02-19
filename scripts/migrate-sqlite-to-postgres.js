@@ -80,10 +80,17 @@ async function main() {
     for (const row of jtcLobbies) {
       await client.query(
         `
-          INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id)
-          VALUES ($1, $2, $3)
+          INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled)
+          VALUES ($1, $2, $3, $4)
         `,
-        [row.guild_id, row.lobby_channel_id, null]
+        [
+          row.guild_id,
+          row.lobby_channel_id,
+          row.role_id ?? null,
+          typeof row.lfg_enabled === 'number'
+            ? Boolean(row.lfg_enabled)
+            : true,
+        ]
       );
     }
 

@@ -43,7 +43,7 @@ function createPersistentLfgManager({ client, configStore, env }) {
         console.error('Failed to read dashboard config:', error);
       }
 
-      const lobbyIds = config.joinToCreateLobbyIds || [];
+      const lobbyIds = config.lfgEnabledLobbyIds || [];
       const record = await configStore.getPersistentLfgMessage(guildId);
 
       if (lobbyIds.length === 0) {

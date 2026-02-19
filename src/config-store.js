@@ -37,15 +37,19 @@ async function getGuildConfig(guildId) {
     [guildId]
   );
   const lobbyRes = await query(
-    'SELECT lobby_channel_id, role_id FROM join_to_create_lobbies WHERE guild_id = $1',
+    'SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = $1',
     [guildId]
   );
   const joinToCreateLobbies = lobbyRes.rows.map((row) => ({
     channelId: row.lobby_channel_id,
     roleId: row.role_id ?? null,
+    lfgEnabled: row.lfg_enabled ?? true,
   }));
   const joinToCreateLobbyIds = joinToCreateLobbies
     .filter((row) => row.roleId)
+    .map((row) => row.channelId);
+  const lfgEnabledLobbyIds = joinToCreateLobbies
+    .filter((row) => row.roleId && row.lfgEnabled)
     .map((row) => row.channelId);
 
   return {
@@ -54,6 +58,7 @@ async function getGuildConfig(guildId) {
     enabledVoiceChannelIds: watchlistRes.rows.map(
       (row) => row.voice_channel_id
     ),
+    lfgEnabledLobbyIds,
     joinToCreateLobbyIds,
     joinToCreateLobbies,
   };

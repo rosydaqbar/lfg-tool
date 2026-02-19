@@ -36,6 +36,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -56,7 +57,11 @@ type ConfigResponse = {
   logChannelId: string | null;
   lfgChannelId: string | null;
   enabledVoiceChannelIds: string[];
-  joinToCreateLobbies: { channelId: string; roleId: string | null }[];
+  joinToCreateLobbies: {
+    channelId: string;
+    roleId: string | null;
+    lfgEnabled: boolean;
+  }[];
 };
 
 type ChannelsResponse = {
@@ -77,6 +82,7 @@ type Role = {
 type JoinToCreateLobby = {
   channelId: string;
   roleId: string | null;
+  lfgEnabled: boolean;
 };
 
 type TempChannel = {
@@ -156,7 +162,13 @@ export default function DashboardClient({ userName }: { userName: string }) {
         setLogChannelId(config.logChannelId ?? "");
         setLfgChannelId(config.lfgChannelId ?? "");
         setEnabledVoiceIds(config.enabledVoiceChannelIds ?? []);
-        setJoinToCreateLobbies(config.joinToCreateLobbies ?? []);
+        setJoinToCreateLobbies(
+          (config.joinToCreateLobbies ?? []).map((item) => ({
+            channelId: item.channelId,
+            roleId: item.roleId,
+            lfgEnabled: item.lfgEnabled ?? true,
+          }))
+        );
       })
       .catch((err) => {
         if (!active) return;
@@ -223,11 +235,23 @@ export default function DashboardClient({ userName }: { userName: string }) {
       );
       if (existingIndex >= 0) {
         const next = [...prev];
-        next[existingIndex] = { channelId, roleId };
+        next[existingIndex] = {
+          ...next[existingIndex],
+          channelId,
+          roleId,
+        };
         return next;
       }
-      return [...prev, { channelId, roleId }];
+      return [...prev, { channelId, roleId, lfgEnabled: true }];
     });
+  };
+
+  const handleToggleLobbyLfg = (channelId: string, lfgEnabled: boolean) => {
+    setJoinToCreateLobbies((prev) =>
+      prev.map((item) =>
+        item.channelId === channelId ? { ...item, lfgEnabled } : item
+      )
+    );
   };
 
   const handleRemoveLobbyChannel = (channelId: string) => {
@@ -267,6 +291,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
     ).map((item) => ({
       channelId: item.channelId.trim(),
       roleId: (item.roleId ?? "").trim(),
+      lfgEnabled: item.lfgEnabled ?? true,
     }));
 
     try {
@@ -833,6 +858,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
                       <TableRow>
                         <TableHead>Lobby channel</TableHead>
                         <TableHead>Role</TableHead>
+                        <TableHead>Enable LFG</TableHead>
                         <TableHead className="text-right">Action</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -861,6 +887,20 @@ export default function DashboardClient({ userName }: { userName: string }) {
                                   {lobby.roleId}
                                 </div>
                               ) : null}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Switch
+                                  checked={lobby.lfgEnabled}
+                                  onCheckedChange={(checked) =>
+                                    handleToggleLobbyLfg(lobby.channelId, checked)
+                                  }
+                                  aria-label={`Enable LFG for ${channel?.name ?? lobby.channelId}`}
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                  {lobby.lfgEnabled ? "Enabled" : "Disabled"}
+                                </span>
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">
                               <Button

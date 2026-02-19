@@ -37,7 +37,11 @@ export async function PUT(
     logChannelId?: string;
     lfgChannelId?: string | null;
     enabledVoiceChannelIds?: string[];
-    joinToCreateLobbies?: { channelId?: string; roleId?: string }[];
+    joinToCreateLobbies?: {
+      channelId?: string;
+      roleId?: string;
+      lfgEnabled?: boolean;
+    }[];
   };
 
   if (!body.logChannelId) {
@@ -73,6 +77,8 @@ export async function PUT(
           {
             channelId: item.channelId!.trim(),
             roleId: typeof item.roleId === "string" ? item.roleId.trim() : "",
+            lfgEnabled:
+              typeof item.lfgEnabled === "boolean" ? item.lfgEnabled : true,
           },
         ])
     ).values()

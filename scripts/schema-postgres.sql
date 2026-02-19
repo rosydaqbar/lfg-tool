@@ -16,11 +16,15 @@ CREATE TABLE IF NOT EXISTS join_to_create_lobbies (
   guild_id TEXT NOT NULL,
   lobby_channel_id TEXT NOT NULL,
   role_id TEXT,
+  lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   PRIMARY KEY (guild_id, lobby_channel_id)
 );
 
 ALTER TABLE IF EXISTS join_to_create_lobbies
   ADD COLUMN IF NOT EXISTS role_id TEXT;
+
+ALTER TABLE IF EXISTS join_to_create_lobbies
+  ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS temp_voice_channels (
   guild_id TEXT NOT NULL,
