@@ -68,11 +68,9 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     const channel = await guild.channels.fetch(channelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
 
-    let lfgChannelId = tempInfo.lfgChannelId || env.LOG_CHANNEL_ID;
-    if (!lfgChannelId) {
-      const config = await configStore.getGuildConfig(guild.id).catch(() => null);
-      lfgChannelId = config?.lfgChannelId || config?.logChannelId || null;
-    }
+    const config = await configStore.getGuildConfig(guild.id).catch(() => null);
+    const lfgChannelId =
+      config?.lfgChannelId || config?.logChannelId || env.LOG_CHANNEL_ID || null;
     if (!lfgChannelId) return;
 
     const payload = buildJoinToCreatePromptPayload({

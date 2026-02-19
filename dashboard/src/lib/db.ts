@@ -37,7 +37,25 @@ async function query(text: string, params?: unknown[]) {
   return db.query(text, params);
 }
 
+let lfgEnabledColumnEnsured = false;
+
+async function ensureJoinToCreateLfgEnabledColumn() {
+  if (lfgEnabledColumnEnsured) return;
+  try {
+    await query(
+      "ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE"
+    );
+    lfgEnabledColumnEnsured = true;
+  } catch (error) {
+    console.error(
+      "Failed to ensure join_to_create_lobbies.lfg_enabled column:",
+      error
+    );
+  }
+}
+
 export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
+  await ensureJoinToCreateLfgEnabledColumn();
   const configRes = await query(
     "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1",
     [guildId]
@@ -79,6 +97,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
 }
 
 export async function saveGuildConfig(guildId: string, config: GuildConfig) {
+  await ensureJoinToCreateLfgEnabledColumn();
   if (!config.logChannelId) {
     throw new Error("logChannelId is required");
   }
