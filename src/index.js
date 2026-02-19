@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const { Client, GatewayIntentBits, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
 const configStore = require('./config-store');
 const { createDebugLogger } = require('./bot/debug');
 const { requireToken, DISCORD_TOKEN, LOG_CHANNEL_ID, VOICE_CHANNEL_ID, DEBUG } = require('./bot/env');
@@ -93,7 +93,27 @@ client.once(Events.ClientReady, () => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  await lfgManager.handleInteraction(interaction);
+  try {
+    await lfgManager.handleInteraction(interaction);
+  } catch (error) {
+    console.error('Failed to handle interaction:', error);
+    if (!interaction.isRepliable()) return;
+    if (interaction.deferred || interaction.replied) {
+      await interaction
+        .followUp({
+          content: 'Terjadi kesalahan saat memproses interaksi.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => null);
+      return;
+    }
+    await interaction
+      .reply({
+        content: 'Terjadi kesalahan saat memproses interaksi.',
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => null);
+  }
 });
 
 client.on('voiceStateUpdate', async (oldState, newState) => {

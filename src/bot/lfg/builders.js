@@ -3,12 +3,17 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  MessageFlags,
   ModalBuilder,
   StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
-  UserSelectMenuBuilder,
 } = require('discord.js');
+const {
+  ContainerBuilder,
+  SeparatorBuilder,
+  TextDisplayBuilder,
+} = require('@discordjs/builders');
 
 const {
   CHANNEL_NAME_INPUT_ID,
@@ -26,7 +31,6 @@ const {
   LFG_MESSAGE_INPUT_ID,
   LFG_MODAL_PREFIX,
   LFG_SEND_PREFIX,
-  LFG_SETTINGS_PREFIX,
   REGION_PREFIX,
   REGION_SELECT_PREFIX,
   TRANSFER_PREFIX,
@@ -39,11 +43,7 @@ function buildLfgPromptRows(channelId) {
       new ButtonBuilder()
         .setCustomId(`${LFG_SEND_PREFIX}:${channelId}`)
         .setLabel('Send LFG Post')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`${LFG_SETTINGS_PREFIX}:${channelId}`)
-        .setLabel('Voice Settings')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Primary)
     ),
   ];
 }
@@ -72,36 +72,88 @@ function buildVoiceSettingsRows(channelId) {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`${CHANNEL_NAME_PREFIX}:${channelId}`)
+        .setEmoji('✏️')
         .setLabel('Channel Name')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${CHANNEL_SIZE_PREFIX}:${channelId}`)
+        .setEmoji('👥')
         .setLabel('Channel Size')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${CHANNEL_LOCK_PREFIX}:${channelId}`)
+        .setEmoji('🔒')
         .setLabel('Lock')
-        .setStyle(ButtonStyle.Danger),
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${CHANNEL_UNLOCK_PREFIX}:${channelId}`)
+        .setEmoji('🔓')
         .setLabel('Unlock')
-        .setStyle(ButtonStyle.Success),
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${TRANSFER_PREFIX}:${channelId}`)
+        .setEmoji('🔁')
         .setLabel('Transfer Ownership')
-        .setStyle(ButtonStyle.Primary)
+        .setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`${CLAIM_PREFIX}:${channelId}`)
+        .setEmoji('👑')
         .setLabel('Claim Voice Channel')
-        .setStyle(ButtonStyle.Primary),
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${REGION_PREFIX}:${channelId}`)
+        .setEmoji('🌍')
         .setLabel('Region')
         .setStyle(ButtonStyle.Secondary)
     ),
   ];
+}
+
+function buildJoinToCreatePromptPayload({
+  channelId,
+  createdTimestamp,
+  isLocked,
+  lfgChannelId,
+  ownerId,
+}) {
+  const intro = new TextDisplayBuilder().setContent(
+    `Hi <@${ownerId}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?`
+  );
+
+  const topSeparator = new SeparatorBuilder().setDivider(true);
+
+  const detailLines = [
+    '### Voice Settings',
+    'Atur voice channel secara mandiri',
+    '',
+    `- Voice Channel: <#${channelId}>`,
+    `- Dibuat pada: <t:${createdTimestamp}:F>`,
+    `- Owner saat ini: <@${ownerId}>`,
+    `- Status lock: ${isLocked ? 'Terkunci' : 'Terbuka'}`,
+  ].join('\n');
+
+  const helpText = new TextDisplayBuilder().setContent(
+    '-# Tombol di bawah dapat dipakai untuk mengubah nama channel, membatasi jumlah member, lock/unlock, transfer ownership, claim channel, dan mengganti region voice.'
+  );
+
+  const container = new ContainerBuilder()
+    .setAccentColor(0xff0000)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(detailLines))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(helpText)
+    .addActionRowComponents(...buildVoiceSettingsRows(channelId));
+
+  return {
+    components: [
+      intro,
+      ...buildLfgPromptRows(channelId),
+      topSeparator,
+      container,
+    ],
+    flags: MessageFlags.IsComponentsV2,
+  };
 }
 
 function buildChannelNameModal(channelId, currentName) {
@@ -144,14 +196,21 @@ function buildChannelSizeRetryRow(channelId) {
   );
 }
 
-function buildTransferSelectRow(channelId) {
-  const userSelect = new UserSelectMenuBuilder()
+function buildTransferMemberSelectRow(channelId, members) {
+  const options = members.slice(0, 25).map((member) => ({
+    label: member.displayName.slice(0, 100),
+    value: member.id,
+    description: `@${member.user.username}`.slice(0, 100),
+  }));
+
+  const select = new StringSelectMenuBuilder()
     .setCustomId(`${TRANSFER_SELECT_PREFIX}:${channelId}`)
     .setPlaceholder('Pilih member di voice channel')
     .setMinValues(1)
-    .setMaxValues(1);
+    .setMaxValues(1)
+    .addOptions(options);
 
-  return new ActionRowBuilder().addComponents(userSelect);
+  return new ActionRowBuilder().addComponents(select);
 }
 
 function buildRegionSelectRow(channelId, regions, currentRegion) {
@@ -245,8 +304,9 @@ module.exports = {
   buildClaimApprovalRow,
   buildLfgModal,
   buildLfgPromptRows,
+  buildJoinToCreatePromptPayload,
   buildPersistentLfgEmbed,
   buildRegionSelectRow,
-  buildTransferSelectRow,
+  buildTransferMemberSelectRow,
   buildVoiceSettingsRows,
 };

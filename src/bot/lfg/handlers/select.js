@@ -14,6 +14,7 @@ async function handleSelectInteraction(interaction, deps) {
   const {
     getTempVoiceContext,
     isOwner,
+    refreshJoinToCreatePrompt,
     transferChannelOwner,
     userIsInVoiceChannel,
   } = deps;
@@ -73,6 +74,7 @@ async function handleSelectInteraction(interaction, deps) {
       components: [],
       allowedMentions: { users: [newOwnerId] },
     });
+    await refreshJoinToCreatePrompt(interaction.guild, channelId);
     return true;
   }
 
@@ -87,7 +89,7 @@ async function handleSelectInteraction(interaction, deps) {
 
   let rtcRegion = null;
   if (choice !== 'auto') {
-    const fetched = await interaction.guild.fetchVoiceRegions();
+    const fetched = await deps.client.fetchVoiceRegions();
     if (!fetched.has(choice)) {
       await interaction.reply({
         content: 'Region tidak tersedia.',
@@ -109,6 +111,7 @@ async function handleSelectInteraction(interaction, deps) {
         : `Region voice channel diubah ke **${rtcRegion}**.`,
     components: [],
   });
+  await refreshJoinToCreatePrompt(interaction.guild, channelId);
   return true;
 }
 

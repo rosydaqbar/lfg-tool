@@ -1,12 +1,12 @@
 const {
+  buildJoinToCreatePromptPayload,
   buildChannelNameModal,
   buildChannelSizeModal,
   buildChannelSizeRetryRow,
   buildClaimApprovalRow,
   buildLfgModal,
-  buildLfgPromptRows,
   buildRegionSelectRow,
-  buildTransferSelectRow,
+  buildTransferMemberSelectRow,
   buildVoiceSettingsRows,
 } = require('./builders');
 const { createCooldownTracker } = require('./cooldown');
@@ -17,6 +17,7 @@ const { handleSelectInteraction } = require('./handlers/select');
 const { createPersistentLfgManager } = require('./persistent');
 
 function createLfgManager({ client, getLogChannel, configStore, env }) {
+  const tempPromptMessageIds = new Map();
   const cooldownTracker = createCooldownTracker();
   const voiceContextHelpers = createVoiceContextHelpers(configStore);
   const persistentManager = createPersistentLfgManager({
@@ -25,16 +26,97 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     env,
   });
 
+  function setPromptMessageId(channelId, messageId) {
+    if (!channelId || !messageId) return;
+    tempPromptMessageIds.set(channelId, messageId);
+  }
+
+  function isVoiceChannelLocked(channel, guild) {
+    const everyoneId = guild?.roles?.everyone?.id;
+    if (!everyoneId) return false;
+    const overwrite = channel.permissionOverwrites.cache.get(everyoneId);
+    if (!overwrite) return false;
+    return overwrite.deny.has('Connect');
+  }
+
+  async function findPromptMessage(channel) {
+    if (!channel || typeof channel.messages?.fetch !== 'function') return null;
+    const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+    if (!recent) return null;
+
+    return (
+      recent.find((msg) =>
+        msg.author?.id === client.user?.id
+        && msg.components.some((component) => {
+          if (!Array.isArray(component.components)) return false;
+          return component.components.some(
+            (child) => child.customId?.startsWith('jtc_send:')
+          );
+        })
+      ) || null
+    );
+  }
+
+  async function refreshJoinToCreatePrompt(guild, channelId) {
+    if (!guild || !channelId) return;
+
+    const tempInfo = await configStore
+      .getTempChannelInfo(channelId)
+      .catch(() => null);
+    if (!tempInfo?.ownerId) return;
+
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) return;
+
+    let lfgChannelId = tempInfo.lfgChannelId || env.LOG_CHANNEL_ID;
+    if (!lfgChannelId) {
+      const config = await configStore.getGuildConfig(guild.id).catch(() => null);
+      lfgChannelId = config?.lfgChannelId || config?.logChannelId || null;
+    }
+    if (!lfgChannelId) return;
+
+    const payload = buildJoinToCreatePromptPayload({
+      channelId,
+      createdTimestamp: Math.floor(
+        (channel.createdTimestamp ?? Date.now()) / 1000
+      ),
+      isLocked: isVoiceChannelLocked(channel, guild),
+      lfgChannelId,
+      ownerId: tempInfo.ownerId,
+    });
+
+    let message = null;
+    const knownMessageId = tempPromptMessageIds.get(channelId);
+    if (knownMessageId) {
+      message = await channel.messages.fetch(knownMessageId).catch(() => null);
+    }
+    if (!message) {
+      message = await findPromptMessage(channel);
+    }
+    if (!message) return;
+
+    await message
+      .edit({
+        ...payload,
+        allowedMentions: { users: [tempInfo.ownerId] },
+      })
+      .catch(() => null);
+
+    setPromptMessageId(channelId, message.id);
+  }
+
   const sharedDeps = {
     ...cooldownTracker,
     ...voiceContextHelpers,
+    refreshJoinToCreatePrompt,
+    buildJoinToCreatePromptPayload,
     buildChannelNameModal,
     buildChannelSizeModal,
     buildChannelSizeRetryRow,
     buildClaimApprovalRow,
     buildLfgModal,
     buildRegionSelectRow,
-    buildTransferSelectRow,
+    buildTransferMemberSelectRow,
     buildVoiceSettingsRows,
     client,
     configStore,
@@ -53,13 +135,20 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       return;
     }
 
-    const content = `Hi <@${member.id}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?`;
+    const payload = buildJoinToCreatePromptPayload({
+      channelId: channel.id,
+      createdTimestamp: Math.floor((channel.createdTimestamp ?? Date.now()) / 1000),
+      isLocked: isVoiceChannelLocked(channel, channel.guild),
+      lfgChannelId,
+      ownerId: member.id,
+    });
+
     try {
-      await channel.send({
-        content,
+      const sent = await channel.send({
+        ...payload,
         allowedMentions: { users: [member.id] },
-        components: buildLfgPromptRows(channel.id),
       });
+      setPromptMessageId(channel.id, sent.id);
     } catch (error) {
       console.error('Failed to send Join-to-Create prompt:', error);
     }

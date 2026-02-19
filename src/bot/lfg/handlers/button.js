@@ -25,7 +25,7 @@ async function handleButtonInteraction(interaction, deps) {
     buildClaimApprovalRow,
     buildLfgModal,
     buildRegionSelectRow,
-    buildTransferSelectRow,
+    buildTransferMemberSelectRow,
     buildVoiceSettingsRows,
     formatCooldown,
     getCooldownRemainingMs,
@@ -33,6 +33,7 @@ async function handleButtonInteraction(interaction, deps) {
     isOwner,
     transferChannelOwner,
     userIsInVoiceChannel,
+    refreshJoinToCreatePrompt,
   } = deps;
 
   const guildId = interaction.guildId;
@@ -153,6 +154,7 @@ async function handleButtonInteraction(interaction, deps) {
       components: [],
       allowedMentions: { users: [claimerId] },
     });
+    await refreshJoinToCreatePrompt(interaction.guild, channelId);
     return true;
   }
 
@@ -193,6 +195,7 @@ async function handleButtonInteraction(interaction, deps) {
         content: `Owner tidak berada di channel. Ownership otomatis dipindahkan ke <@${interaction.user.id}>.`,
         allowedMentions: { users: [interaction.user.id] },
       });
+      await refreshJoinToCreatePrompt(interaction.guild, channelId);
       return true;
     }
 
@@ -261,16 +264,35 @@ async function handleButtonInteraction(interaction, deps) {
   }
 
   if (prefix === TRANSFER_PREFIX) {
+    const transferCandidates = [...context.channel.members.values()]
+      .filter((member) => member.id !== context.tempInfo.ownerId)
+      .map((member) => ({
+        id: member.id,
+        displayName: member.displayName || member.user.username,
+        user: member.user,
+      }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+    if (transferCandidates.length === 0) {
+      await interaction.reply({
+        content: 'Tidak ada member lain di voice channel untuk transfer ownership.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
     await interaction.reply({
       content: 'Pilih member untuk menerima ownership channel ini.',
-      components: [buildTransferSelectRow(channelId)],
+      components: [
+        buildTransferMemberSelectRow(channelId, transferCandidates),
+      ],
       flags: MessageFlags.Ephemeral,
     });
     return true;
   }
 
   if (prefix === REGION_PREFIX) {
-    const fetched = await interaction.guild.fetchVoiceRegions();
+    const fetched = await deps.client.fetchVoiceRegions();
     const regions = [...fetched.values()].sort((a, b) =>
       a.name.localeCompare(b.name)
     );
@@ -306,6 +328,7 @@ async function handleButtonInteraction(interaction, deps) {
         ? 'Voice channel berhasil dikunci.'
         : 'Voice channel berhasil dibuka.',
   });
+  await refreshJoinToCreatePrompt(interaction.guild, channelId);
   return true;
 }
 

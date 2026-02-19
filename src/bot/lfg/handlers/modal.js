@@ -24,6 +24,7 @@ async function handleModalInteraction(interaction, deps) {
     buildChannelSizeRetryRow,
     getTempVoiceContext,
     isOwner,
+    refreshJoinToCreatePrompt,
   } = deps;
 
   if (prefix === CHANNEL_NAME_MODAL_PREFIX) {
@@ -52,6 +53,7 @@ async function handleModalInteraction(interaction, deps) {
     await interaction.editReply({
       content: `Nama channel berhasil diubah menjadi **${newName}**.`,
     });
+    await refreshJoinToCreatePrompt(interaction.guild, channelId);
     return true;
   }
 
@@ -97,6 +99,7 @@ async function handleModalInteraction(interaction, deps) {
           : `Batas member diubah ke ${limit}.`,
       components: [],
     });
+    await refreshJoinToCreatePrompt(interaction.guild, channelId);
     return true;
   }
 
