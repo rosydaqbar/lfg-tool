@@ -160,6 +160,13 @@ async function updateTempChannelMessage(channelId, lfgChannelId, lfgMessageId) {
   );
 }
 
+async function updateTempChannelOwner(channelId, ownerId) {
+  await query(
+    'UPDATE temp_voice_channels SET owner_id = $1 WHERE channel_id = $2',
+    [ownerId, channelId]
+  );
+}
+
 async function removeTempChannel(channelId) {
   await query('DELETE FROM temp_voice_channels WHERE channel_id = $1', [
     channelId,
@@ -178,4 +185,5 @@ module.exports = {
   removeTempChannel,
   setPersistentLfgMessage,
   updateTempChannelMessage,
+  updateTempChannelOwner,
 };
