@@ -43,6 +43,50 @@ const healthServer = createHealthServer();
 
 healthServer.start();
 
+let shuttingDown = false;
+
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Received ${signal}. Shutting down...`);
+
+  try {
+    lfgManager.stopPersistentLoop?.();
+  } catch (error) {
+    console.error('Failed to stop persistent loop:', error);
+  }
+
+  try {
+    healthServer.stop();
+  } catch (error) {
+    console.error('Failed to stop health server:', error);
+  }
+
+  try {
+    if (client.isReady()) {
+      await client.destroy();
+    }
+  } catch (error) {
+    console.error('Failed to destroy Discord client:', error);
+  }
+
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM').catch((error) => {
+    console.error('Graceful shutdown failed:', error);
+    process.exit(1);
+  });
+});
+
+process.on('SIGINT', () => {
+  shutdown('SIGINT').catch((error) => {
+    console.error('Graceful shutdown failed:', error);
+    process.exit(1);
+  });
+});
+
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
   lfgManager.startPersistentLoop();

@@ -120,9 +120,16 @@ function createPersistentLfgManager({ client, configStore, env }) {
     persistentInterval = setInterval(run, PERSISTENT_LFG_INTERVAL_MS);
   }
 
+  function stopPersistentLoop() {
+    if (!persistentInterval) return;
+    clearInterval(persistentInterval);
+    persistentInterval = null;
+  }
+
   return {
     ensurePersistentLfgMessage,
     startPersistentLoop,
+    stopPersistentLoop,
   };
 }
 

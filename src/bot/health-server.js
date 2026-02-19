@@ -2,13 +2,16 @@ const http = require('http');
 
 function createHealthServer({ port, host = '0.0.0.0' } = {}) {
   let server = null;
+  const shouldLogRequests = process.env.HEALTH_LOG_REQUESTS === 'true';
 
   function handleRequest(req, res) {
-    const userAgent = req.headers["user-agent"] || "";
-    const remoteAddress = req.socket?.remoteAddress || "unknown";
-    console.log(
-      `Health check ${req.method} ${req.url} from ${remoteAddress} ${userAgent}`
-    );
+    if (shouldLogRequests) {
+      const userAgent = req.headers['user-agent'] || '';
+      const remoteAddress = req.socket?.remoteAddress || 'unknown';
+      console.log(
+        `Health check ${req.method} ${req.url} from ${remoteAddress} ${userAgent}`
+      );
+    }
 
     if (req.method === 'HEAD') {
       res.statusCode = 200;

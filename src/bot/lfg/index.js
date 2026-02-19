@@ -67,7 +67,10 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
 
   async function editLfgDisbandedMessage(info) {
     if (!info?.lfgChannelId || !info?.lfgMessageId) {
-      console.error('Missing LFG message info for disband edit.');
+      return;
+    }
+
+    if (!info?.ownerId) {
       return;
     }
 
@@ -126,6 +129,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     handleInteraction,
     sendJoinToCreatePrompt,
     startPersistentLoop: persistentManager.startPersistentLoop,
+    stopPersistentLoop: persistentManager.stopPersistentLoop,
   };
 }
 
