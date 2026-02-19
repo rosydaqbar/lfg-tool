@@ -49,10 +49,20 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
     [guildId]
   );
 
-  const lobbyRes = await query(
-    "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = $1",
-    [guildId]
-  );
+  let lobbyRes;
+  try {
+    lobbyRes = await query(
+      "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = $1",
+      [guildId]
+    );
+  } catch (error) {
+    const pgError = error as { code?: string };
+    if (pgError.code !== "42703") throw error;
+    lobbyRes = await query(
+      "SELECT lobby_channel_id, role_id FROM join_to_create_lobbies WHERE guild_id = $1",
+      [guildId]
+    );
+  }
 
   return {
     logChannelId: configRow.log_channel_id ?? null,
@@ -105,11 +115,22 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
     await client.query("DELETE FROM join_to_create_lobbies WHERE guild_id = $1", [
       guildId,
     ]);
-    for (const lobby of config.joinToCreateLobbies) {
-      await client.query(
-        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES ($1, $2, $3, $4)",
-        [guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ?? true]
-      );
+    try {
+      for (const lobby of config.joinToCreateLobbies) {
+        await client.query(
+          "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES ($1, $2, $3, $4)",
+          [guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ?? true]
+        );
+      }
+    } catch (error) {
+      const pgError = error as { code?: string };
+      if (pgError.code !== "42703") throw error;
+      for (const lobby of config.joinToCreateLobbies) {
+        await client.query(
+          "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id) VALUES ($1, $2, $3)",
+          [guildId, lobby.channelId, lobby.roleId]
+        );
+      }
     }
 
     await client.query("COMMIT");
