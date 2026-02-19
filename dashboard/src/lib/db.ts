@@ -90,6 +90,20 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
+
+    const lfgEnabledColumnRes = await client.query(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_name = 'join_to_create_lobbies'
+            AND column_name = 'lfg_enabled'
+        ) AS has_lfg_enabled
+      `
+    );
+    const hasLfgEnabledColumn =
+      lfgEnabledColumnRes.rows[0]?.has_lfg_enabled === true;
+
     await client.query(
       `
         INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, updated_at)
@@ -115,17 +129,13 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
     await client.query("DELETE FROM join_to_create_lobbies WHERE guild_id = $1", [
       guildId,
     ]);
-    try {
-      for (const lobby of config.joinToCreateLobbies) {
+    for (const lobby of config.joinToCreateLobbies) {
+      if (hasLfgEnabledColumn) {
         await client.query(
           "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES ($1, $2, $3, $4)",
           [guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ?? true]
         );
-      }
-    } catch (error) {
-      const pgError = error as { code?: string };
-      if (pgError.code !== "42703") throw error;
-      for (const lobby of config.joinToCreateLobbies) {
+      } else {
         await client.query(
           "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id) VALUES ($1, $2, $3)",
           [guildId, lobby.channelId, lobby.roleId]

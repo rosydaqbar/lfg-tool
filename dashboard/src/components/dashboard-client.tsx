@@ -307,7 +307,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save configuration");
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error || "Failed to save configuration");
       }
 
       toast.success("Configuration saved", {
