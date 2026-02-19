@@ -1,0 +1,48 @@
+const LFG_SEND_PREFIX = 'jtc_send';
+const LFG_SETTINGS_PREFIX = 'jtc_settings';
+const LFG_MODAL_PREFIX = 'jtc_modal';
+const LFG_MESSAGE_INPUT_ID = 'lfg_custom_message';
+const CHANNEL_NAME_PREFIX = 'jtc_name';
+const CHANNEL_NAME_MODAL_PREFIX = 'jtc_name_modal';
+const CHANNEL_NAME_INPUT_ID = 'channel_name';
+const CHANNEL_SIZE_PREFIX = 'jtc_size';
+const CHANNEL_SIZE_MODAL_PREFIX = 'jtc_size_modal';
+const CHANNEL_SIZE_INPUT_ID = 'channel_size';
+const CHANNEL_SIZE_RETRY_PREFIX = 'jtc_size_retry';
+const CHANNEL_LOCK_PREFIX = 'jtc_lock';
+const CHANNEL_UNLOCK_PREFIX = 'jtc_unlock';
+const TRANSFER_PREFIX = 'jtc_transfer';
+const TRANSFER_SELECT_PREFIX = 'jtc_transfer_select';
+const CLAIM_PREFIX = 'jtc_claim';
+const CLAIM_APPROVE_PREFIX = 'jtc_claim_yes';
+const CLAIM_DECLINE_PREFIX = 'jtc_claim_no';
+const REGION_PREFIX = 'jtc_region';
+const REGION_SELECT_PREFIX = 'jtc_region_select';
+
+const LFG_COOLDOWN_MS = 10 * 60 * 1000;
+const PERSISTENT_LFG_INTERVAL_MS = 60 * 1000;
+
+module.exports = {
+  CHANNEL_LOCK_PREFIX,
+  CHANNEL_NAME_INPUT_ID,
+  CHANNEL_NAME_MODAL_PREFIX,
+  CHANNEL_NAME_PREFIX,
+  CHANNEL_SIZE_INPUT_ID,
+  CHANNEL_SIZE_MODAL_PREFIX,
+  CHANNEL_SIZE_PREFIX,
+  CHANNEL_SIZE_RETRY_PREFIX,
+  CHANNEL_UNLOCK_PREFIX,
+  CLAIM_APPROVE_PREFIX,
+  CLAIM_DECLINE_PREFIX,
+  CLAIM_PREFIX,
+  LFG_COOLDOWN_MS,
+  LFG_MESSAGE_INPUT_ID,
+  LFG_MODAL_PREFIX,
+  LFG_SEND_PREFIX,
+  LFG_SETTINGS_PREFIX,
+  PERSISTENT_LFG_INTERVAL_MS,
+  REGION_PREFIX,
+  REGION_SELECT_PREFIX,
+  TRANSFER_PREFIX,
+  TRANSFER_SELECT_PREFIX,
+};
