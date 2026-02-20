@@ -104,9 +104,10 @@ async function main() {
             created_at,
             lfg_channel_id,
             lfg_message_id,
-            role_id
+            role_id,
+            lfg_enabled
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `,
         [
           row.guild_id,
@@ -115,7 +116,10 @@ async function main() {
           row.created_at,
           row.lfg_channel_id ?? null,
           row.lfg_message_id ?? null,
-          null,
+          row.role_id ?? null,
+          typeof row.lfg_enabled === 'number'
+            ? Boolean(row.lfg_enabled)
+            : true,
         ]
       );
     }

@@ -115,12 +115,14 @@ function buildJoinToCreatePromptPayload({
   channelId,
   createdTimestamp,
   isLocked,
+  lfgEnabled = true,
   lfgChannelId,
   ownerId,
 }) {
-  const intro = new TextDisplayBuilder().setContent(
-    `Hi <@${ownerId}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?`
-  );
+  const introText = lfgEnabled
+    ? `Hi <@${ownerId}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?`
+    : `Hi <@${ownerId}>, Channel sudah dibuat.`;
+  const intro = new TextDisplayBuilder().setContent(introText);
 
   const topSeparator = new SeparatorBuilder().setDivider(true);
 
@@ -148,7 +150,7 @@ function buildJoinToCreatePromptPayload({
   return {
     components: [
       intro,
-      ...buildLfgPromptRows(channelId),
+      ...(lfgEnabled ? buildLfgPromptRows(channelId) : []),
       topSeparator,
       container,
     ],

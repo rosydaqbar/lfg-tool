@@ -50,7 +50,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
         && msg.components.some((component) => {
           if (!Array.isArray(component.components)) return false;
           return component.components.some(
-            (child) => child.customId?.startsWith('jtc_send:')
+            (child) => child.customId?.startsWith('jtc_')
           );
         })
       ) || null
@@ -69,9 +69,10 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     if (!channel || !channel.isTextBased()) return;
 
     const config = await configStore.getGuildConfig(guild.id).catch(() => null);
+    const lfgEnabled = tempInfo.lfgEnabled ?? true;
     const lfgChannelId =
       config?.lfgChannelId || config?.logChannelId || env.LOG_CHANNEL_ID || null;
-    if (!lfgChannelId) return;
+    if (lfgEnabled && !lfgChannelId) return;
 
     const payload = buildJoinToCreatePromptPayload({
       channelId,
@@ -79,6 +80,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
         (channel.createdTimestamp ?? Date.now()) / 1000
       ),
       isLocked: isVoiceChannelLocked(channel, guild),
+      lfgEnabled,
       lfgChannelId,
       ownerId: tempInfo.ownerId,
     });
@@ -122,13 +124,18 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     getLogChannel,
   };
 
-  async function sendJoinToCreatePrompt(channel, member, lfgChannelId) {
+  async function sendJoinToCreatePrompt(
+    channel,
+    member,
+    lfgChannelId,
+    lfgEnabled = true
+  ) {
     if (!channel || typeof channel.send !== 'function') {
       console.error('Join-to-Create prompt failed: channel is not text-capable.');
       return;
     }
 
-    if (!lfgChannelId) {
+    if (lfgEnabled && !lfgChannelId) {
       console.error('Join-to-Create prompt failed: no LFG channel configured.');
       return;
     }
@@ -137,6 +144,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       channelId: channel.id,
       createdTimestamp: Math.floor((channel.createdTimestamp ?? Date.now()) / 1000),
       isLocked: isVoiceChannelLocked(channel, channel.guild),
+      lfgEnabled,
       lfgChannelId,
       ownerId: member.id,
     });

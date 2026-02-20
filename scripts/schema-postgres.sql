@@ -33,11 +33,15 @@ CREATE TABLE IF NOT EXISTS temp_voice_channels (
   created_at TIMESTAMPTZ NOT NULL,
   lfg_channel_id TEXT,
   lfg_message_id TEXT,
-  role_id TEXT
+  role_id TEXT,
+  lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 ALTER TABLE IF EXISTS temp_voice_channels
   ADD COLUMN IF NOT EXISTS role_id TEXT;
+
+ALTER TABLE IF EXISTS temp_voice_channels
+  ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS lfg_persistent_message (
   guild_id TEXT PRIMARY KEY,

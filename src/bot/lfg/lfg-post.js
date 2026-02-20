@@ -34,6 +34,12 @@ async function handleLfgPostModal(interaction, deps, channelId) {
     });
     return;
   }
+  if (tempInfo.lfgEnabled === false) {
+    await interaction.editReply({
+      content: 'Fitur Send LFG Post dinonaktifkan untuk lobby ini.',
+    });
+    return;
+  }
 
   if (remaining > 0) {
     await interaction.editReply({

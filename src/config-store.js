@@ -26,6 +26,7 @@ async function query(text, params) {
 }
 
 let lfgEnabledColumnEnsured = false;
+let tempVoiceLfgEnabledColumnEnsured = false;
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -36,6 +37,18 @@ async function ensureJoinToCreateLfgEnabledColumn() {
     lfgEnabledColumnEnsured = true;
   } catch (error) {
     console.error('Failed to ensure join_to_create_lobbies.lfg_enabled column:', error);
+  }
+}
+
+async function ensureTempVoiceLfgEnabledColumn() {
+  if (tempVoiceLfgEnabledColumnEnsured) return;
+  try {
+    await query(
+      'ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE'
+    );
+    tempVoiceLfgEnabledColumnEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure temp_voice_channels.lfg_enabled column:', error);
   }
 }
 
@@ -122,7 +135,14 @@ async function clearPersistentLfgMessage(guildId) {
 }
 
 
-async function addTempChannel(guildId, channelId, ownerId, roleId = null) {
+async function addTempChannel(
+  guildId,
+  channelId,
+  ownerId,
+  roleId = null,
+  lfgEnabled = true
+) {
+  await ensureTempVoiceLfgEnabledColumn();
   await query(
     `
       INSERT INTO temp_voice_channels (
@@ -130,16 +150,18 @@ async function addTempChannel(guildId, channelId, ownerId, roleId = null) {
         channel_id,
         owner_id,
         created_at,
-        role_id
+        role_id,
+        lfg_enabled
       )
-      VALUES ($1, $2, $3, NOW(), $4)
+      VALUES ($1, $2, $3, NOW(), $4, $5)
       ON CONFLICT(channel_id) DO UPDATE SET
         guild_id = EXCLUDED.guild_id,
         owner_id = EXCLUDED.owner_id,
         created_at = EXCLUDED.created_at,
-        role_id = EXCLUDED.role_id
+        role_id = EXCLUDED.role_id,
+        lfg_enabled = EXCLUDED.lfg_enabled
     `,
-    [guildId, channelId, ownerId, roleId]
+    [guildId, channelId, ownerId, roleId, lfgEnabled]
   );
 }
 
@@ -168,10 +190,20 @@ async function getTempChannelOwner(channelId) {
 }
 
 async function getTempChannelInfo(channelId) {
-  const res = await query(
-    'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id FROM temp_voice_channels WHERE channel_id = $1',
-    [channelId]
-  );
+  await ensureTempVoiceLfgEnabledColumn();
+  let res;
+  try {
+    res = await query(
+      'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id, lfg_enabled FROM temp_voice_channels WHERE channel_id = $1',
+      [channelId]
+    );
+  } catch (error) {
+    if (error?.code !== '42703') throw error;
+    res = await query(
+      'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id FROM temp_voice_channels WHERE channel_id = $1',
+      [channelId]
+    );
+  }
   const row = res.rows[0];
   if (!row) return null;
   return {
@@ -179,6 +211,7 @@ async function getTempChannelInfo(channelId) {
     lfgChannelId: row.lfg_channel_id ?? null,
     lfgMessageId: row.lfg_message_id ?? null,
     roleId: row.role_id ?? null,
+    lfgEnabled: row.lfg_enabled ?? true,
   };
 }
 

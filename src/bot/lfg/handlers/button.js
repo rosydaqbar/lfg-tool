@@ -61,6 +61,13 @@ async function handleButtonInteraction(interaction, deps) {
       });
       return true;
     }
+    if (tempInfo.lfgEnabled === false) {
+      await interaction.reply({
+        content: 'Fitur Send LFG Post dinonaktifkan untuk lobby ini.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
 
     const remaining = getCooldownRemainingMs(guildId, interaction.user.id);
     if (remaining > 0) {

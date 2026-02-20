@@ -84,6 +84,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
       (entry) => entry.channelId === lobbyChannelId
     );
     const lobbyRoleId = lobbyEntry?.roleId ?? null;
+    const lobbyLfgEnabled = lobbyEntry?.lfgEnabled ?? true;
     if (!lobbyRoleId) return;
 
     const member = newState.member;
@@ -144,7 +145,8 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
         guildId,
         createdChannel.id,
         member.id,
-        lobbyRoleId
+        lobbyRoleId,
+        lobbyLfgEnabled
       );
       await newState.setChannel(createdChannel);
       const lfgChannelId =
@@ -152,7 +154,8 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
       await lfgManager.sendJoinToCreatePrompt(
         createdChannel,
         member,
-        lfgChannelId
+        lfgChannelId,
+        lobbyLfgEnabled
       );
     } catch (error) {
       console.error('Failed to create Join-to-Create channel:', error);
