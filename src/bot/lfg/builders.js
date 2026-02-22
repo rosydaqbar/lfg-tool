@@ -145,6 +145,12 @@ function buildJoinToCreatePromptPayload({
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(detailLines))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
     .addTextDisplayComponents(helpText)
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        '-# Ingin memasukan bot ini ke servermu? Kontak: <@111080662550732800>'
+      )
+    )
     .addActionRowComponents(...buildVoiceSettingsRows(channelId));
 
   return {
@@ -153,9 +159,6 @@ function buildJoinToCreatePromptPayload({
       ...(lfgEnabled ? buildLfgPromptRows(channelId) : []),
       topSeparator,
       container,
-      new TextDisplayBuilder().setContent(
-        '-# Ingin memasukan bot ini ke servermu? Kontak: <@111080662550732800>'
-      ),
     ],
     flags: MessageFlags.IsComponentsV2,
   };
