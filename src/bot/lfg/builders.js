@@ -145,13 +145,13 @@ function buildJoinToCreatePromptPayload({
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(detailLines))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
     .addTextDisplayComponents(helpText)
+    .addActionRowComponents(...buildVoiceSettingsRows(channelId))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
         '-# Ingin memasukan bot ini ke servermu? Kontak: <@111080662550732800>'
       )
-    )
-    .addActionRowComponents(...buildVoiceSettingsRows(channelId));
+    );
 
   return {
     components: [
