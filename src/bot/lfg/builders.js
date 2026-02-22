@@ -73,27 +73,27 @@ function buildVoiceSettingsRows(channelId) {
       new ButtonBuilder()
         .setCustomId(`${CHANNEL_NAME_PREFIX}:${channelId}`)
         .setEmoji('✏️')
-        .setLabel('Channel Name')
+        .setLabel('Nama Channel')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${CHANNEL_SIZE_PREFIX}:${channelId}`)
         .setEmoji('👥')
-        .setLabel('Channel Size')
+        .setLabel('Ukuran Channel')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${CHANNEL_LOCK_PREFIX}:${channelId}`)
         .setEmoji('🔒')
-        .setLabel('Lock')
+        .setLabel('Kunci')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${CHANNEL_UNLOCK_PREFIX}:${channelId}`)
         .setEmoji('🔓')
-        .setLabel('Unlock')
+        .setLabel('Buka Kunci')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`${TRANSFER_PREFIX}:${channelId}`)
         .setEmoji('🔁')
-        .setLabel('Transfer Ownership')
+        .setLabel('Transfer Kepemilikan')
         .setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
@@ -153,6 +153,9 @@ function buildJoinToCreatePromptPayload({
       ...(lfgEnabled ? buildLfgPromptRows(channelId) : []),
       topSeparator,
       container,
+      new TextDisplayBuilder().setContent(
+        '-# Ingin memasukan bot ini ke servermu? Kontak: <@111080662550732800>'
+      ),
     ],
     flags: MessageFlags.IsComponentsV2,
   };
