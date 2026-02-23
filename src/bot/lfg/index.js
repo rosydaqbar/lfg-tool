@@ -82,7 +82,9 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       isLocked: isVoiceChannelLocked(channel, guild),
       lfgEnabled,
       lfgChannelId,
+      memberCount: channel.members?.size ?? 0,
       ownerId: tempInfo.ownerId,
+      userLimit: channel.userLimit ?? 0,
     });
 
     let message = null;
@@ -146,7 +148,9 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       isLocked: isVoiceChannelLocked(channel, channel.guild),
       lfgEnabled,
       lfgChannelId,
+      memberCount: channel.members?.size ?? 0,
       ownerId: member.id,
+      userLimit: channel.userLimit ?? 0,
     });
 
     try {

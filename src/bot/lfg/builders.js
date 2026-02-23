@@ -117,7 +117,9 @@ function buildJoinToCreatePromptPayload({
   isLocked,
   lfgEnabled = true,
   lfgChannelId,
+  memberCount = 0,
   ownerId,
+  userLimit = 0,
 }) {
   const introText = lfgEnabled
     ? `Hi <@${ownerId}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?`
@@ -134,6 +136,7 @@ function buildJoinToCreatePromptPayload({
     `- Dibuat pada: <t:${createdTimestamp}:F>`,
     `- Owner saat ini: <@${ownerId}>`,
     `- Status lock: ${isLocked ? 'Terkunci' : 'Terbuka'}`,
+    `- Ukuran Channel: \`${memberCount}/${userLimit > 0 ? userLimit : '∞'}\``,
   ].join('\n');
 
   const helpText = new TextDisplayBuilder().setContent(
