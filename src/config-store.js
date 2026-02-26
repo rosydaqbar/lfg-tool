@@ -28,6 +28,7 @@ async function query(text, params) {
 let lfgEnabledColumnEnsured = false;
 let tempVoiceLfgEnabledColumnEnsured = false;
 let tempVoiceActivityEnsured = false;
+let tempVoiceDeleteLogsEnsured = false;
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -72,6 +73,28 @@ async function ensureTempVoiceActivityTable() {
     tempVoiceActivityEnsured = true;
   } catch (error) {
     console.error('Failed to ensure temp_voice_activity table:', error);
+  }
+}
+
+async function ensureTempVoiceDeleteLogsTable() {
+  if (tempVoiceDeleteLogsEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS temp_voice_delete_logs (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          channel_name TEXT,
+          owner_id TEXT NOT NULL,
+          deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          history_json JSONB NOT NULL DEFAULT '[]'::jsonb
+        )
+      `
+    );
+    tempVoiceDeleteLogsEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure temp_voice_delete_logs table:', error);
   }
 }
 
@@ -332,6 +355,38 @@ async function clearVoiceActivity(channelId) {
   await query('DELETE FROM temp_voice_activity WHERE channel_id = $1', [channelId]);
 }
 
+async function addTempVoiceDeleteLog({
+  guildId,
+  channelId,
+  channelName = null,
+  ownerId,
+  history = [],
+  deletedAt = new Date(),
+}) {
+  await ensureTempVoiceDeleteLogsTable();
+  await query(
+    `
+      INSERT INTO temp_voice_delete_logs (
+        guild_id,
+        channel_id,
+        channel_name,
+        owner_id,
+        deleted_at,
+        history_json
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+    `,
+    [
+      guildId,
+      channelId,
+      channelName,
+      ownerId,
+      deletedAt,
+      JSON.stringify(history),
+    ]
+  );
+}
+
 module.exports = {
   getGuildConfig,
   addTempChannel,
@@ -349,4 +404,5 @@ module.exports = {
   updateTempChannelMessage,
   updateTempChannelOwner,
   clearVoiceActivity,
+  addTempVoiceDeleteLog,
 };

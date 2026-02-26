@@ -60,7 +60,19 @@ CREATE TABLE IF NOT EXISTS temp_voice_activity (
   PRIMARY KEY (channel_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS temp_voice_delete_logs (
+  id BIGSERIAL PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  channel_name TEXT,
+  owner_id TEXT NOT NULL,
+  deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  history_json JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+
 CREATE INDEX IF NOT EXISTS idx_voice_watchlist_guild ON voice_watchlist(guild_id);
 CREATE INDEX IF NOT EXISTS idx_jtc_lobbies_guild ON join_to_create_lobbies(guild_id);
 CREATE INDEX IF NOT EXISTS idx_temp_voice_guild ON temp_voice_channels(guild_id);
 CREATE INDEX IF NOT EXISTS idx_temp_voice_activity_channel ON temp_voice_activity(channel_id);
+CREATE INDEX IF NOT EXISTS idx_temp_voice_delete_logs_guild_deleted ON temp_voice_delete_logs(guild_id, deleted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_temp_voice_delete_logs_channel ON temp_voice_delete_logs(channel_id);

@@ -93,6 +93,15 @@ type TempChannel = {
   lfgMessageId: string | null;
 };
 
+type TempVoiceDeleteLog = {
+  id: string;
+  channelId: string;
+  channelName: string | null;
+  ownerId: string;
+  deletedAt: string;
+  history: { userId: string; totalMs: number }[];
+};
+
 
 const GUILD_ID = "670147766839803924";
 
@@ -109,9 +118,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
   >([]);
   const [logChannelOpen, setLogChannelOpen] = useState(false);
   const [lfgChannelOpen, setLfgChannelOpen] = useState(false);
-  const [logVoicePickerOpen, setLogVoicePickerOpen] = useState(false);
   const [lobbyPickerOpen, setLobbyPickerOpen] = useState(false);
-  const [selectedLogVoiceId, setSelectedLogVoiceId] = useState<string>("");
   const [selectedLobbyVoiceId, setSelectedLobbyVoiceId] = useState<string>("");
   const [lobbyRolePickerOpen, setLobbyRolePickerOpen] = useState(false);
   const [selectedLobbyRoleId, setSelectedLobbyRoleId] = useState<string>("");
@@ -120,7 +127,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tempChannels, setTempChannels] = useState<TempChannel[]>([]);
+  const [deleteLogs, setDeleteLogs] = useState<TempVoiceDeleteLog[]>([]);
+  const [loadingDeleteLogs, setLoadingDeleteLogs] = useState(false);
   const tempChannelsLoadedOnce = useRef(false);
+  const deleteLogsLoadedOnce = useRef(false);
 
   useEffect(() => {
     if (!selectedGuildId) return;
@@ -134,11 +144,12 @@ export default function DashboardClient({ userName }: { userName: string }) {
     setJoinToCreateLobbies([]);
     setLogChannelId("");
     setLfgChannelId("");
-    setSelectedLogVoiceId("");
     setSelectedLobbyVoiceId("");
     setSelectedLobbyRoleId("");
     setTempChannels([]);
+    setDeleteLogs([]);
     setLoadingTempChannels(true);
+    setLoadingDeleteLogs(true);
 
     Promise.all([
       fetch(`/api/guilds/${selectedGuildId}/channels`).then(async (response) => {
@@ -187,6 +198,39 @@ export default function DashboardClient({ userName }: { userName: string }) {
     if (!selectedGuildId) return;
     let active = true;
 
+    const loadDeleteLogs = async (showLoader: boolean) => {
+      if (showLoader) setLoadingDeleteLogs(true);
+      try {
+        const response = await fetch(
+          `/api/guilds/${selectedGuildId}/voice-delete-logs`,
+          { cache: "no-store" }
+        );
+        if (!response.ok) throw new Error("Failed to load delete logs");
+        const data = (await response.json()) as { deleteLogs: TempVoiceDeleteLog[] };
+        if (!active) return;
+        setDeleteLogs(data.deleteLogs ?? []);
+        deleteLogsLoadedOnce.current = true;
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load delete logs");
+      } finally {
+        if (active) setLoadingDeleteLogs(false);
+      }
+    };
+
+    loadDeleteLogs(!deleteLogsLoadedOnce.current);
+    const interval = setInterval(() => loadDeleteLogs(false), 15000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [selectedGuildId]);
+
+  useEffect(() => {
+    if (!selectedGuildId) return;
+    let active = true;
+
     const loadTempChannels = async (showLoader: boolean) => {
       if (showLoader) setLoadingTempChannels(true);
       try {
@@ -215,17 +259,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
       clearInterval(interval);
     };
   }, [selectedGuildId]);
-
-  const handleAddLoggingChannel = (channelId: string) => {
-    if (!channelId) return;
-    setEnabledVoiceIds((prev) =>
-      prev.includes(channelId) ? prev : [...prev, channelId]
-    );
-  };
-
-  const handleRemoveLoggingChannel = (channelId: string) => {
-    setEnabledVoiceIds((prev) => prev.filter((id) => id !== channelId));
-  };
 
   const handleAddLobbyChannel = (channelId: string, roleId: string) => {
     if (!channelId || !roleId) return;
@@ -326,7 +359,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
     }
   };
 
-  const enabledCount = enabledVoiceIds.length;
   const selectedLogChannel = textChannels.find(
     (channel) => channel.id === logChannelId
   );
@@ -343,14 +375,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
     : lfgChannelId
       ? `ID: ${lfgChannelId}`
       : "Use log channel";
-  const selectedLogVoiceChannel = voiceChannels.find(
-    (channel) => channel.id === selectedLogVoiceId
-  );
-  const logVoiceLabel = selectedLogVoiceChannel
-    ? selectedLogVoiceChannel.name
-    : selectedLogVoiceId
-      ? `ID: ${selectedLogVoiceId}`
-      : "Select a voice channel";
   const selectedLobbyVoiceChannel = voiceChannels.find(
     (channel) => channel.id === selectedLobbyVoiceId
   );
@@ -369,10 +393,16 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const hasMissingLobbyRole = joinToCreateLobbies.some(
     (item) => !item.roleId
   );
-  const availableLogChannels = voiceChannels.filter(
-    (channel) => !enabledVoiceIds.includes(channel.id)
-  );
   const availableLobbyChannels = voiceChannels;
+
+  const formatDuration = (totalMs: number) => {
+    const safeMs = Math.max(0, Number(totalMs) || 0);
+    const totalMinutes = Math.floor(safeMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours <= 0) return `${minutes}m`;
+    return `${hours}h ${minutes}m`;
+  };
 
 
   return (
@@ -386,8 +416,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
             Welcome back, {userName}
           </h1>
           <p className="max-w-2xl text-base text-muted-foreground">
-            Set a log channel and toggle which voice channels should be
-            tracked.
+            Set log/LFG channels and configure Join-to-Create lobbies.
           </p>
           <Badge variant="outline" className="rounded-full px-3 py-1">
             Guild ID: <span className="font-mono">{selectedGuildId}</span>
@@ -608,9 +637,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="rounded-full px-4 py-1">
-                Logging {enabledCount} / {voiceChannels.length}
-              </Badge>
-              <Badge variant="secondary" className="rounded-full px-4 py-1">
                 Join-to-Create {joinToCreateLobbyIds.length}
               </Badge>
             </div>
@@ -625,121 +651,13 @@ export default function DashboardClient({ userName }: { userName: string }) {
               <Skeleton className="h-10 w-full" />
             </div>
           ) : voiceChannels.length ? (
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium">Log joins</div>
-                  <Badge variant="secondary" className="rounded-full px-3 py-1">
-                    Selected {enabledCount}
-                  </Badge>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Popover
-                    open={logVoicePickerOpen}
-                    onOpenChange={setLogVoicePickerOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={logVoicePickerOpen}
-                        className="w-full justify-between sm:flex-1"
-                        disabled={availableLogChannels.length === 0}
-                      >
-                        {logVoiceLabel}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-                      <Command>
-                        <CommandInput placeholder="Search voice channels..." />
-                        <CommandEmpty>No channels available.</CommandEmpty>
-                        <CommandList>
-                          <CommandGroup>
-                            {availableLogChannels.map((channel) => (
-                              <CommandItem
-                                key={channel.id}
-                                value={`${channel.name} ${channel.id}`}
-                                onSelect={() => {
-                                  setSelectedLogVoiceId(channel.id);
-                                  setLogVoicePickerOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    selectedLogVoiceId === channel.id
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                                <span>{channel.name}</span>
-                                <span className="ml-auto text-xs text-muted-foreground font-mono">
-                                  {channel.id}
-                                </span>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      handleAddLoggingChannel(selectedLogVoiceId);
-                      setSelectedLogVoiceId("");
-                    }}
-                    disabled={
-                      !selectedLogVoiceId ||
-                      enabledVoiceIds.includes(selectedLogVoiceId)
-                    }
-                    className="sm:shrink-0"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add
-                  </Button>
-                </div>
-                {enabledVoiceIds.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {enabledVoiceIds.map((channelId) => {
-                      const channel = voiceChannels.find(
-                        (item) => item.id === channelId
-                      );
-                      return (
-                        <div
-                          key={channelId}
-                          className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs"
-                        >
-                          <span className="font-medium">
-                            {channel?.name ?? channelId}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => handleRemoveLoggingChannel(channelId)}
-                            aria-label={`Remove ${channel?.name ?? channelId}`}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground">
-                    No channels selected. The bot will log all joins by default.
-                  </div>
-                )}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">Join-to-Create lobbies</div>
+                <Badge variant="secondary" className="rounded-full px-3 py-1">
+                  Selected {joinToCreateLobbyIds.length}
+                </Badge>
               </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium">Join-to-Create lobbies</div>
-                  <Badge variant="secondary" className="rounded-full px-3 py-1">
-                    Selected {joinToCreateLobbyIds.length}
-                  </Badge>
-                </div>
                 <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
                   <Popover open={lobbyPickerOpen} onOpenChange={setLobbyPickerOpen}>
                     <PopoverTrigger asChild>
@@ -935,7 +853,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
                 <div className="text-xs text-muted-foreground">
                   Join-to-Create lobbies create a temporary channel per user.
                 </div>
-              </div>
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
@@ -1052,6 +969,78 @@ export default function DashboardClient({ userName }: { userName: string }) {
           ) : (
             <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
               No active temp channels found.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-[400ms]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Volume2 className="h-4 w-4" />
+            Voice Log
+          </CardTitle>
+          <CardDescription>
+            Log permanen channel temp yang sudah terhapus karena kosong, termasuk history durasi user.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingDeleteLogs ? (
+            <div className="space-y-2">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : deleteLogs.length ? (
+            <div className="space-y-4">
+              {deleteLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="rounded-xl border border-border bg-muted/30 p-4"
+                >
+                  <div className="mb-3 flex flex-wrap items-center gap-3">
+                    <Badge variant="secondary" className="rounded-full px-3 py-1">
+                      Channel: {log.channelName || "(unknown)"}
+                    </Badge>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {log.channelId}
+                    </span>
+                    <Badge variant="secondary" className="rounded-full px-3 py-1">
+                      Owner: {log.ownerId}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      Deleted: {new Date(log.deletedAt).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">History</div>
+                    {log.history.length ? (
+                      <div className="space-y-1">
+                        {log.history.slice(0, 15).map((item) => (
+                          <div
+                            key={`delete-history-${log.id}-${item.userId}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            <span className="font-mono text-foreground">{item.userId}</span>
+                            {" "}• total: <span className="font-mono">{formatDuration(item.totalMs)}</span>
+                          </div>
+                        ))}
+                        {log.history.length > 15 ? (
+                          <div className="text-xs text-muted-foreground">
+                            ...dan {log.history.length - 15} lainnya
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">Tidak ada riwayat user</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+              Belum ada log penghapusan temp channel.
             </div>
           )}
         </CardContent>

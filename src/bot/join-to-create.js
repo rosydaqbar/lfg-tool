@@ -25,16 +25,36 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
     channelName,
     ownerId,
   }) {
+    const activityRows = await configStore.getVoiceActivity(channelId).catch(() => []);
+    const historyRows = activityRows
+      .filter((row) => !row.isActive)
+      .sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0));
+
+    const historySnapshot = historyRows.map((row) => ({
+      userId: row.userId,
+      totalMs: Math.max(0, Number(row.totalMs) || 0),
+    }));
+
+    if (guildId && ownerId) {
+      await configStore
+        .addTempVoiceDeleteLog({
+          guildId,
+          channelId,
+          channelName,
+          ownerId,
+          history: historySnapshot,
+          deletedAt: new Date(),
+        })
+        .catch((error) => {
+          console.error('Failed to persist temp channel deletion log:', error);
+        });
+    }
+
     const logChannelId = await getDeletionLogChannelId(guildId);
     if (!logChannelId) return;
 
     const logChannel = await client.channels.fetch(logChannelId).catch(() => null);
     if (!logChannel || !logChannel.isTextBased()) return;
-
-    const activityRows = await configStore.getVoiceActivity(channelId).catch(() => []);
-    const historyRows = activityRows
-      .filter((row) => !row.isActive)
-      .sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0));
 
     const historyLines = historyRows.length
       ? historyRows.slice(0, 20).map(

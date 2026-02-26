@@ -38,6 +38,7 @@ async function query(text: string, params?: unknown[]) {
 }
 
 let lfgEnabledColumnEnsured = false;
+let tempVoiceDeleteLogsEnsured = false;
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -51,6 +52,28 @@ async function ensureJoinToCreateLfgEnabledColumn() {
       "Failed to ensure join_to_create_lobbies.lfg_enabled column:",
       error
     );
+  }
+}
+
+async function ensureTempVoiceDeleteLogsTable() {
+  if (tempVoiceDeleteLogsEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS temp_voice_delete_logs (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          channel_name TEXT,
+          owner_id TEXT NOT NULL,
+          deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          history_json JSONB NOT NULL DEFAULT '[]'::jsonb
+        )
+      `
+    );
+    tempVoiceDeleteLogsEnsured = true;
+  } catch (error) {
+    console.error("Failed to ensure temp_voice_delete_logs table:", error);
   }
 }
 
@@ -188,4 +211,51 @@ export async function getTempChannels(guildId: string) {
     lfg_channel_id: string | null;
     lfg_message_id: string | null;
   }[];
+}
+
+type DeleteLogRow = {
+  id: string | number;
+  channel_id: string;
+  channel_name: string | null;
+  owner_id: string;
+  deleted_at: string;
+  history_json: unknown;
+};
+
+export async function getTempVoiceDeleteLogs(guildId: string) {
+  await ensureTempVoiceDeleteLogsTable();
+  const res = await query(
+    `
+      SELECT id, channel_id, channel_name, owner_id, deleted_at, history_json
+      FROM temp_voice_delete_logs
+      WHERE guild_id = $1
+      ORDER BY deleted_at DESC
+      LIMIT 100
+    `,
+    [guildId]
+  );
+
+  return (res.rows as DeleteLogRow[]).map((row) => {
+    const rawHistory = Array.isArray(row.history_json) ? row.history_json : [];
+    const history = rawHistory
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const value = item as { userId?: unknown; totalMs?: unknown };
+        if (typeof value.userId !== "string") return null;
+        return {
+          userId: value.userId,
+          totalMs: Number(value.totalMs ?? 0),
+        };
+      })
+      .filter((item): item is { userId: string; totalMs: number } => item !== null);
+
+    return {
+      id: String(row.id),
+      channelId: row.channel_id,
+      channelName: row.channel_name,
+      ownerId: row.owner_id,
+      deletedAt: row.deleted_at,
+      history,
+    };
+  });
 }
