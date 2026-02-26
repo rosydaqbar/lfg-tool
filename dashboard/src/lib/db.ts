@@ -222,17 +222,29 @@ type DeleteLogRow = {
   history_json: unknown;
 };
 
-export async function getTempVoiceDeleteLogs(guildId: string) {
+export async function getTempVoiceDeleteLogs(
+  guildId: string,
+  limit = 100,
+  offset = 0
+) {
   await ensureTempVoiceDeleteLogsTable();
+  const safeLimit = Number.isFinite(limit)
+    ? Math.min(200, Math.max(1, Math.floor(limit)))
+    : 100;
+  const safeOffset = Number.isFinite(offset)
+    ? Math.max(0, Math.floor(offset))
+    : 0;
+
   const res = await query(
     `
       SELECT id, channel_id, channel_name, owner_id, deleted_at, history_json
       FROM temp_voice_delete_logs
       WHERE guild_id = $1
       ORDER BY deleted_at DESC
-      LIMIT 100
+      LIMIT $2
+      OFFSET $3
     `,
-    [guildId]
+    [guildId, safeLimit, safeOffset]
   );
 
   return (res.rows as DeleteLogRow[]).map((row) => {

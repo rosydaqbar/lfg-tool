@@ -5,7 +5,7 @@ import { requireAdminSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -14,6 +14,14 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const rows = await getTempVoiceDeleteLogs(id);
+  const { searchParams } = new URL(request.url);
+  const limit = Number.parseInt(searchParams.get("limit") || "100", 10);
+  const offset = Number.parseInt(searchParams.get("offset") || "0", 10);
+
+  const rows = await getTempVoiceDeleteLogs(
+    id,
+    Number.isNaN(limit) ? 100 : limit,
+    Number.isNaN(offset) ? 0 : offset
+  );
   return NextResponse.json({ deleteLogs: rows });
 }
