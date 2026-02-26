@@ -123,10 +123,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     newChannelId: newState.channelId,
   });
 
-  if (oldState.channelId && oldState.channelId !== newState.channelId) {
-    await joinToCreateManager.cleanupTempChannel(oldState);
-  }
-
   const guildId = newState.guild?.id || oldState.guild?.id;
   if (!guildId) {
     debugLog('Skip: missing guild id');
@@ -147,6 +143,48 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   }
 
   await joinToCreateManager.handleJoinToCreate(oldState, newState, config);
+
+  const member = newState.member || oldState.member;
+  if (!member?.user?.bot) {
+    const oldChannelId = oldState.channelId;
+    const newChannelId = newState.channelId;
+    const moved = oldChannelId !== newChannelId;
+
+    const [oldTempInfo, newTempInfo] = await Promise.all([
+      oldChannelId
+        ? configStore.getTempChannelInfo(oldChannelId).catch(() => null)
+        : Promise.resolve(null),
+      newChannelId
+        ? configStore.getTempChannelInfo(newChannelId).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    if (moved && oldTempInfo) {
+      await configStore
+        .markVoiceLeave(oldChannelId, newState.id, new Date())
+        .catch((error) => {
+          console.error('Failed to mark voice leave:', error);
+        });
+      await lfgManager
+        .refreshJoinToCreatePrompt(oldState.guild || newState.guild, oldChannelId)
+        .catch(() => null);
+    }
+
+    if (moved && newTempInfo) {
+      await configStore
+        .upsertVoiceJoin(newChannelId, newState.id, new Date())
+        .catch((error) => {
+          console.error('Failed to mark voice join:', error);
+        });
+      await lfgManager
+        .refreshJoinToCreatePrompt(newState.guild || oldState.guild, newChannelId)
+        .catch(() => null);
+    }
+  }
+
+  if (oldState.channelId && oldState.channelId !== newState.channelId) {
+    await joinToCreateManager.cleanupTempChannel(oldState);
+  }
 
   const joined = !oldState.channelId && newState.channelId;
   if (!joined) {

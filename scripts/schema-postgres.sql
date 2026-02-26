@@ -50,6 +50,17 @@ CREATE TABLE IF NOT EXISTS lfg_persistent_message (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS temp_voice_activity (
+  channel_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  joined_at TIMESTAMPTZ,
+  total_ms BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (channel_id, user_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_voice_watchlist_guild ON voice_watchlist(guild_id);
 CREATE INDEX IF NOT EXISTS idx_jtc_lobbies_guild ON join_to_create_lobbies(guild_id);
 CREATE INDEX IF NOT EXISTS idx_temp_voice_guild ON temp_voice_channels(guild_id);
+CREATE INDEX IF NOT EXISTS idx_temp_voice_activity_channel ON temp_voice_activity(channel_id);

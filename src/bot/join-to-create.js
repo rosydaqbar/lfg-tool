@@ -148,6 +148,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
         lobbyRoleId,
         lobbyLfgEnabled
       );
+      await configStore.upsertVoiceJoin(createdChannel.id, member.id, new Date());
       await newState.setChannel(createdChannel);
       const lfgChannelId =
         config.lfgChannelId || config.logChannelId || env.LOG_CHANNEL_ID;

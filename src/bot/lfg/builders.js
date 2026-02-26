@@ -111,6 +111,54 @@ function buildVoiceSettingsRows(channelId) {
   ];
 }
 
+function formatDuration(totalMs) {
+  const safeMs = Math.max(0, Number(totalMs) || 0);
+  const totalMinutes = Math.floor(safeMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+}
+
+function buildVoiceActivityContainer(activity) {
+  const active = (activity?.active || []).slice(0, 10);
+  const history = (activity?.history || []).slice(0, 10);
+
+  const activeLines = active.length
+    ? active.map(
+      (row) => `- <@${row.userId}> • masuk: ${row.joinedAt ? `<t:${Math.floor(row.joinedAt.getTime() / 1000)}:R>` : '-'}`
+    )
+    : ['- Tidak ada user aktif'];
+
+  const historyLines = history.length
+    ? history.map(
+      (row) => `- <@${row.userId}> • total: \`${formatDuration(row.totalMs)}\``
+    )
+    : ['- Belum ada history'];
+
+  if ((activity?.activeCount || 0) > active.length) {
+    activeLines.push(`- ...dan ${(activity.activeCount || 0) - active.length} lainnya`);
+  }
+
+  if ((activity?.historyCount || 0) > history.length) {
+    historyLines.push(`- ...dan ${(activity.historyCount || 0) - history.length} lainnya`);
+  }
+
+  const body = [
+    '### Active in Voice',
+    '',
+    '**Aktif Saat Ini**',
+    ...activeLines,
+    '',
+    '**History**',
+    ...historyLines,
+  ].join('\n');
+
+  return new ContainerBuilder()
+    .setAccentColor(0x0ea5e9)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
+}
+
 function buildJoinToCreatePromptPayload({
   channelId,
   createdTimestamp,
@@ -120,6 +168,7 @@ function buildJoinToCreatePromptPayload({
   memberCount = 0,
   ownerId,
   userLimit = 0,
+  voiceActivity = { active: [], history: [], activeCount: 0, historyCount: 0 },
 }) {
   const introText = lfgEnabled
     ? `Hi <@${ownerId}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?`
@@ -162,6 +211,7 @@ function buildJoinToCreatePromptPayload({
       ...(lfgEnabled ? buildLfgPromptRows(channelId) : []),
       topSeparator,
       container,
+      buildVoiceActivityContainer(voiceActivity),
     ],
     flags: MessageFlags.IsComponentsV2,
   };

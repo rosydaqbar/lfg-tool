@@ -39,6 +39,18 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     return overwrite.deny.has('Connect');
   }
 
+  async function getVoiceActivitySnapshot(channelId) {
+    const rows = await configStore.getVoiceActivity(channelId).catch(() => []);
+    const active = rows.filter((row) => row.isActive);
+    const history = rows.filter((row) => !row.isActive);
+    return {
+      active,
+      history,
+      activeCount: active.length,
+      historyCount: history.length,
+    };
+  }
+
   async function findPromptMessage(channel) {
     if (!channel || typeof channel.messages?.fetch !== 'function') return null;
     const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
@@ -85,6 +97,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       memberCount: channel.members?.size ?? 0,
       ownerId: tempInfo.ownerId,
       userLimit: channel.userLimit ?? 0,
+      voiceActivity: await getVoiceActivitySnapshot(channelId),
     });
 
     let message = null;
@@ -100,7 +113,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     await message
       .edit({
         ...payload,
-        allowedMentions: { users: [tempInfo.ownerId] },
+        allowedMentions: { parse: [] },
       })
       .catch(() => null);
 
@@ -151,12 +164,13 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
       memberCount: channel.members?.size ?? 0,
       ownerId: member.id,
       userLimit: channel.userLimit ?? 0,
+      voiceActivity: await getVoiceActivitySnapshot(channel.id),
     });
 
     try {
       const sent = await channel.send({
         ...payload,
-        allowedMentions: { users: [member.id] },
+        allowedMentions: { parse: [] },
       });
       setPromptMessageId(channel.id, sent.id);
     } catch (error) {
@@ -226,6 +240,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     editLfgDisbandedMessage,
     ensurePersistentLfgMessage: persistentManager.ensurePersistentLfgMessage,
     handleInteraction,
+    refreshJoinToCreatePrompt,
     sendJoinToCreatePrompt,
     startPersistentLoop: persistentManager.startPersistentLoop,
     stopPersistentLoop: persistentManager.stopPersistentLoop,

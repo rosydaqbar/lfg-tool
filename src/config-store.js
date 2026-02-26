@@ -27,6 +27,7 @@ async function query(text, params) {
 
 let lfgEnabledColumnEnsured = false;
 let tempVoiceLfgEnabledColumnEnsured = false;
+let tempVoiceActivityEnsured = false;
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -49,6 +50,28 @@ async function ensureTempVoiceLfgEnabledColumn() {
     tempVoiceLfgEnabledColumnEnsured = true;
   } catch (error) {
     console.error('Failed to ensure temp_voice_channels.lfg_enabled column:', error);
+  }
+}
+
+async function ensureTempVoiceActivityTable() {
+  if (tempVoiceActivityEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS temp_voice_activity (
+          channel_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          joined_at TIMESTAMPTZ,
+          total_ms BIGINT NOT NULL DEFAULT 0,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (channel_id, user_id)
+        )
+      `
+    );
+    tempVoiceActivityEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure temp_voice_activity table:', error);
   }
 }
 
@@ -230,9 +253,83 @@ async function updateTempChannelOwner(channelId, ownerId) {
 }
 
 async function removeTempChannel(channelId) {
+  await clearVoiceActivity(channelId).catch(() => null);
   await query('DELETE FROM temp_voice_channels WHERE channel_id = $1', [
     channelId,
   ]);
+}
+
+async function upsertVoiceJoin(channelId, userId, joinedAt = new Date()) {
+  await ensureTempVoiceActivityTable();
+  await query(
+    `
+      INSERT INTO temp_voice_activity (channel_id, user_id, is_active, joined_at, total_ms, updated_at)
+      VALUES ($1, $2, TRUE, $3, 0, NOW())
+      ON CONFLICT(channel_id, user_id) DO UPDATE SET
+        is_active = TRUE,
+        joined_at = CASE
+          WHEN temp_voice_activity.is_active = TRUE AND temp_voice_activity.joined_at IS NOT NULL
+            THEN temp_voice_activity.joined_at
+          ELSE EXCLUDED.joined_at
+        END,
+        updated_at = NOW()
+    `,
+    [channelId, userId, joinedAt]
+  );
+}
+
+async function markVoiceLeave(channelId, userId, leftAt = new Date()) {
+  await ensureTempVoiceActivityTable();
+  await query(
+    `
+      UPDATE temp_voice_activity
+      SET
+        total_ms = total_ms + CASE
+          WHEN is_active = TRUE AND joined_at IS NOT NULL
+            THEN GREATEST(
+              0,
+              FLOOR(EXTRACT(EPOCH FROM ($3::timestamptz - joined_at)) * 1000)
+            )::BIGINT
+          ELSE 0
+        END,
+        is_active = FALSE,
+        joined_at = NULL,
+        updated_at = NOW()
+      WHERE channel_id = $1 AND user_id = $2
+    `,
+    [channelId, userId, leftAt]
+  );
+}
+
+async function getVoiceActivity(channelId) {
+  await ensureTempVoiceActivityTable();
+  const res = await query(
+    `
+      SELECT
+        user_id,
+        is_active,
+        joined_at,
+        total_ms,
+        updated_at
+      FROM temp_voice_activity
+      WHERE channel_id = $1
+      ORDER BY is_active DESC, updated_at DESC
+    `,
+    [channelId]
+  );
+
+  return res.rows.map((row) => ({
+    userId: row.user_id,
+    isActive: row.is_active === true,
+    joinedAt: row.joined_at ? new Date(row.joined_at) : null,
+    totalMs: Number(row.total_ms) || 0,
+    updatedAt: row.updated_at ? new Date(row.updated_at) : null,
+  }));
+}
+
+async function clearVoiceActivity(channelId) {
+  await ensureTempVoiceActivityTable();
+  await query('DELETE FROM temp_voice_activity WHERE channel_id = $1', [channelId]);
 }
 
 module.exports = {
@@ -244,8 +341,12 @@ module.exports = {
   getTempChannelByOwner,
   getTempChannelOwner,
   getTempChannelInfo,
+  getVoiceActivity,
+  markVoiceLeave,
   removeTempChannel,
   setPersistentLfgMessage,
+  upsertVoiceJoin,
   updateTempChannelMessage,
   updateTempChannelOwner,
+  clearVoiceActivity,
 };
