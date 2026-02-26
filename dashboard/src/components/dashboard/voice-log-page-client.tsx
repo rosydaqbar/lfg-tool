@@ -124,7 +124,7 @@ export function VoiceLogPageClient({ selectedGuildId }: { selectedGuildId: strin
                       {log.channelId}
                     </span>
                     <Badge variant="secondary" className="rounded-full px-3 py-1">
-                      Owner: {log.ownerId}
+                      Owner: {log.ownerName || log.ownerId}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       Deleted: {new Date(log.deletedAt).toLocaleString()}
@@ -140,7 +140,8 @@ export function VoiceLogPageClient({ selectedGuildId }: { selectedGuildId: strin
                             key={`delete-history-full-${log.id}-${item.userId}`}
                             className="text-xs text-muted-foreground"
                           >
-                            <span className="font-mono text-foreground">{item.userId}</span>
+                            <span className="text-foreground">{item.userName || item.userId}</span>
+                            <span className="font-mono text-muted-foreground"> ({item.userId})</span>
                             {" "}• total:{" "}
                             <span className="font-mono">{formatDuration(item.totalMs)}</span>
                           </div>

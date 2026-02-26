@@ -120,7 +120,12 @@ function ActiveTempChannelsCardComponent({
                       </a>
                     </TableCell>
                     <TableCell>
-                      <span className="font-mono">{item.ownerId}</span>
+                      <div className="text-sm font-medium">
+                        {item.ownerName || item.ownerId}
+                      </div>
+                      <div className="text-xs font-mono text-muted-foreground">
+                        {item.ownerId}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">

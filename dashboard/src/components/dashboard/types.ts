@@ -19,6 +19,7 @@ export type JoinToCreateLobby = {
 export type TempChannel = {
   channelId: string;
   ownerId: string;
+  ownerName?: string | null;
   createdAt: string;
   lfgChannelId: string | null;
   lfgMessageId: string | null;
@@ -29,8 +30,9 @@ export type TempVoiceDeleteLog = {
   channelId: string;
   channelName: string | null;
   ownerId: string;
+  ownerName?: string | null;
   deletedAt: string;
-  history: { userId: string; totalMs: number }[];
+  history: { userId: string; userName?: string | null; totalMs: number }[];
 };
 
 export type ConfigResponse = {

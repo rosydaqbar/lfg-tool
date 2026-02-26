@@ -108,7 +108,7 @@ function VoiceLogDeletedCardComponent({
                     {log.channelId}
                   </span>
                   <Badge variant="secondary" className="rounded-full px-3 py-1">
-                    Owner: {log.ownerId}
+                    Owner: {log.ownerName || log.ownerId}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
                     Deleted: {new Date(log.deletedAt).toLocaleString()}
@@ -119,16 +119,19 @@ function VoiceLogDeletedCardComponent({
                   <div className="text-sm font-medium">History</div>
                   {log.history.length ? (
                     <div className="space-y-1">
-                      {log.history.slice(0, 15).map((item) => (
-                        <div
-                          key={`delete-history-${log.id}-${item.userId}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          <span className="font-mono text-foreground">{item.userId}</span>
-                          {" "}• total:{" "}
-                          <span className="font-mono">{formatDuration(item.totalMs)}</span>
-                        </div>
-                      ))}
+                        {log.history.slice(0, 15).map((item) => (
+                          <div
+                            key={`delete-history-${log.id}-${item.userId}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            <span className="text-foreground">
+                              {item.userName || item.userId}
+                            </span>
+                            <span className="font-mono text-muted-foreground"> ({item.userId})</span>
+                            {" "}• total:{" "}
+                            <span className="font-mono">{formatDuration(item.totalMs)}</span>
+                          </div>
+                        ))}
                       {log.history.length > 15 ? (
                         <div className="text-xs text-muted-foreground">
                           ...dan {log.history.length - 15} lainnya

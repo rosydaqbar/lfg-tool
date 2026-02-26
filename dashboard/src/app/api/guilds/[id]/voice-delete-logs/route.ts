@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTempVoiceDeleteLogs } from "@/lib/db";
+import { resolveGuildUsernames } from "@/lib/discord-usernames";
 import { requireAdminSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -23,5 +24,21 @@ export async function GET(
     Number.isNaN(limit) ? 100 : limit,
     Number.isNaN(offset) ? 0 : offset
   );
-  return NextResponse.json({ deleteLogs: rows });
+
+  const allUserIds = rows.flatMap((row) => [
+    row.ownerId,
+    ...row.history.map((item) => item.userId),
+  ]);
+  const names = await resolveGuildUsernames(id, allUserIds);
+
+  return NextResponse.json({
+    deleteLogs: rows.map((row) => ({
+      ...row,
+      ownerName: names.get(row.ownerId) ?? null,
+      history: row.history.map((item) => ({
+        ...item,
+        userName: names.get(item.userId) ?? null,
+      })),
+    })),
+  });
 }
