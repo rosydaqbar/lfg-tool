@@ -145,7 +145,8 @@ function buildVoiceActivityContainer(activity) {
   }
 
   const body = [
-    '### Active in Voice',
+    '### Voice Log',
+    '-# Pantau siapa yang sedang aktif di voice channel ini dan riwayat durasi user yang sudah keluar.',
     '',
     '**Aktif Saat Ini**',
     ...activeLines,
