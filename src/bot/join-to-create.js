@@ -1,4 +1,4 @@
-const { ChannelType, OverwriteType } = require('discord.js');
+const { ChannelType, MessageFlags, OverwriteType } = require('discord.js');
 
 function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
   const joinToCreatePending = new Set();
@@ -46,8 +46,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
       historyLines.push(`- ...dan ${historyRows.length - 20} lainnya`);
     }
 
-    const lines = [
-      '### Temp Voice Channel Deleted',
+    const detailLines = [
       `- Channel: ${channelName ? `\`${channelName}\`` : '(unknown)'} (\`${channelId}\`)`,
       `- Owner: <@${ownerId}>`,
       `- Deleted: <t:${Math.floor(Date.now() / 1000)}:F>`,
@@ -57,7 +56,28 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
     ];
 
     await logChannel.send({
-      content: lines.join('\n'),
+      flags: MessageFlags.IsComponentsV2,
+      components: [
+        {
+          type: 17,
+          accent_color: 0xef4444,
+          components: [
+            {
+              type: 10,
+              content: '### Temp Voice Channel Deleted',
+            },
+            {
+              type: 14,
+              divider: true,
+              spacing: 1,
+            },
+            {
+              type: 10,
+              content: detailLines.join('\n'),
+            },
+          ],
+        },
+      ],
       allowedMentions: { parse: [] },
     }).catch((error) => {
       console.error('Failed to send temp channel deletion log:', error);
