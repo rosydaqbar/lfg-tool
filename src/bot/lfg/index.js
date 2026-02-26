@@ -170,7 +170,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     try {
       const sent = await channel.send({
         ...payload,
-        allowedMentions: { parse: [] },
+        allowedMentions: { users: [member.id] },
       });
       setPromptMessageId(channel.id, sent.id);
     } catch (error) {
