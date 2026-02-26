@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 import { ChannelConfigCards } from "@/components/dashboard/channel-config-cards";
 import { HeaderSection } from "@/components/dashboard/header-section";
@@ -21,6 +22,9 @@ const GUILD_ID = "670147766839803924";
 
 export default function DashboardClient({ userName }: { userName: string }) {
   const selectedGuildId = GUILD_ID;
+  const [activeTab, setActiveTab] = useState<
+    "settings" | "active-temp" | "voice-log"
+  >("settings");
   const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
   const [textChannels, setTextChannels] = useState<Channel[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -212,31 +216,67 @@ export default function DashboardClient({ userName }: { userName: string }) {
         </div>
       ) : null}
 
-      <ChannelConfigCards
-        loadingConfig={loadingConfig}
-        textChannels={memoTextChannels}
-        logChannelId={logChannelId}
-        lfgChannelId={lfgChannelId}
-        selectedGuildId={selectedGuildId}
-        onLogChannelChange={setLogChannelId}
-        onLfgChannelChange={setLfgChannelId}
-      />
+      <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 backdrop-blur">
+        <Button
+          type="button"
+          variant={activeTab === "settings" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setActiveTab("settings")}
+        >
+          Settings
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === "active-temp" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setActiveTab("active-temp")}
+        >
+          Active temp channels
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === "voice-log" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setActiveTab("voice-log")}
+        >
+          Voice Log
+        </Button>
+      </div>
 
-      <VoiceSettingsSection
-        loadingConfig={loadingConfig}
-        logChannelId={logChannelId}
-        saving={saving}
-        voiceChannels={memoVoiceChannels}
-        roles={memoRoles}
-        joinToCreateLobbies={memoJoinToCreateLobbies}
-        onAddLobbyChannel={handleAddLobbyChannel}
-        onToggleLobbyLfg={handleToggleLobbyLfg}
-        onRemoveLobbyChannel={handleRemoveLobbyChannel}
-        onSave={handleSave}
-      />
+      {activeTab === "settings" ? (
+        <>
+          <ChannelConfigCards
+            loadingConfig={loadingConfig}
+            textChannels={memoTextChannels}
+            logChannelId={logChannelId}
+            lfgChannelId={lfgChannelId}
+            selectedGuildId={selectedGuildId}
+            onLogChannelChange={setLogChannelId}
+            onLfgChannelChange={setLfgChannelId}
+          />
 
-      <ActiveTempChannelsCard selectedGuildId={selectedGuildId} />
-      <VoiceLogDeletedCard selectedGuildId={selectedGuildId} />
+          <VoiceSettingsSection
+            loadingConfig={loadingConfig}
+            logChannelId={logChannelId}
+            saving={saving}
+            voiceChannels={memoVoiceChannels}
+            roles={memoRoles}
+            joinToCreateLobbies={memoJoinToCreateLobbies}
+            onAddLobbyChannel={handleAddLobbyChannel}
+            onToggleLobbyLfg={handleToggleLobbyLfg}
+            onRemoveLobbyChannel={handleRemoveLobbyChannel}
+            onSave={handleSave}
+          />
+        </>
+      ) : null}
+
+      {activeTab === "active-temp" ? (
+        <ActiveTempChannelsCard selectedGuildId={selectedGuildId} />
+      ) : null}
+
+      {activeTab === "voice-log" ? (
+        <VoiceLogDeletedCard selectedGuildId={selectedGuildId} />
+      ) : null}
     </div>
   );
 }
