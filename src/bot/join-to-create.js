@@ -3,6 +3,67 @@ const { ChannelType, OverwriteType } = require('discord.js');
 function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
   const joinToCreatePending = new Set();
 
+  function formatDuration(totalMs) {
+    const safeMs = Math.max(0, Number(totalMs) || 0);
+    const totalMinutes = Math.floor(safeMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours <= 0) return `${minutes}m`;
+    return `${hours}h ${minutes}m`;
+  }
+
+  async function getDeletionLogChannelId(guildId) {
+    if (env.LOG_CHANNEL_ID) return env.LOG_CHANNEL_ID;
+    if (!guildId) return null;
+    const config = await configStore.getGuildConfig(guildId).catch(() => null);
+    return config?.logChannelId || null;
+  }
+
+  async function sendTempChannelDeletedLog({
+    guildId,
+    channelId,
+    channelName,
+    ownerId,
+  }) {
+    const logChannelId = await getDeletionLogChannelId(guildId);
+    if (!logChannelId) return;
+
+    const logChannel = await client.channels.fetch(logChannelId).catch(() => null);
+    if (!logChannel || !logChannel.isTextBased()) return;
+
+    const activityRows = await configStore.getVoiceActivity(channelId).catch(() => []);
+    const historyRows = activityRows
+      .filter((row) => !row.isActive)
+      .sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0));
+
+    const historyLines = historyRows.length
+      ? historyRows.slice(0, 20).map(
+        (row) => `- <@${row.userId}> • total: \`${formatDuration(row.totalMs)}\``
+      )
+      : ['- Tidak ada riwayat user'];
+
+    if (historyRows.length > 20) {
+      historyLines.push(`- ...dan ${historyRows.length - 20} lainnya`);
+    }
+
+    const lines = [
+      '### Temp Voice Channel Deleted',
+      `- Channel: ${channelName ? `\`${channelName}\`` : '(unknown)'} (\`${channelId}\`)`,
+      `- Owner: <@${ownerId}>`,
+      `- Deleted: <t:${Math.floor(Date.now() / 1000)}:F>`,
+      '',
+      '**History**',
+      ...historyLines,
+    ];
+
+    await logChannel.send({
+      content: lines.join('\n'),
+      allowedMentions: { parse: [] },
+    }).catch((error) => {
+      console.error('Failed to send temp channel deletion log:', error);
+    });
+  }
+
   function buildChannelName(member, fallbackId) {
     const base =
       member?.displayName || member?.user?.username || `User-${fallbackId}`;
@@ -47,6 +108,12 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
 
       const channel = oldState.channel;
       if (!channel || !channel.isVoiceBased()) {
+        await sendTempChannelDeletedLog({
+          guildId: oldState.guild?.id,
+          channelId: oldChannelId,
+          channelName: oldState.channel?.name ?? null,
+          ownerId: info.ownerId,
+        });
         await lfgManager.editLfgDisbandedMessage(info);
         await configStore.removeTempChannel(oldChannelId);
         return;
@@ -63,6 +130,12 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
       }
 
       if (deleted) {
+        await sendTempChannelDeletedLog({
+          guildId: oldState.guild?.id,
+          channelId: oldChannelId,
+          channelName: channel.name,
+          ownerId: info.ownerId,
+        });
         await lfgManager.editLfgDisbandedMessage(info);
         await configStore.removeTempChannel(oldChannelId);
       }
