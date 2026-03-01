@@ -46,6 +46,7 @@ function buildStatsCommand() {
 function createStatsManager({ client, configStore }) {
   function buildStatsContainerPayload({
     title,
+    introParagraph = null,
     lines,
     avatarUrl,
     accentColor = 0x3b82f6,
@@ -74,6 +75,14 @@ function createStatsManager({ client, configStore }) {
                 description: 'User avatar',
               },
             },
+            ...(introParagraph
+              ? [
+                  {
+                    type: 10,
+                    content: introParagraph,
+                  },
+                ]
+              : []),
             {
               type: 14,
               divider: true,
@@ -139,11 +148,9 @@ function createStatsManager({ client, configStore }) {
       : 'Tidak sedang aktif di voice';
 
     const lines = [
-      summaryParagraph,
-      '',
       '**Detail Lainnya**',
       `- Pernah Jadi Owner: \`${stats.ownerCount}\``,
-      `- Rank Guild: \`${stats.rank ?? '-'}\``,
+      `- Rank Server: \`${stats.rank ?? '-'}\``,
       `- Status Voice: ${activeStatus}`,
     ];
 
@@ -156,6 +163,7 @@ function createStatsManager({ client, configStore }) {
     await interaction.reply(
       buildStatsContainerPayload({
         title: `### Voice Stats`,
+        introParagraph: summaryParagraph,
         lines,
         avatarUrl,
         accentColor: 0x2563eb,
