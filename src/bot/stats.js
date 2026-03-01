@@ -128,17 +128,23 @@ function createStatsManager({ client, configStore }) {
     const averageMs =
       stats.sessions > 0 ? Math.floor(stats.totalMs / stats.sessions) : 0;
 
+    const summaryParagraph =
+      `<@${targetUser.id}> sudah menghabiskan total \`${formatDuration(stats.totalMs)}\` ` +
+      `dalam \`${stats.sessions}\` sesi voice. Rata-rata durasi per sesi ` +
+      `adalah \`${formatDuration(averageMs)}\`, dengan sesi terpanjang ` +
+      `\`${formatDuration(stats.longestMs)}\`.`;
+
+    const activeStatus = stats.activeNow
+      ? `Aktif sekarang selama \`${formatDuration(currentSessionMs)}\``
+      : 'Tidak sedang aktif di voice';
+
     const lines = [
-      `- User: <@${targetUser.id}>`,
-      `- Total Durasi Voice: \`${formatDuration(stats.totalMs)}\``,
-      `- Jumlah Sesi: \`${stats.sessions}\``,
-      `- Rata-rata Durasi/Sesi: \`${formatDuration(averageMs)}\``,
-      `- Sesi Terpanjang: \`${formatDuration(stats.longestMs)}\``,
+      summaryParagraph,
+      '',
+      '**Detail Lainnya**',
       `- Pernah Jadi Owner: \`${stats.ownerCount}\``,
       `- Rank Guild: \`${stats.rank ?? '-'}\``,
-      stats.activeNow
-        ? `- Aktif Sekarang: Ya (\`${formatDuration(currentSessionMs)}\`)`
-        : '- Aktif Sekarang: Tidak',
+      `- Status Voice: ${activeStatus}`,
     ];
 
     const avatarUrl = targetUser.displayAvatarURL({
