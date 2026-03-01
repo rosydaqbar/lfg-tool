@@ -23,11 +23,16 @@ const client = new Client({
 
 const debugLog = createDebugLogger(DEBUG === 'true');
 const { getLogChannel } = createLogChannelFetcher(client);
+const statsManager = createStatsManager({
+  client,
+  configStore,
+});
 const lfgManager = createLfgManager({
   client,
   getLogChannel,
   configStore,
   env: { LOG_CHANNEL_ID },
+  statsManager,
 });
 const joinToCreateManager = createJoinToCreateManager({
   client,
@@ -39,10 +44,6 @@ const voiceLogger = createVoiceLogger({
   getLogChannel,
   debugLog,
   env: { LOG_CHANNEL_ID, VOICE_CHANNEL_ID },
-});
-const statsManager = createStatsManager({
-  client,
-  configStore,
 });
 const healthServer = createHealthServer();
 

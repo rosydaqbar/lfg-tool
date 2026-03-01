@@ -16,7 +16,7 @@ const { handleModalInteraction } = require('./handlers/modal');
 const { handleSelectInteraction } = require('./handlers/select');
 const { createPersistentLfgManager } = require('./persistent');
 
-function createLfgManager({ client, getLogChannel, configStore, env }) {
+function createLfgManager({ client, getLogChannel, configStore, env, statsManager }) {
   const tempPromptMessageIds = new Map();
   const cooldownTracker = createCooldownTracker();
   const voiceContextHelpers = createVoiceContextHelpers(configStore);
@@ -137,6 +137,7 @@ function createLfgManager({ client, getLogChannel, configStore, env }) {
     configStore,
     env,
     getLogChannel,
+    replyMyStats: statsManager?.replyMyStats,
   };
 
   async function sendJoinToCreatePrompt(

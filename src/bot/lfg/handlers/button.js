@@ -11,6 +11,7 @@ const {
   CLAIM_PREFIX,
   LFG_SEND_PREFIX,
   LFG_SETTINGS_PREFIX,
+  MY_STATS_PREFIX,
   REGION_PREFIX,
   TRANSFER_PREFIX,
 } = require('../constants');
@@ -222,6 +223,19 @@ async function handleButtonInteraction(interaction, deps) {
         users: [context.tempInfo.ownerId, interaction.user.id],
       },
     });
+    return true;
+  }
+
+  if (prefix === MY_STATS_PREFIX) {
+    if (typeof deps.replyMyStats !== 'function') {
+      await interaction.reply({
+        content: 'Fitur stats belum siap. Coba lagi sebentar.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    await deps.replyMyStats(interaction);
     return true;
   }
 

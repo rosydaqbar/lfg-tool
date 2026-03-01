@@ -31,6 +31,7 @@ const {
   LFG_MESSAGE_INPUT_ID,
   LFG_MODAL_PREFIX,
   LFG_SEND_PREFIX,
+  MY_STATS_PREFIX,
   REGION_PREFIX,
   REGION_SELECT_PREFIX,
   TRANSFER_PREFIX,
@@ -106,6 +107,11 @@ function buildVoiceSettingsRows(channelId) {
         .setCustomId(`${REGION_PREFIX}:${channelId}`)
         .setEmoji('🌍')
         .setLabel('Region')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`${MY_STATS_PREFIX}:${channelId}`)
+        .setEmoji('📊')
+        .setLabel('My Stats')
         .setStyle(ButtonStyle.Secondary)
     ),
   ];

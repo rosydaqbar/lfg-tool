@@ -43,63 +43,108 @@ function buildStatsCommand() {
     .toJSON();
 }
 
-function createStatsManager({ client, configStore }) {
-  function buildStatsContainerPayload({
-    title,
-    introParagraph = null,
+function buildStatsContainerPayload({
+  title,
+  introParagraph = null,
+  lines,
+  avatarUrl,
+  accentColor = 0x3b82f6,
+  mentionUserId = null,
+}) {
+  return {
+    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    components: [
+      {
+        type: 17,
+        accent_color: accentColor,
+        components: [
+          {
+            type: 9,
+            components: introParagraph
+              ? [
+                  {
+                    type: 10,
+                    content: `${title}\n${introParagraph}`,
+                  },
+                ]
+              : [
+                  {
+                    type: 10,
+                    content: title,
+                  },
+                ],
+            accessory: {
+              type: 11,
+              media: {
+                url: avatarUrl,
+              },
+              description: 'User avatar',
+            },
+          },
+          {
+            type: 14,
+            divider: true,
+            spacing: 1,
+          },
+          {
+            type: 10,
+            content: lines.join('\n'),
+          },
+        ],
+      },
+    ],
+    allowedMentions: mentionUserId
+      ? { users: [mentionUserId] }
+      : { parse: [] },
+  };
+}
+
+async function buildUserStatsReplyPayload({ configStore, guildId, targetUser }) {
+  const stats = await configStore.getVoiceStatsForUser(guildId, targetUser.id);
+  const nowMs = Date.now();
+  const activeMs = stats.activeNow?.joinedAt
+    ? nowMs - stats.activeNow.joinedAt.getTime()
+    : 0;
+  const currentSessionMs =
+    (stats.activeNow?.previousTotalMs || 0) + Math.max(0, activeMs);
+
+  const averageMs =
+    stats.sessions > 0 ? Math.floor(stats.totalMs / stats.sessions) : 0;
+
+  const summaryParagraph =
+    `<@${targetUser.id}> sudah menghabiskan total \`${formatDuration(stats.totalMs)}\` ` +
+    `dalam \`${stats.sessions}\` sesi voice. Rata-rata durasi per sesi ` +
+    `adalah \`${formatDuration(averageMs)}\`, dengan sesi terpanjang ` +
+    `\`${formatDuration(stats.longestMs)}\`.`;
+
+  const activeStatus = stats.activeNow
+    ? `Aktif sekarang selama \`${formatDuration(currentSessionMs)}\``
+    : 'Tidak sedang aktif di voice';
+
+  const lines = [
+    '**Detail Lainnya**',
+    `- Pernah Jadi Owner: \`${stats.ownerCount}\``,
+    `- Rank Server: \`${stats.rank ?? '-'}\``,
+    `- Status Voice: ${activeStatus}`,
+  ];
+
+  const avatarUrl = targetUser.displayAvatarURL({
+    extension: 'png',
+    size: 128,
+    forceStatic: true,
+  });
+
+  return buildStatsContainerPayload({
+    title: '### Voice Stats',
+    introParagraph: summaryParagraph,
     lines,
     avatarUrl,
-    accentColor = 0x3b82f6,
-    mentionUserId = null,
-  }) {
-    return {
-      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-      components: [
-        {
-          type: 17,
-          accent_color: accentColor,
-          components: [
-            {
-              type: 9,
-              components: introParagraph
-                ? [
-                    {
-                      type: 10,
-                      content: `${title}\n${introParagraph}`,
-                    },
-                  ]
-                : [
-                    {
-                      type: 10,
-                      content: title,
-                    },
-                  ],
-              accessory: {
-                type: 11,
-                media: {
-                  url: avatarUrl,
-                },
-                description: 'User avatar',
-              },
-            },
-            {
-              type: 14,
-              divider: true,
-              spacing: 1,
-            },
-            {
-              type: 10,
-              content: lines.join('\n'),
-            },
-          ],
-        },
-      ],
-      allowedMentions: mentionUserId
-        ? { users: [mentionUserId] }
-        : { parse: [] },
-    };
-  }
+    accentColor: 0x2563eb,
+    mentionUserId: targetUser.id,
+  });
+}
 
+function createStatsManager({ client, configStore }) {
   async function registerCommands() {
     const command = buildStatsCommand();
     const guilds = [...client.guilds.cache.values()];
@@ -125,50 +170,17 @@ function createStatsManager({ client, configStore }) {
       return;
     }
 
-    const stats = await configStore.getVoiceStatsForUser(guildId, targetUser.id);
-    const nowMs = Date.now();
-    const activeMs = stats.activeNow?.joinedAt
-      ? nowMs - stats.activeNow.joinedAt.getTime()
-      : 0;
-    const currentSessionMs =
-      (stats.activeNow?.previousTotalMs || 0) + Math.max(0, activeMs);
-
-    const averageMs =
-      stats.sessions > 0 ? Math.floor(stats.totalMs / stats.sessions) : 0;
-
-    const summaryParagraph =
-      `<@${targetUser.id}> sudah menghabiskan total \`${formatDuration(stats.totalMs)}\` ` +
-      `dalam \`${stats.sessions}\` sesi voice. Rata-rata durasi per sesi ` +
-      `adalah \`${formatDuration(averageMs)}\`, dengan sesi terpanjang ` +
-      `\`${formatDuration(stats.longestMs)}\`.`;
-
-    const activeStatus = stats.activeNow
-      ? `Aktif sekarang selama \`${formatDuration(currentSessionMs)}\``
-      : 'Tidak sedang aktif di voice';
-
-    const lines = [
-      '**Detail Lainnya**',
-      `- Pernah Jadi Owner: \`${stats.ownerCount}\``,
-      `- Rank Server: \`${stats.rank ?? '-'}\``,
-      `- Status Voice: ${activeStatus}`,
-    ];
-
-    const avatarUrl = targetUser.displayAvatarURL({
-      extension: 'png',
-      size: 128,
-      forceStatic: true,
-    });
-
     await interaction.reply(
-      buildStatsContainerPayload({
-        title: `### Voice Stats`,
-        introParagraph: summaryParagraph,
-        lines,
-        avatarUrl,
-        accentColor: 0x2563eb,
-        mentionUserId: targetUser.id,
+      await buildUserStatsReplyPayload({
+        configStore,
+        guildId,
+        targetUser,
       })
     );
+  }
+
+  async function replyMyStats(interaction) {
+    await replyStats(interaction, interaction.user);
   }
 
   async function replyLeaderboard(interaction) {
@@ -219,7 +231,7 @@ function createStatsManager({ client, configStore }) {
 
     const subcommand = interaction.options.getSubcommand();
     if (subcommand === 'me') {
-      await replyStats(interaction, interaction.user);
+      await replyMyStats(interaction);
       return true;
     }
 
@@ -250,6 +262,7 @@ function createStatsManager({ client, configStore }) {
 
   return {
     handleInteraction,
+    replyMyStats,
     registerCommands,
   };
 }
