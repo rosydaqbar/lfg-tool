@@ -50,9 +50,14 @@ function buildStatsContainerPayload({
   avatarUrl,
   accentColor = 0x3b82f6,
   mentionUserId = null,
+  ephemeral = true,
 }) {
+  const flags = ephemeral
+    ? MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral
+    : MessageFlags.IsComponentsV2;
+
   return {
-    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    flags,
     components: [
       {
         type: 17,
@@ -99,7 +104,12 @@ function buildStatsContainerPayload({
   };
 }
 
-async function buildUserStatsReplyPayload({ configStore, guildId, targetUser }) {
+async function buildUserStatsReplyPayload({
+  configStore,
+  guildId,
+  targetUser,
+  ephemeral = true,
+}) {
   const stats = await configStore.getVoiceStatsForUser(guildId, targetUser.id);
   const nowMs = Date.now();
   const activeMs = stats.activeNow?.joinedAt
@@ -141,6 +151,7 @@ async function buildUserStatsReplyPayload({ configStore, guildId, targetUser }) 
     avatarUrl,
     accentColor: 0x2563eb,
     mentionUserId: targetUser.id,
+    ephemeral,
   });
 }
 
@@ -160,7 +171,7 @@ function createStatsManager({ client, configStore }) {
     );
   }
 
-  async function replyStats(interaction, targetUser) {
+  async function replyStats(interaction, targetUser, options = {}) {
     const guildId = interaction.guildId;
     if (!guildId) {
       await interaction.reply({
@@ -175,12 +186,13 @@ function createStatsManager({ client, configStore }) {
         configStore,
         guildId,
         targetUser,
+        ephemeral: options.ephemeral ?? true,
       })
     );
   }
 
-  async function replyMyStats(interaction) {
-    await replyStats(interaction, interaction.user);
+  async function replyMyStats(interaction, options = {}) {
+    await replyStats(interaction, interaction.user, options);
   }
 
   async function replyLeaderboard(interaction) {

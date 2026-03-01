@@ -235,7 +235,7 @@ async function handleButtonInteraction(interaction, deps) {
       return true;
     }
 
-    await deps.replyMyStats(interaction);
+    await deps.replyMyStats(interaction, { ephemeral: false });
     return true;
   }
 
