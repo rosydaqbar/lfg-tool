@@ -61,12 +61,19 @@ function createStatsManager({ client, configStore }) {
           components: [
             {
               type: 9,
-              components: [
-                {
-                  type: 10,
-                  content: title,
-                },
-              ],
+              components: introParagraph
+                ? [
+                    {
+                      type: 10,
+                      content: `${title}\n${introParagraph}`,
+                    },
+                  ]
+                : [
+                    {
+                      type: 10,
+                      content: title,
+                    },
+                  ],
               accessory: {
                 type: 11,
                 media: {
@@ -75,14 +82,6 @@ function createStatsManager({ client, configStore }) {
                 description: 'User avatar',
               },
             },
-            ...(introParagraph
-              ? [
-                  {
-                    type: 10,
-                    content: introParagraph,
-                  },
-                ]
-              : []),
             {
               type: 14,
               divider: true,
