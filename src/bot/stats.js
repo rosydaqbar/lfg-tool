@@ -44,6 +44,54 @@ function buildStatsCommand() {
 }
 
 function createStatsManager({ client, configStore }) {
+  function buildStatsContainerPayload({
+    title,
+    lines,
+    avatarUrl,
+    accentColor = 0x3b82f6,
+    mentionUserId = null,
+  }) {
+    return {
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      components: [
+        {
+          type: 17,
+          accent_color: accentColor,
+          components: [
+            {
+              type: 9,
+              components: [
+                {
+                  type: 10,
+                  content: title,
+                },
+              ],
+              accessory: {
+                type: 11,
+                media: {
+                  url: avatarUrl,
+                },
+                description: 'User avatar',
+              },
+            },
+            {
+              type: 14,
+              divider: true,
+              spacing: 1,
+            },
+            {
+              type: 10,
+              content: lines.join('\n'),
+            },
+          ],
+        },
+      ],
+      allowedMentions: mentionUserId
+        ? { users: [mentionUserId] }
+        : { parse: [] },
+    };
+  }
+
   async function registerCommands() {
     const command = buildStatsCommand();
     const guilds = [...client.guilds.cache.values()];
@@ -81,7 +129,7 @@ function createStatsManager({ client, configStore }) {
       stats.sessions > 0 ? Math.floor(stats.totalMs / stats.sessions) : 0;
 
     const lines = [
-      `### Stats: <@${targetUser.id}>`,
+      `- User: <@${targetUser.id}>`,
       `- Total Durasi Voice: \`${formatDuration(stats.totalMs)}\``,
       `- Jumlah Sesi: \`${stats.sessions}\``,
       `- Rata-rata Durasi/Sesi: \`${formatDuration(averageMs)}\``,
@@ -93,11 +141,21 @@ function createStatsManager({ client, configStore }) {
         : '- Aktif Sekarang: Tidak',
     ];
 
-    await interaction.reply({
-      content: lines.join('\n'),
-      flags: MessageFlags.Ephemeral,
-      allowedMentions: { users: [targetUser.id] },
+    const avatarUrl = targetUser.displayAvatarURL({
+      extension: 'png',
+      size: 128,
+      forceStatic: true,
     });
+
+    await interaction.reply(
+      buildStatsContainerPayload({
+        title: `### Voice Stats`,
+        lines,
+        avatarUrl,
+        accentColor: 0x2563eb,
+        mentionUserId: targetUser.id,
+      })
+    );
   }
 
   async function replyLeaderboard(interaction) {
@@ -119,18 +177,27 @@ function createStatsManager({ client, configStore }) {
       return;
     }
 
-    const lines = ['### Voice Leaderboard (Top 10)'];
+    const lines = [];
     for (const row of rows) {
       lines.push(
         `${row.rank}. <@${row.userId}> • \`${formatDuration(row.totalMs)}\` • ${row.sessions} sesi`
       );
     }
 
-    await interaction.reply({
-      content: lines.join('\n'),
-      flags: MessageFlags.Ephemeral,
-      allowedMentions: { parse: [] },
+    const avatarUrl = interaction.user.displayAvatarURL({
+      extension: 'png',
+      size: 128,
+      forceStatic: true,
     });
+
+    await interaction.reply(
+      buildStatsContainerPayload({
+        title: '### Voice Leaderboard (Top 10)',
+        lines,
+        avatarUrl,
+        accentColor: 0xf59e0b,
+      })
+    );
   }
 
   async function handleInteraction(interaction) {
