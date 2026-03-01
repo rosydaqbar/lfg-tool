@@ -25,6 +25,12 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
     channelName,
     ownerId,
   }) {
+    await configStore
+      .finalizeVoiceActivity(channelId, new Date())
+      .catch((error) => {
+        console.error('Failed to finalize voice activity before deletion log:', error);
+      });
+
     const activityRows = await configStore.getVoiceActivity(channelId).catch(() => []);
     const historyRows = activityRows
       .filter((row) => !row.isActive)

@@ -9,6 +9,7 @@ const { createLfgManager } = require('./bot/lfg');
 const { createLogChannelFetcher } = require('./bot/log-channel');
 const { createVoiceLogger } = require('./bot/voice-log');
 const { createHealthServer } = require('./bot/health-server');
+const { createStatsManager } = require('./bot/stats');
 
 requireToken();
 
@@ -38,6 +39,10 @@ const voiceLogger = createVoiceLogger({
   getLogChannel,
   debugLog,
   env: { LOG_CHANNEL_ID, VOICE_CHANNEL_ID },
+});
+const statsManager = createStatsManager({
+  client,
+  configStore,
 });
 const healthServer = createHealthServer();
 
@@ -90,10 +95,16 @@ process.on('SIGINT', () => {
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
   lfgManager.startPersistentLoop();
+  statsManager.registerCommands().catch((error) => {
+    console.error('Failed to register slash commands:', error);
+  });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (await statsManager.handleInteraction(interaction)) {
+      return;
+    }
     await lfgManager.handleInteraction(interaction);
   } catch (error) {
     console.error('Failed to handle interaction:', error);

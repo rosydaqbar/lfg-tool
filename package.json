@@ -5,6 +5,8 @@
   "description": "Logs voice channel join events to a text channel.",
   "main": "src/index.js",
   "scripts": {
+    "deploy": "node scripts/deploy.js",
+    "deploy:commands": "node scripts/deploy-commands.js",
     "start": "node src/index.js",
     "migrate:postgres": "node scripts/migrate-sqlite-to-postgres.js"
   },

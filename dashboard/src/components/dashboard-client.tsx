@@ -9,6 +9,7 @@ import { HeaderSection } from "@/components/dashboard/header-section";
 import { VoiceSettingsSection } from "@/components/dashboard/voice-settings-section";
 import { ActiveTempChannelsCard } from "@/components/dashboard/active-temp-channels-card";
 import { VoiceLogDeletedCard } from "@/components/dashboard/voice-log-deleted-card";
+import { VoiceLeaderboardCard } from "@/components/dashboard/voice-leaderboard-card";
 import type {
   ChannelsResponse,
   Channel,
@@ -275,7 +276,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
       ) : null}
 
       {activeTab === "voice-log" ? (
-        <VoiceLogDeletedCard selectedGuildId={selectedGuildId} />
+        <>
+          <VoiceLogDeletedCard selectedGuildId={selectedGuildId} />
+          <VoiceLeaderboardCard selectedGuildId={selectedGuildId} />
+        </>
       ) : null}
     </div>
   );

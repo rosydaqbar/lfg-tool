@@ -271,3 +271,53 @@ export async function getTempVoiceDeleteLogs(
     };
   });
 }
+
+type DeleteLeaderboardRow = {
+  user_id: string;
+  total_ms: string | number;
+  sessions: string | number;
+};
+
+export async function getTempVoiceDeleteLeaderboard(
+  guildId: string,
+  limit = 20,
+  offset = 0
+) {
+  await ensureTempVoiceDeleteLogsTable();
+  const safeLimit = Number.isFinite(limit)
+    ? Math.min(200, Math.max(1, Math.floor(limit)))
+    : 20;
+  const safeOffset = Number.isFinite(offset)
+    ? Math.max(0, Math.floor(offset))
+    : 0;
+
+  const res = await query(
+    `
+      SELECT
+        elem->>'userId' AS user_id,
+        SUM(
+          CASE
+            WHEN (elem->>'totalMs') ~ '^[0-9]+$'
+              THEN (elem->>'totalMs')::bigint
+            ELSE 0
+          END
+        ) AS total_ms,
+        COUNT(*)::bigint AS sessions
+      FROM temp_voice_delete_logs logs
+      CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
+      WHERE logs.guild_id = $1
+        AND elem ? 'userId'
+      GROUP BY user_id
+      ORDER BY total_ms DESC, sessions DESC, user_id ASC
+      LIMIT $2
+      OFFSET $3
+    `,
+    [guildId, safeLimit, safeOffset]
+  );
+
+  return (res.rows as DeleteLeaderboardRow[]).map((row) => ({
+    userId: row.user_id,
+    totalMs: Number(row.total_ms ?? 0),
+    sessions: Number(row.sessions ?? 0),
+  }));
+}

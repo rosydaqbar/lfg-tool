@@ -4,6 +4,12 @@ import DiscordProvider from "next-auth/providers/discord";
 
 const adminId = process.env.ADMIN_DISCORD_USER_ID;
 
+function getDiscordProfileId(profile: unknown) {
+  if (!profile || typeof profile !== "object") return undefined;
+  const value = profile as { id?: unknown };
+  return typeof value.id === "string" ? value.id : undefined;
+}
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   providers: [
@@ -21,7 +27,9 @@ export const authOptions: NextAuthOptions = {
     async signIn({ profile, account, user }) {
       if (!adminId) return false;
       const discordId =
-        profile?.id ?? account?.providerAccountId ?? (user?.id as string);
+        getDiscordProfileId(profile) ??
+        account?.providerAccountId ??
+        (user?.id as string);
       return discordId === adminId;
     },
     async jwt({ token, account, profile, user }) {
@@ -29,7 +37,9 @@ export const authOptions: NextAuthOptions = {
         token.accessToken = account.access_token;
       }
       const discordId =
-        profile?.id ?? account?.providerAccountId ?? (user?.id as string);
+        getDiscordProfileId(profile) ??
+        account?.providerAccountId ??
+        (user?.id as string);
       if (discordId) token.discordId = discordId;
       return token;
     },

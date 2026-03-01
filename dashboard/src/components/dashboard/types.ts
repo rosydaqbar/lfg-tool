@@ -35,6 +35,13 @@ export type TempVoiceDeleteLog = {
   history: { userId: string; userName?: string | null; totalMs: number }[];
 };
 
+export type VoiceDeleteLeaderboardEntry = {
+  userId: string;
+  userName?: string | null;
+  totalMs: number;
+  sessions: number;
+};
+
 export type ConfigResponse = {
   logChannelId: string | null;
   lfgChannelId: string | null;

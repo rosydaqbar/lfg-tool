@@ -324,6 +324,30 @@ async function markVoiceLeave(channelId, userId, leftAt = new Date()) {
   );
 }
 
+async function finalizeVoiceActivity(channelId, at = new Date()) {
+  await ensureTempVoiceActivityTable();
+  await query(
+    `
+      UPDATE temp_voice_activity
+      SET
+        total_ms = total_ms + CASE
+          WHEN is_active = TRUE AND joined_at IS NOT NULL
+            THEN GREATEST(
+              0,
+              FLOOR(EXTRACT(EPOCH FROM ($2::timestamptz - joined_at)) * 1000)
+            )::BIGINT
+          ELSE 0
+        END,
+        is_active = FALSE,
+        joined_at = NULL,
+        updated_at = NOW()
+      WHERE channel_id = $1
+        AND is_active = TRUE
+    `,
+    [channelId, at]
+  );
+}
+
 async function getVoiceActivity(channelId) {
   await ensureTempVoiceActivityTable();
   const res = await query(
@@ -387,6 +411,160 @@ async function addTempVoiceDeleteLog({
   );
 }
 
+async function getVoiceStatsForUser(guildId, userId) {
+  await ensureTempVoiceActivityTable();
+  await ensureTempVoiceDeleteLogsTable();
+
+  const aggregateRes = await query(
+    `
+      WITH expanded AS (
+        SELECT
+          elem->>'userId' AS user_id,
+          CASE
+            WHEN (elem->>'totalMs') ~ '^[0-9]+$'
+              THEN (elem->>'totalMs')::bigint
+            ELSE 0
+          END AS total_ms
+        FROM temp_voice_delete_logs logs
+        CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
+        WHERE logs.guild_id = $1
+          AND elem ? 'userId'
+      )
+      SELECT
+        COALESCE(SUM(total_ms), 0)::bigint AS total_ms,
+        COUNT(*)::bigint AS sessions,
+        COALESCE(MAX(total_ms), 0)::bigint AS longest_ms
+      FROM expanded
+      WHERE user_id = $2
+    `,
+    [guildId, userId]
+  );
+
+  const rankRes = await query(
+    `
+      WITH expanded AS (
+        SELECT
+          elem->>'userId' AS user_id,
+          CASE
+            WHEN (elem->>'totalMs') ~ '^[0-9]+$'
+              THEN (elem->>'totalMs')::bigint
+            ELSE 0
+          END AS total_ms
+        FROM temp_voice_delete_logs logs
+        CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
+        WHERE logs.guild_id = $1
+          AND elem ? 'userId'
+      ),
+      leaderboard AS (
+        SELECT
+          user_id,
+          SUM(total_ms)::bigint AS total_ms,
+          COUNT(*)::bigint AS sessions
+        FROM expanded
+        GROUP BY user_id
+      ),
+      ranked AS (
+        SELECT
+          user_id,
+          ROW_NUMBER() OVER (
+            ORDER BY total_ms DESC, sessions DESC, user_id ASC
+          ) AS rank_position
+        FROM leaderboard
+      )
+      SELECT rank_position
+      FROM ranked
+      WHERE user_id = $2
+    `,
+    [guildId, userId]
+  );
+
+  const ownerRes = await query(
+    `
+      SELECT COUNT(*)::bigint AS owner_count
+      FROM temp_voice_delete_logs
+      WHERE guild_id = $1
+        AND owner_id = $2
+    `,
+    [guildId, userId]
+  );
+
+  const activeRes = await query(
+    `
+      SELECT
+        a.channel_id,
+        a.joined_at,
+        a.total_ms
+      FROM temp_voice_activity a
+      INNER JOIN temp_voice_channels t ON t.channel_id = a.channel_id
+      WHERE t.guild_id = $1
+        AND a.user_id = $2
+        AND a.is_active = TRUE
+      ORDER BY a.joined_at DESC NULLS LAST
+      LIMIT 1
+    `,
+    [guildId, userId]
+  );
+
+  const aggregate = aggregateRes.rows[0] || {};
+  const active = activeRes.rows[0] || null;
+
+  return {
+    totalMs: Number(aggregate.total_ms || 0),
+    sessions: Number(aggregate.sessions || 0),
+    longestMs: Number(aggregate.longest_ms || 0),
+    ownerCount: Number(ownerRes.rows[0]?.owner_count || 0),
+    rank: Number(rankRes.rows[0]?.rank_position || 0) || null,
+    activeNow: active
+      ? {
+          channelId: active.channel_id,
+          joinedAt: active.joined_at ? new Date(active.joined_at) : null,
+          previousTotalMs: Number(active.total_ms || 0),
+        }
+      : null,
+  };
+}
+
+async function getVoiceLeaderboard(guildId, limit = 10) {
+  await ensureTempVoiceDeleteLogsTable();
+  const safeLimit = Number.isFinite(limit)
+    ? Math.min(50, Math.max(1, Math.floor(limit)))
+    : 10;
+
+  const res = await query(
+    `
+      WITH expanded AS (
+        SELECT
+          elem->>'userId' AS user_id,
+          CASE
+            WHEN (elem->>'totalMs') ~ '^[0-9]+$'
+              THEN (elem->>'totalMs')::bigint
+            ELSE 0
+          END AS total_ms
+        FROM temp_voice_delete_logs logs
+        CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
+        WHERE logs.guild_id = $1
+          AND elem ? 'userId'
+      )
+      SELECT
+        user_id,
+        SUM(total_ms)::bigint AS total_ms,
+        COUNT(*)::bigint AS sessions
+      FROM expanded
+      GROUP BY user_id
+      ORDER BY total_ms DESC, sessions DESC, user_id ASC
+      LIMIT $2
+    `,
+    [guildId, safeLimit]
+  );
+
+  return res.rows.map((row, index) => ({
+    rank: index + 1,
+    userId: row.user_id,
+    totalMs: Number(row.total_ms || 0),
+    sessions: Number(row.sessions || 0),
+  }));
+}
+
 module.exports = {
   getGuildConfig,
   addTempChannel,
@@ -397,6 +575,7 @@ module.exports = {
   getTempChannelOwner,
   getTempChannelInfo,
   getVoiceActivity,
+  finalizeVoiceActivity,
   markVoiceLeave,
   removeTempChannel,
   setPersistentLfgMessage,
@@ -405,4 +584,6 @@ module.exports = {
   updateTempChannelOwner,
   clearVoiceActivity,
   addTempVoiceDeleteLog,
+  getVoiceLeaderboard,
+  getVoiceStatsForUser,
 };
