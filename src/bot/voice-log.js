@@ -73,16 +73,26 @@ function buildVoiceActivitySummaryBody(activity) {
 }
 
 function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
-  async function sendManualSessionPanel(voiceChannel, { activity }) {
-    if (!voiceChannel || typeof voiceChannel.send !== 'function') {
-      return;
-    }
-
+  function buildManualPanelPayload(activity) {
     const body = buildVoiceActivitySummaryBody(activity);
 
     const container = new ContainerBuilder()
       .setAccentColor(0x0ea5e9)
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
+
+    return {
+      flags: MessageFlags.IsComponentsV2,
+      components: [container],
+      allowedMentions: { parse: [], users: [] },
+    };
+  }
+
+  async function sendManualSessionPanel(voiceChannel, { activity }) {
+    if (!voiceChannel || typeof voiceChannel.send !== 'function') {
+      return;
+    }
+
+    const payload = buildManualPanelPayload(activity);
 
     try {
       if (configStore?.getManualVoicePanelMessage) {
@@ -96,11 +106,7 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
         }
       }
 
-      const message = await voiceChannel.send({
-        flags: MessageFlags.IsComponentsV2,
-        components: [container],
-        allowedMentions: { parse: [], users: [] },
-      });
+      const message = await voiceChannel.send(payload);
 
       if (configStore?.setManualVoicePanelMessage) {
         await configStore
@@ -116,6 +122,40 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
     } catch (error) {
       console.error('Failed to send manual session panel:', error);
     }
+  }
+
+  async function refreshManualSessionPanel(voiceChannel, { activity }) {
+    if (!voiceChannel || typeof voiceChannel.send !== 'function') {
+      return;
+    }
+
+    const guildId = voiceChannel.guild?.id;
+    if (!guildId || !configStore?.getManualVoicePanelMessage) {
+      await sendManualSessionPanel(voiceChannel, { activity });
+      return;
+    }
+
+    const payload = buildManualPanelPayload(activity);
+    const messageId = await configStore
+      .getManualVoicePanelMessage(guildId, voiceChannel.id)
+      .catch(() => null);
+
+    if (messageId && voiceChannel?.messages?.fetch) {
+      const edited = await voiceChannel.messages.fetch(messageId)
+        .then(async (message) => {
+          await message.edit(payload);
+          return true;
+        })
+        .catch(() => false);
+      if (edited) {
+        return;
+      }
+      await configStore
+        .clearManualVoicePanelMessage(guildId, voiceChannel.id)
+        .catch(() => null);
+    }
+
+    await sendManualSessionPanel(voiceChannel, { activity });
   }
 
   async function clearManualSessionPanel({ guildId, channelId, voiceChannel }) {
@@ -192,7 +232,12 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
     }
   }
 
-  return { logManualLeave, sendManualSessionPanel, clearManualSessionPanel };
+  return {
+    logManualLeave,
+    sendManualSessionPanel,
+    refreshManualSessionPanel,
+    clearManualSessionPanel,
+  };
 }
 
 module.exports = { createVoiceLogger };

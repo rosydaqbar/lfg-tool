@@ -157,6 +157,38 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
   await joinToCreateManager.handleJoinToCreate(oldState, newState, config);
 
+  async function buildManualActivitySummary(channelId) {
+    const manualActivityRows = await configStore
+      .getManualVoiceActivity(guildId, channelId)
+      .catch((error) => {
+        console.error('Failed to load manual voice activity:', error);
+        return [];
+      });
+
+    const active = manualActivityRows
+      .filter((row) => row.isActive)
+      .sort((a, b) => {
+        const aTime = a.joinedAt ? a.joinedAt.getTime() : 0;
+        const bTime = b.joinedAt ? b.joinedAt.getTime() : 0;
+        return bTime - aTime;
+      });
+
+    const history = manualActivityRows
+      .filter((row) => !row.isActive)
+      .sort((a, b) => {
+        const aTime = a.updatedAt ? a.updatedAt.getTime() : 0;
+        const bTime = b.updatedAt ? b.updatedAt.getTime() : 0;
+        return bTime - aTime;
+      });
+
+    return {
+      active,
+      history,
+      activeCount: active.length,
+      historyCount: history.length,
+    };
+  }
+
   const member = newState.member || oldState.member;
   if (!member?.user?.bot) {
     const oldChannelId = oldState.channelId;
@@ -251,6 +283,13 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           .catch((error) => {
             console.error('Failed to clear manual session panel:', error);
           });
+      } else if (oldState.channel) {
+        const activity = await buildManualActivitySummary(oldChannelId);
+        await voiceLogger
+          .refreshManualSessionPanel(oldState.channel, { activity })
+          .catch((error) => {
+            console.error('Failed to refresh manual session panel:', error);
+          });
       }
     }
 
@@ -262,40 +301,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           console.error('Failed to upsert manual voice join:', error);
         });
 
-      const isFirstUserFromEmpty = (newState.channel?.members?.size || 0) === 1;
-      if (isFirstUserFromEmpty) {
-        const manualActivityRows = await configStore
-          .getManualVoiceActivity(guildId, newChannelId)
-          .catch((error) => {
-            console.error('Failed to load manual voice activity:', error);
-            return [];
-          });
-
-        const active = manualActivityRows
-          .filter((row) => row.isActive)
-          .sort((a, b) => {
-            const aTime = a.joinedAt ? a.joinedAt.getTime() : 0;
-            const bTime = b.joinedAt ? b.joinedAt.getTime() : 0;
-            return bTime - aTime;
-          });
-
-        const history = manualActivityRows
-          .filter((row) => !row.isActive)
-          .sort((a, b) => {
-            const aTime = a.updatedAt ? a.updatedAt.getTime() : 0;
-            const bTime = b.updatedAt ? b.updatedAt.getTime() : 0;
-            return bTime - aTime;
-          });
-
+      if (newState.channel) {
+        const activity = await buildManualActivitySummary(newChannelId);
         await voiceLogger
-          .sendManualSessionPanel(newState.channel, {
-            activity: {
-              active,
-              history,
-              activeCount: active.length,
-              historyCount: history.length,
-            },
-          })
+          .refreshManualSessionPanel(newState.channel, { activity })
           .catch((error) => {
             console.error('Failed to send manual session panel:', error);
           });
