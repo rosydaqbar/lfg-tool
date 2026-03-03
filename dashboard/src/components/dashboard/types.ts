@@ -27,11 +27,15 @@ export type TempChannel = {
 
 export type TempVoiceDeleteLog = {
   id: string;
+  sourceType: "temp_deleted" | "manual_session";
+  label: "Temp Deleted" | "Manual Voice Session";
   channelId: string;
   channelName: string | null;
   ownerId: string;
+  eventAt: string;
+  joinedAt?: string | null;
+  leftAt?: string | null;
   ownerName?: string | null;
-  deletedAt: string;
   history: { userId: string; userName?: string | null; totalMs: number }[];
 };
 

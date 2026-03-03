@@ -86,7 +86,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
           Voice Leaderboard
         </CardTitle>
         <CardDescription>
-          Peringkat total durasi voice dari seluruh log penghapusan temp channel.
+          Peringkat total durasi voice dari log temp channel dan sesi manual.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

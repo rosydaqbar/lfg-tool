@@ -50,12 +50,18 @@ export async function GET(
     ...row.history.map((item) => item.userId),
   ]);
   const leaderboardUserIds = leaderboardRows.map((row) => row.userId);
-  const names = await resolveGuildUsernames(id, [...allUserIds, ...leaderboardUserIds]);
+  const resolvableIds = [...allUserIds, ...leaderboardUserIds].filter(
+    (value) => value !== "server_owned"
+  );
+  const names = await resolveGuildUsernames(id, resolvableIds);
 
   return NextResponse.json({
     deleteLogs: rows.map((row) => ({
       ...row,
-      ownerName: names.get(row.ownerId) ?? null,
+      ownerName:
+        row.ownerId === "server_owned"
+          ? "server owned"
+          : names.get(row.ownerId) ?? null,
       history: row.history.map((item) => ({
         ...item,
         userName: names.get(item.userId) ?? null,

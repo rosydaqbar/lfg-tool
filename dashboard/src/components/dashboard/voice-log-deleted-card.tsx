@@ -78,7 +78,7 @@ function VoiceLogDeletedCardComponent({
           Voice Log
         </CardTitle>
         <CardDescription>
-          Log permanen channel temp yang sudah terhapus karena kosong, termasuk history durasi user.
+          Log campuran untuk temp channel terhapus dan sesi manual voice channel.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -101,6 +101,9 @@ function VoiceLogDeletedCardComponent({
                 className="rounded-xl border border-border bg-muted/30 p-4"
               >
                 <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <Badge variant="outline" className="rounded-full px-3 py-1">
+                    {log.label}
+                  </Badge>
                   <Badge variant="secondary" className="rounded-full px-3 py-1">
                     Channel: {log.channelName || "(unknown)"}
                   </Badge>
@@ -111,8 +114,13 @@ function VoiceLogDeletedCardComponent({
                     Owner: {log.ownerName || log.ownerId}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    Deleted: {new Date(log.deletedAt).toLocaleString()}
+                    {log.sourceType === "manual_session" ? "Ended" : "Deleted"}: {new Date(log.eventAt).toLocaleString()}
                   </span>
+                  {log.sourceType === "manual_session" && log.joinedAt ? (
+                    <span className="text-xs text-muted-foreground">
+                      Joined: {new Date(log.joinedAt).toLocaleString()}
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2">
@@ -147,7 +155,7 @@ function VoiceLogDeletedCardComponent({
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
-            Belum ada log penghapusan temp channel.
+            Belum ada data voice log.
           </div>
         )}
 

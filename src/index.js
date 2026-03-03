@@ -194,6 +194,42 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         .catch(() => null);
     }
 
+    const manualEnabledIds = new Set(config.enabledVoiceChannelIds || []);
+    const oldIsManualLogged = Boolean(
+      moved
+      && oldChannelId
+      && manualEnabledIds.has(oldChannelId)
+      && !oldTempInfo
+    );
+    const newIsManualLogged = Boolean(
+      moved
+      && newChannelId
+      && manualEnabledIds.has(newChannelId)
+      && !newTempInfo
+    );
+
+    if (oldIsManualLogged) {
+      await configStore
+        .finalizeManualVoiceSession(
+          guildId,
+          oldChannelId,
+          newState.id,
+          oldState.channel?.name || null,
+          new Date()
+        )
+        .catch((error) => {
+          console.error('Failed to finalize manual voice session:', error);
+        });
+    }
+
+    if (newIsManualLogged) {
+      await configStore
+        .upsertManualVoiceJoin(guildId, newChannelId, newState.id, new Date())
+        .catch((error) => {
+          console.error('Failed to upsert manual voice join:', error);
+        });
+    }
+
     if (moved && oldChannelId && newChannelId) {
       await voiceLogger
         .logJoin(newState, config, { isTempChannel: Boolean(newTempInfo) })

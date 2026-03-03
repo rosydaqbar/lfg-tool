@@ -39,6 +39,7 @@ async function query(text: string, params?: unknown[]) {
 
 let lfgEnabledColumnEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
+let manualVoiceSessionLogsEnsured = false;
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -74,6 +75,31 @@ async function ensureTempVoiceDeleteLogsTable() {
     tempVoiceDeleteLogsEnsured = true;
   } catch (error) {
     console.error("Failed to ensure temp_voice_delete_logs table:", error);
+  }
+}
+
+async function ensureManualVoiceSessionLogsTable() {
+  if (manualVoiceSessionLogsEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS manual_voice_session_logs (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          channel_name TEXT,
+          owner_id TEXT NOT NULL DEFAULT 'server_owned',
+          user_id TEXT NOT NULL,
+          joined_at TIMESTAMPTZ NOT NULL,
+          left_at TIMESTAMPTZ NOT NULL,
+          total_ms BIGINT NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    manualVoiceSessionLogsEnsured = true;
+  } catch (error) {
+    console.error("Failed to ensure manual_voice_session_logs table:", error);
   }
 }
 
@@ -214,11 +240,14 @@ export async function getTempChannels(guildId: string) {
 }
 
 type DeleteLogRow = {
-  id: string | number;
+  row_id: string | number;
+  source_type: "temp_deleted" | "manual_session";
   channel_id: string;
   channel_name: string | null;
   owner_id: string;
-  deleted_at: string;
+  event_at: string;
+  joined_at: string | null;
+  left_at: string | null;
   history_json: unknown;
 };
 
@@ -228,6 +257,7 @@ export async function getTempVoiceDeleteLogs(
   offset = 0
 ) {
   await ensureTempVoiceDeleteLogsTable();
+  await ensureManualVoiceSessionLogsTable();
   const safeLimit = Number.isFinite(limit)
     ? Math.min(200, Math.max(1, Math.floor(limit)))
     : 100;
@@ -237,10 +267,48 @@ export async function getTempVoiceDeleteLogs(
 
   const res = await query(
     `
-      SELECT id, channel_id, channel_name, owner_id, deleted_at, history_json
-      FROM temp_voice_delete_logs
-      WHERE guild_id = $1
-      ORDER BY deleted_at DESC
+      SELECT
+        source_type,
+        row_id,
+        channel_id,
+        channel_name,
+        owner_id,
+        event_at,
+        joined_at,
+        left_at,
+        history_json
+      FROM (
+        SELECT
+          'temp_deleted'::text AS source_type,
+          id AS row_id,
+          channel_id,
+          channel_name,
+          owner_id,
+          deleted_at AS event_at,
+          NULL::timestamptz AS joined_at,
+          NULL::timestamptz AS left_at,
+          history_json
+        FROM temp_voice_delete_logs
+        WHERE guild_id = $1
+
+        UNION ALL
+
+        SELECT
+          'manual_session'::text AS source_type,
+          id AS row_id,
+          channel_id,
+          channel_name,
+          owner_id,
+          left_at AS event_at,
+          joined_at,
+          left_at,
+          jsonb_build_array(
+            jsonb_build_object('userId', user_id, 'totalMs', total_ms)
+          ) AS history_json
+        FROM manual_voice_session_logs
+        WHERE guild_id = $1
+      ) combined
+      ORDER BY event_at DESC
       LIMIT $2
       OFFSET $3
     `,
@@ -262,11 +330,18 @@ export async function getTempVoiceDeleteLogs(
       .filter((item): item is { userId: string; totalMs: number } => item !== null);
 
     return {
-      id: String(row.id),
+      id: `${row.source_type}:${String(row.row_id)}`,
+      sourceType: row.source_type,
+      label:
+        row.source_type === "manual_session"
+          ? "Manual Voice Session"
+          : "Temp Deleted",
       channelId: row.channel_id,
       channelName: row.channel_name,
       ownerId: row.owner_id,
-      deletedAt: row.deleted_at,
+      eventAt: row.event_at,
+      joinedAt: row.joined_at,
+      leftAt: row.left_at,
       history,
     };
   });
@@ -284,6 +359,7 @@ export async function getTempVoiceDeleteLeaderboard(
   offset = 0
 ) {
   await ensureTempVoiceDeleteLogsTable();
+  await ensureManualVoiceSessionLogsTable();
   const safeLimit = Number.isFinite(limit)
     ? Math.min(200, Math.max(1, Math.floor(limit)))
     : 20;
@@ -293,20 +369,31 @@ export async function getTempVoiceDeleteLeaderboard(
 
   const res = await query(
     `
-      SELECT
-        elem->>'userId' AS user_id,
-        SUM(
+      WITH temp_expanded AS (
+        SELECT
+          elem->>'userId' AS user_id,
           CASE
             WHEN (elem->>'totalMs') ~ '^[0-9]+$'
               THEN (elem->>'totalMs')::bigint
             ELSE 0
-          END
-        ) AS total_ms,
+          END AS total_ms
+        FROM temp_voice_delete_logs logs
+        CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
+        WHERE logs.guild_id = $1
+          AND elem ? 'userId'
+      ),
+      all_sessions AS (
+        SELECT user_id, total_ms FROM temp_expanded
+        UNION ALL
+        SELECT user_id, total_ms
+        FROM manual_voice_session_logs
+        WHERE guild_id = $1
+      )
+      SELECT
+        user_id,
+        SUM(total_ms)::bigint AS total_ms,
         COUNT(*)::bigint AS sessions
-      FROM temp_voice_delete_logs logs
-      CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
-      WHERE logs.guild_id = $1
-        AND elem ? 'userId'
+      FROM all_sessions
       GROUP BY user_id
       ORDER BY total_ms DESC, sessions DESC, user_id ASC
       LIMIT $2

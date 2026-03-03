@@ -75,7 +75,7 @@ export function VoiceLogPageClient({ selectedGuildId }: { selectedGuildId: strin
         <div>
           <h1 className="font-[var(--font-display)] text-3xl text-foreground">Voice Log</h1>
           <p className="text-sm text-muted-foreground">
-            Riwayat permanen temp channel yang terhapus karena kosong.
+            Riwayat gabungan temp channel terhapus dan sesi manual voice channel.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -96,7 +96,7 @@ export function VoiceLogPageClient({ selectedGuildId }: { selectedGuildId: strin
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Volume2 className="h-4 w-4" />
-            Temp Voice Channel Deleted Logs
+            Voice Logs (Mixed)
           </CardTitle>
           <CardDescription>
             Halaman {page + 1} • Menampilkan sampai {PAGE_SIZE} item per halaman.
@@ -117,6 +117,9 @@ export function VoiceLogPageClient({ selectedGuildId }: { selectedGuildId: strin
                   className="rounded-xl border border-border bg-muted/30 p-4"
                 >
                   <div className="mb-3 flex flex-wrap items-center gap-3">
+                    <Badge variant="outline" className="rounded-full px-3 py-1">
+                      {log.label}
+                    </Badge>
                     <Badge variant="secondary" className="rounded-full px-3 py-1">
                       Channel: {log.channelName || "(unknown)"}
                     </Badge>
@@ -127,8 +130,13 @@ export function VoiceLogPageClient({ selectedGuildId }: { selectedGuildId: strin
                       Owner: {log.ownerName || log.ownerId}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
-                      Deleted: {new Date(log.deletedAt).toLocaleString()}
+                      {log.sourceType === "manual_session" ? "Ended" : "Deleted"}: {new Date(log.eventAt).toLocaleString()}
                     </span>
+                    {log.sourceType === "manual_session" && log.joinedAt ? (
+                      <span className="text-xs text-muted-foreground">
+                        Joined: {new Date(log.joinedAt).toLocaleString()}
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="space-y-2">
