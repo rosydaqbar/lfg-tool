@@ -1,10 +1,17 @@
 # Discord LFG Voice Bot + Dashboard
 
-> IMPORTANT NOTICE
->
-> This project was vibe-coded and iterated quickly. It works, but please use it wisely: review changes before production use, validate permissions, and test in a safe server first.
+> [!IMPORTANT]
+> I vibe-coded this project and shipped it fast. You can use it freely (CC0), but please use it wisely: review the code, verify permissions, and test in a safe server before using it in production.
 
 Join-to-Create Discord voice bot with LFG flow, global voice stats, manual voice-session logging, and a Next.js dashboard for configuration and monitoring.
+
+## Screenshot
+
+Placeholder (add your screenshot file later):
+
+![Dashboard screenshot placeholder](docs/screenshots/dashboard-placeholder.png)
+
+If the image does not exist yet, create it at `docs/screenshots/dashboard-placeholder.png`.
 
 ## Current Features
 
@@ -94,20 +101,19 @@ Postgres SSL controls:
 For providers with self-signed/intermediate chain issues, temporary workaround:
 - `PG_SSL_REJECT_UNAUTHORIZED=false`
 
-## Setup
+## Discord Bot
+
+### Setup
 
 1. Install root deps:
    - `npm install`
 2. Create env file:
    - `cp .env.example .env`
    - fill required variables
-3. Run bot:
+3. Run the bot:
    - `npm start`
-4. Run dashboard (dev):
-   - `npm --prefix dashboard install`
-   - `npm --prefix dashboard run dev`
 
-## Commands
+### Commands
 
 - Bot start: `npm start`
 - Deploy checks: `npm run deploy`
@@ -116,9 +122,22 @@ For providers with self-signed/intermediate chain issues, temporary workaround:
 - Verify expected DB indexes: `npm run db:verify-indexes`
 - Capture voice query benchmark: `npm run perf:voice-queries`
 
-Dashboard:
+## Dashboard (Local Hosting)
+
+This dashboard is meant to be run and hosted locally.
+
+### Setup (local)
+
+1. Install dashboard deps:
+   - `npm --prefix dashboard install`
+2. Run dashboard locally:
+   - `npm --prefix dashboard run dev`
+
+### Commands (dashboard)
+
 - Dev: `npm --prefix dashboard run dev`
 - Build: `npm --prefix dashboard run build`
+
 
 ## Discord Intents and Permissions
 
