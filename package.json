@@ -2,6 +2,7 @@
   "name": "discord-voice-join-logger",
   "version": "0.1.0",
   "private": true,
+  "license": "CC0-1.0",
   "description": "Logs voice channel join events to a text channel.",
   "main": "src/index.js",
   "scripts": {
