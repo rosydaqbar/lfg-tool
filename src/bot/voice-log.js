@@ -52,7 +52,7 @@ function createVoiceLogger({ getLogChannel, env, debugLog }) {
 
     const body = [
       '### Manual Voice Session Leave',
-      `- User: @${userId}`,
+      `- User: <@${userId}> (\`${userId}\`)`,
       `- Channel: ${channelName || '(unknown)'} (\`${channelId}\`)`,
       `- Left at: ${formatDateTime(leftAt)}`,
       `- Session: ${formatDuration(totalMs)}`,
@@ -66,6 +66,7 @@ function createVoiceLogger({ getLogChannel, env, debugLog }) {
       await logChannel.send({
         flags: MessageFlags.IsComponentsV2,
         components: [container],
+        allowedMentions: { parse: [], users: [] },
       });
     } catch (error) {
       console.error('Failed to send manual leave log:', error);
