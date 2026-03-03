@@ -1,93 +1,153 @@
 # Discord LFG Voice Bot + Dashboard
 
-Join-to-Create voice bot with LFG flow and a dashboard to manage channels.
+> IMPORTANT NOTICE
+>
+> This project was vibe-coded and iterated quickly. It works, but please use it wisely: review changes before production use, validate permissions, and test in a safe server first.
 
-## Features
-- Voice join logging with a per-channel watchlist
-- Join-to-Create lobbies (creates per-user channel, copies settings, deletes when empty)
-- LFG flow (prompt in voice chat, modal custom message, posts to LFG channel)
-- LFG post cooldown: 10 minutes per user
-- Persistent LFG message in LFG channel (refreshes every 1 minute)
-- Active temp channel tracking and disband edits
-- Dashboard configuration + resource monitor (bot + dashboard)
+Join-to-Create Discord voice bot with LFG flow, global voice stats, manual voice-session logging, and a Next.js dashboard for configuration and monitoring.
 
-## Setup (Bot)
-1. Install dependencies:
+## Current Features
+
+- Join-to-Create lobbies
+  - Creates per-user temp voice channels from lobby join
+  - Moves owner into new temp channel
+  - Deletes temp channel when empty
+  - Supports role pairing per lobby
+  - Supports per-lobby `lfg_enabled`
+- Temp channel voice settings panel (in voice chat)
+  - Rename, size limit, lock/unlock, transfer owner, claim owner, region
+  - `My Stats` button in panel
+  - Prompt auto-refreshes on relevant state changes
+- LFG flow
+  - Send LFG post via modal from temp channel prompt
+  - Cooldown enforcement
+  - Disband message edit/cleanup
+  - Persistent LFG message loop
+- Voice logging
+  - Temp voice delete snapshots (history persisted)
+  - Manual voice log channels (log-only, no temp settings controls)
+  - Manual in-channel Voice Log panel lifecycle:
+    - create/update while users are present
+    - delete when channel becomes empty
+  - Manual leave log containers (non-pinging mention format)
+- Stats
+  - `/stats me`
+  - `/stats user` (admin-only)
+  - `/stats leaderboard`
+  - Global aggregation includes temp + manual session logs
+- Dashboard
+  - Guild config management (log/LFG channels, lobbies, roles)
+  - Voice Log channels section:
+    - Temp channels auto-logged
+    - Manual channels add/remove
+  - Active temp channels tab
+  - Mixed Voice Log tab (Temp Deleted + Manual Voice Session labels)
+  - Voice leaderboard with pagination
+  - Voice Log page (`/voice-log`) for full history
+  - Adaptive polling/backoff and lazy tab loading
+
+## Architecture
+
+- Bot runtime: Node.js + `discord.js`
+- Dashboard: Next.js App Router + shadcn/ui
+- Database: Postgres (`DATABASE_URL`)
+
+Core paths:
+- Bot entry: `src/index.js`
+- Config store/data layer: `src/config-store.js`
+- LFG modules: `src/bot/lfg/*`
+- Stats module: `src/bot/stats.js`
+- Dashboard app: `dashboard/src/*`
+
+## Requirements
+
+- Node.js 18+
+- Postgres database
+- Discord bot with required permissions/intents
+
+## Environment Variables
+
+Root `.env` is used by bot and dashboard.
+
+Required (bot):
+- `DISCORD_TOKEN`
+- `DATABASE_URL`
+
+Required (dashboard):
+- `DATABASE_URL`
+- `DISCORD_CLIENT_ID`
+- `DISCORD_CLIENT_SECRET`
+- `NEXTAUTH_SECRET`
+- `ADMIN_DISCORD_USER_ID`
+- `DISCORD_TOKEN` or `DISCORD_BOT_TOKEN` (for Discord API lookups)
+
+Optional/common:
+- `LOG_CHANNEL_ID` (fallback log channel)
+- `VOICE_CHANNEL_ID` (legacy fallback for single-channel logging)
+- `DEBUG=true`
+
+Postgres SSL controls:
+- `PG_SSL_MODE` (default: `require`)
+- `PG_SSL_REJECT_UNAUTHORIZED` (default: `true`)
+- `PG_SSL_CA` or `PG_SSL_CA_BASE64` (optional custom CA)
+
+For providers with self-signed/intermediate chain issues, temporary workaround:
+- `PG_SSL_REJECT_UNAUTHORIZED=false`
+
+## Setup
+
+1. Install root deps:
    - `npm install`
-2. Configure environment:
+2. Create env file:
    - `cp .env.example .env`
-   - Set `DISCORD_TOKEN` (used by bot and dashboard)
-   - Set `DATABASE_URL` (Supabase Postgres, use `?sslmode=require`)
-   - Optional: `LOG_CHANNEL_ID` fallback log channel
-   - Optional: `VOICE_CHANNEL_ID` fallback single-channel logging
-   - Optional: `DEBUG=true`
-3. Start the bot:
+   - fill required variables
+3. Run bot:
    - `npm start`
+4. Run dashboard (dev):
+   - `npm --prefix dashboard install`
+   - `npm --prefix dashboard run dev`
 
-## Required Intents and Permissions
-- Gateway intents: `Guilds`, `GuildVoiceStates`
-- Bot permissions:
-  - `View Channel`, `Send Messages` (log channel, LFG channel, voice channel chat)
-  - `Manage Channels`, `Move Members` (Join-to-Create)
+## Commands
 
-## LFG Flow
-- User joins a Join-to-Create lobby:
-  - Bot creates a voice channel named after the user, copies settings, and moves them.
-  - Bot sends a prompt in that voice channel chat referencing the LFG channel.
-- User clicks "Send LFG Post":
-  - Modal collects a custom message.
-  - Post is sent to the LFG channel (or log channel if not set).
+- Bot start: `npm start`
+- Deploy checks: `npm run deploy`
+- Deploy slash commands: `npm run deploy:commands`
+- SQLite -> Postgres migration: `npm run migrate:postgres`
+- Verify expected DB indexes: `npm run db:verify-indexes`
+- Capture voice query benchmark: `npm run perf:voice-queries`
 
-LFG message format:
-```text
-<@&ROLE_ID_FROM_LOBBY>
-<@user> sedang mencari squad, join: https://discordapp.com/channels/{guildID}/{voiceChannelID}
+Dashboard:
+- Dev: `npm --prefix dashboard run dev`
+- Build: `npm --prefix dashboard run build`
 
--# Pesan:
-> user message
+## Discord Intents and Permissions
 
--# Dibuat pada: <t:timestamp:f>
--# Info lebih lanjut: <@user>
-```
+Gateway intents:
+- `Guilds`
+- `GuildVoiceStates`
 
-## Persistent LFG Message
-Every 1 minute the bot ensures a message at the bottom of the LFG channel:
-```text
-Untuk mencari teman/squad baru, silahkan buat voice channel terlebih dahulu: <links>
-```
-The red embed lists active temp channels and available slots, or:
-`*Tidak ada squad yang tersedia*`
-Footer: `Klik salah satu voice diatas untuk join squad`
+Bot permissions (minimum expected):
+- `View Channel`
+- `Send Messages`
+- `Manage Channels`
+- `Move Members`
 
-## Dashboard (Next.js + shadcn/ui)
-The dashboard lives in `dashboard` and controls logging configuration stored in Postgres.
-It is locked to guild ID `670147766839803924` in the UI.
+Depending on your setup, you may also need:
+- `Manage Roles` (if using role-related lobby behavior)
 
-Key controls:
-- Log Channel and LFG Channel (optional; fallback to log channel)
-- Join-to-Create lobby toggles
-- Join-to-Create lobby role pairing (required per lobby)
-- Voice log watchlist
-- Active temp channel list (clickable voice tags)
+## Data and Schema
 
-Setup:
-1. Install dependencies:
-   - `cd dashboard`
-   - `npm install`
-2. Configure environment:
-   - The dashboard loads the repo root `.env` automatically.
-   - Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in the root `.env`.
-   - Ensure `DISCORD_TOKEN` is set for channel discovery.
-   - Set `NEXTAUTH_SECRET` and `NEXTAUTH_URL`.
-   - Set `ADMIN_DISCORD_USER_ID`.
-   - Set `DATABASE_URL` (same as bot).
-3. Start the dashboard:
-   - `npm run dev`
+Primary storage is Postgres.
 
-## Data
-Primary storage is Postgres via `DATABASE_URL` (Supabase).
+Schema source:
+- `scripts/schema-postgres.sql`
 
-One-time migration from SQLite:
-```bash
-DATABASE_URL="postgresql://..." SQLITE_PATH=./data/discord.db node scripts/migrate-sqlite-to-postgres.js
-```
+Manual utility docs/artifacts:
+- Cleanup/hardening plan: `docs/cleanup-hardening-plan.md`
+- Shared DB refactor notes: `docs/shared-db-refactor-candidates.md`
+- Performance snapshots: `docs/perf/`
+
+## Notes
+
+- This repository evolves quickly; review recent commits before deploying to production.
+- Test in a staging Discord server before applying to a large community server.
