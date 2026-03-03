@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  --radius: 0.85rem;
+  --background: oklch(0.18 0.02 250);
+  --foreground: oklch(0.96 0.015 80);
+  --card: oklch(0.24 0.02 250);
+  --card-foreground: oklch(0.96 0.015 80);
+  --muted: oklch(0.28 0.02 250);
+  --muted-foreground: oklch(0.74 0.02 80);
+  --primary: oklch(0.68 0.16 200);
+  --primary-foreground: oklch(0.2 0.02 250);
+  --secondary: oklch(0.35 0.05 40);
+  --secondary-foreground: oklch(0.97 0.015 80);
+  --border: oklch(0.35 0.02 250);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background:
+    radial-gradient(circle at 8% 8%, oklch(0.42 0.1 200 / 0.35) 0%, transparent 36%),
+    radial-gradient(circle at 85% 16%, oklch(0.5 0.14 55 / 0.28) 0%, transparent 38%),
+    radial-gradient(circle at 70% 88%, oklch(0.35 0.06 270 / 0.25) 0%, transparent 34%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-manrope), "Segoe UI", sans-serif;
+}
+
+.card {
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+  border-radius: var(--radius);
+}

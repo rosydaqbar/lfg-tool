@@ -9,6 +9,9 @@
     "deploy": "node scripts/deploy.js",
     "deploy:commands": "node scripts/deploy-commands.js",
     "start": "node src/index.js",
+    "landing:dev": "npm --prefix landing run dev",
+    "landing:build": "npm --prefix landing run build",
+    "landing:start": "npm --prefix landing run start",
     "migrate:postgres": "node scripts/migrate-sqlite-to-postgres.js",
     "db:verify-indexes": "node scripts/verify-db-indexes.js",
     "perf:voice-queries": "node scripts/benchmark-voice-queries.js"

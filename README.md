@@ -166,6 +166,37 @@ For providers with self-signed/intermediate chain issues, temporary workaround:
 - Verify expected DB indexes: `npm run db:verify-indexes`
 - Capture voice query benchmark: `npm run perf:voice-queries`
 
+## Landing Page (Vercel)
+
+Landing app lives in `landing/` and is intended to be deployed on Vercel only.
+
+### Local development
+
+1. Install landing deps:
+   - `npm --prefix landing install`
+2. Run locally:
+   - `npm run landing:dev`
+
+### Commands (landing)
+
+- Dev: `npm run landing:dev`
+- Build: `npm run landing:build`
+- Start: `npm run landing:start`
+
+### Vercel setup
+
+When creating/importing project in Vercel:
+
+- Framework: `Next.js`
+- Root Directory: `landing`
+- Build Command: default (`next build`)
+- Output Directory: default (`.next`)
+
+This keeps deployment split as intended:
+- Landing page on Vercel
+- Bot on Railway
+- Dashboard local-only
+
 ## Dashboard (Local Hosting)
 
 This dashboard is meant to be run and hosted locally.
