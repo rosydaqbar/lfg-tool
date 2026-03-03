@@ -31,6 +31,7 @@ let tempVoiceActivityEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceActivityEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
+let manualVoicePanelMessageEnsured = false;
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -146,6 +147,26 @@ async function ensureManualVoiceSessionLogsTable() {
   }
 }
 
+async function ensureManualVoicePanelMessageTable() {
+  if (manualVoicePanelMessageEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS manual_voice_panel_message (
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, channel_id)
+        )
+      `
+    );
+    manualVoicePanelMessageEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure manual_voice_panel_message table:', error);
+  }
+}
+
 async function getGuildConfig(guildId) {
   await ensureJoinToCreateLfgEnabledColumn();
   const configRes = await query(
@@ -226,6 +247,47 @@ async function clearPersistentLfgMessage(guildId) {
   await query('DELETE FROM lfg_persistent_message WHERE guild_id = $1', [
     guildId,
   ]);
+}
+
+async function getManualVoicePanelMessage(guildId, channelId) {
+  await ensureManualVoicePanelMessageTable();
+  const res = await query(
+    `
+      SELECT message_id
+      FROM manual_voice_panel_message
+      WHERE guild_id = $1
+        AND channel_id = $2
+    `,
+    [guildId, channelId]
+  );
+  const row = res.rows[0];
+  return row?.message_id || null;
+}
+
+async function setManualVoicePanelMessage(guildId, channelId, messageId) {
+  await ensureManualVoicePanelMessageTable();
+  await query(
+    `
+      INSERT INTO manual_voice_panel_message (guild_id, channel_id, message_id, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT(guild_id, channel_id) DO UPDATE SET
+        message_id = EXCLUDED.message_id,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [guildId, channelId, messageId]
+  );
+}
+
+async function clearManualVoicePanelMessage(guildId, channelId) {
+  await ensureManualVoicePanelMessageTable();
+  await query(
+    `
+      DELETE FROM manual_voice_panel_message
+      WHERE guild_id = $1
+        AND channel_id = $2
+    `,
+    [guildId, channelId]
+  );
 }
 
 
@@ -420,6 +482,56 @@ async function getVoiceActivity(channelId) {
     totalMs: Number(row.total_ms) || 0,
     updatedAt: row.updated_at ? new Date(row.updated_at) : null,
   }));
+}
+
+async function getManualVoiceActivity(guildId, channelId) {
+  await ensureManualVoiceActivityTable();
+  await ensureManualVoiceSessionLogsTable();
+
+  const [activeRes, historyRes] = await Promise.all([
+    query(
+      `
+        SELECT user_id, joined_at
+        FROM manual_voice_activity
+        WHERE guild_id = $1
+          AND channel_id = $2
+        ORDER BY joined_at DESC
+      `,
+      [guildId, channelId]
+    ),
+    query(
+      `
+        SELECT
+          user_id,
+          COALESCE(SUM(total_ms), 0)::bigint AS total_ms,
+          MAX(left_at) AS updated_at
+        FROM manual_voice_session_logs
+        WHERE guild_id = $1
+          AND channel_id = $2
+        GROUP BY user_id
+        ORDER BY MAX(left_at) DESC
+      `,
+      [guildId, channelId]
+    ),
+  ]);
+
+  const activeRows = activeRes.rows.map((row) => ({
+    userId: row.user_id,
+    isActive: true,
+    joinedAt: row.joined_at ? new Date(row.joined_at) : null,
+    totalMs: 0,
+    updatedAt: row.joined_at ? new Date(row.joined_at) : null,
+  }));
+
+  const historyRows = historyRes.rows.map((row) => ({
+    userId: row.user_id,
+    isActive: false,
+    joinedAt: null,
+    totalMs: Number(row.total_ms) || 0,
+    updatedAt: row.updated_at ? new Date(row.updated_at) : null,
+  }));
+
+  return [...activeRows, ...historyRows];
 }
 
 async function clearVoiceActivity(channelId) {
@@ -760,16 +872,20 @@ module.exports = {
   getGuildConfig,
   addTempChannel,
   clearPersistentLfgMessage,
+  clearManualVoicePanelMessage,
   getPersistentLfgMessage,
+  getManualVoicePanelMessage,
   getTempChannelsForGuild,
   getTempChannelByOwner,
   getTempChannelOwner,
   getTempChannelInfo,
   getVoiceActivity,
+  getManualVoiceActivity,
   finalizeVoiceActivity,
   markVoiceLeave,
   removeTempChannel,
   setPersistentLfgMessage,
+  setManualVoicePanelMessage,
   upsertVoiceJoin,
   updateTempChannelMessage,
   updateTempChannelOwner,

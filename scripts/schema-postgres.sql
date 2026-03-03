@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS manual_voice_session_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS manual_voice_panel_message (
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (guild_id, channel_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_voice_watchlist_guild ON voice_watchlist(guild_id);
 CREATE INDEX IF NOT EXISTS idx_jtc_lobbies_guild ON join_to_create_lobbies(guild_id);
 CREATE INDEX IF NOT EXISTS idx_temp_voice_guild ON temp_voice_channels(guild_id);
@@ -101,3 +109,4 @@ CREATE INDEX IF NOT EXISTS idx_temp_voice_delete_logs_channel ON temp_voice_dele
 CREATE INDEX IF NOT EXISTS idx_manual_voice_activity_guild_user ON manual_voice_activity(guild_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_manual_voice_session_logs_guild_left ON manual_voice_session_logs(guild_id, left_at DESC);
 CREATE INDEX IF NOT EXISTS idx_manual_voice_session_logs_user ON manual_voice_session_logs(guild_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_manual_voice_panel_guild_channel ON manual_voice_panel_message(guild_id, channel_id);

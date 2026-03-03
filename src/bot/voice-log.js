@@ -19,6 +19,15 @@ function formatDuration(totalMs) {
   return `${seconds}s`;
 }
 
+function formatSummaryDuration(totalMs) {
+  const safeMs = Math.max(0, Number(totalMs) || 0);
+  const totalMinutes = Math.floor(safeMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+}
+
 function formatDateTime(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -27,7 +36,117 @@ function formatDateTime(value) {
   return date.toLocaleString();
 }
 
-function createVoiceLogger({ getLogChannel, env, debugLog }) {
+function buildVoiceActivitySummaryBody(activity) {
+  const active = (activity?.active || []).slice(0, 10);
+  const history = (activity?.history || []).slice(0, 10);
+
+  const activeLines = active.length
+    ? active.map(
+      (row) => `- <@${row.userId}> • masuk: ${row.joinedAt ? `<t:${Math.floor(row.joinedAt.getTime() / 1000)}:R>` : '-'}`
+    )
+    : ['- Tidak ada user aktif'];
+
+  const historyLines = history.length
+    ? history.map(
+      (row) => `- <@${row.userId}> • total: \`${formatSummaryDuration(row.totalMs)}\``
+    )
+    : ['- Belum ada history'];
+
+  if ((activity?.activeCount || 0) > active.length) {
+    activeLines.push(`- ...dan ${(activity.activeCount || 0) - active.length} lainnya`);
+  }
+
+  if ((activity?.historyCount || 0) > history.length) {
+    historyLines.push(`- ...dan ${(activity.historyCount || 0) - history.length} lainnya`);
+  }
+
+  return [
+    '### Voice Log',
+    '-# Pantau siapa yang sedang aktif di voice channel ini dan riwayat durasi user yang sudah keluar.',
+    '',
+    '**Aktif Saat Ini**',
+    ...activeLines,
+    '',
+    '**History**',
+    ...historyLines,
+  ].join('\n');
+}
+
+function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
+  async function sendManualSessionPanel(voiceChannel, { activity }) {
+    if (!voiceChannel || typeof voiceChannel.send !== 'function') {
+      return;
+    }
+
+    const body = buildVoiceActivitySummaryBody(activity);
+
+    const container = new ContainerBuilder()
+      .setAccentColor(0x0ea5e9)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
+
+    try {
+      if (configStore?.getManualVoicePanelMessage) {
+        const existingMessageId = await configStore
+          .getManualVoicePanelMessage(voiceChannel.guild?.id, voiceChannel.id)
+          .catch(() => null);
+        if (existingMessageId && voiceChannel?.messages?.fetch) {
+          await voiceChannel.messages.fetch(existingMessageId)
+            .then((message) => message.delete().catch(() => null))
+            .catch(() => null);
+        }
+      }
+
+      const message = await voiceChannel.send({
+        flags: MessageFlags.IsComponentsV2,
+        components: [container],
+        allowedMentions: { parse: [], users: [] },
+      });
+
+      if (configStore?.setManualVoicePanelMessage) {
+        await configStore
+          .setManualVoicePanelMessage(
+            voiceChannel.guild?.id,
+            voiceChannel.id,
+            message.id
+          )
+          .catch((error) => {
+            console.error('Failed to store manual voice panel message:', error);
+          });
+      }
+    } catch (error) {
+      console.error('Failed to send manual session panel:', error);
+    }
+  }
+
+  async function clearManualSessionPanel({ guildId, channelId, voiceChannel }) {
+    if (!guildId || !channelId || !configStore?.getManualVoicePanelMessage) {
+      return;
+    }
+
+    const messageId = await configStore
+      .getManualVoicePanelMessage(guildId, channelId)
+      .catch((error) => {
+        console.error('Failed to load manual voice panel message id:', error);
+        return null;
+      });
+
+    if (!messageId) {
+      return;
+    }
+
+    if (voiceChannel?.messages?.fetch) {
+      await voiceChannel.messages.fetch(messageId)
+        .then((message) => message.delete().catch(() => null))
+        .catch(() => null);
+    }
+
+    await configStore
+      .clearManualVoicePanelMessage(guildId, channelId)
+      .catch((error) => {
+        console.error('Failed to clear manual voice panel message id:', error);
+      });
+  }
+
   async function logManualLeave({
     guildId,
     userId,
@@ -73,7 +192,7 @@ function createVoiceLogger({ getLogChannel, env, debugLog }) {
     }
   }
 
-  return { logManualLeave };
+  return { logManualLeave, sendManualSessionPanel, clearManualSessionPanel };
 }
 
 module.exports = { createVoiceLogger };

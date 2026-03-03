@@ -43,6 +43,7 @@ const joinToCreateManager = createJoinToCreateManager({
 const voiceLogger = createVoiceLogger({
   getLogChannel,
   debugLog,
+  configStore,
   env: { LOG_CHANNEL_ID, VOICE_CHANNEL_ID },
 });
 const healthServer = createHealthServer();
@@ -238,14 +239,67 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             console.error('Failed to send manual session leave log:', error);
           });
       }
+
+      const oldChannelMembers = oldState.channel?.members?.size || 0;
+      if (oldChannelMembers === 0) {
+        await voiceLogger
+          .clearManualSessionPanel({
+            guildId,
+            channelId: oldChannelId,
+            voiceChannel: oldState.channel,
+          })
+          .catch((error) => {
+            console.error('Failed to clear manual session panel:', error);
+          });
+      }
     }
 
     if (newIsManualLogged) {
+      const startedAt = new Date();
       await configStore
-        .upsertManualVoiceJoin(guildId, newChannelId, newState.id, new Date())
+        .upsertManualVoiceJoin(guildId, newChannelId, newState.id, startedAt)
         .catch((error) => {
           console.error('Failed to upsert manual voice join:', error);
         });
+
+      const isFirstUserFromEmpty = (newState.channel?.members?.size || 0) === 1;
+      if (isFirstUserFromEmpty) {
+        const manualActivityRows = await configStore
+          .getManualVoiceActivity(guildId, newChannelId)
+          .catch((error) => {
+            console.error('Failed to load manual voice activity:', error);
+            return [];
+          });
+
+        const active = manualActivityRows
+          .filter((row) => row.isActive)
+          .sort((a, b) => {
+            const aTime = a.joinedAt ? a.joinedAt.getTime() : 0;
+            const bTime = b.joinedAt ? b.joinedAt.getTime() : 0;
+            return bTime - aTime;
+          });
+
+        const history = manualActivityRows
+          .filter((row) => !row.isActive)
+          .sort((a, b) => {
+            const aTime = a.updatedAt ? a.updatedAt.getTime() : 0;
+            const bTime = b.updatedAt ? b.updatedAt.getTime() : 0;
+            return bTime - aTime;
+          });
+
+        await voiceLogger
+          .sendManualSessionPanel(newState.channel, {
+            activity: {
+              active,
+              history,
+              activeCount: active.length,
+              historyCount: history.length,
+            },
+          })
+          .catch((error) => {
+            console.error('Failed to send manual session panel:', error);
+          });
+      }
     }
 
   }
