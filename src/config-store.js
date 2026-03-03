@@ -487,7 +487,7 @@ async function finalizeManualVoiceSession(
 ) {
   await ensureManualVoiceActivityTable();
   await ensureManualVoiceSessionLogsTable();
-  await query(
+  const res = await query(
     `
       WITH ended AS (
         DELETE FROM manual_voice_activity
@@ -519,9 +519,25 @@ async function finalizeManualVoiceSession(
         )::BIGINT,
         NOW()
       FROM ended
+      RETURNING channel_id, channel_name, owner_id, user_id, joined_at, left_at, total_ms
     `,
     [guildId, channelId, userId, channelName, leftAt]
   );
+
+  const row = res.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    channelId: row.channel_id,
+    channelName: row.channel_name,
+    ownerId: row.owner_id,
+    userId: row.user_id,
+    joinedAt: row.joined_at ? new Date(row.joined_at) : null,
+    leftAt: row.left_at ? new Date(row.left_at) : leftAt,
+    totalMs: Number(row.total_ms || 0),
+  };
 }
 
 async function getVoiceStatsForUser(guildId, userId) {

@@ -1,66 +1,79 @@
-function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
-  async function logJoin(newState, config, options = {}) {
-    const guildId = newState.guild?.id;
+const {
+  ContainerBuilder,
+  MessageFlags,
+  TextDisplayBuilder,
+} = require('discord.js');
+
+function formatDuration(totalMs) {
+  const safeMs = Math.max(0, Number(totalMs) || 0);
+  const totalMinutes = Math.floor(safeMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const seconds = Math.floor((safeMs % 60000) / 1000);
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+function formatDateTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+  return date.toLocaleString();
+}
+
+function createVoiceLogger({ getLogChannel, env, debugLog }) {
+  async function logManualLeave({
+    guildId,
+    userId,
+    channelId,
+    channelName,
+    leftAt,
+    totalMs,
+  }, config) {
     if (!guildId) {
       debugLog('Skip: missing guild id');
       return;
     }
 
-    const enabledVoiceIds = config.enabledVoiceChannelIds || [];
     const logChannelId = config.logChannelId || env.LOG_CHANNEL_ID;
-
     if (!logChannelId) {
       debugLog('Skip: no log channel configured', { guildId });
       return;
     }
 
-    let isTempChannel = options.isTempChannel === true;
-    if (!isTempChannel && newState.channelId && configStore?.getTempChannelInfo) {
-      const tempInfo = await configStore
-        .getTempChannelInfo(newState.channelId)
-        .catch(() => null);
-      isTempChannel = Boolean(tempInfo?.ownerId);
-    }
+    const logChannel = await getLogChannel(logChannelId);
+    if (!logChannel) return;
 
-    const manuallyEnabled = enabledVoiceIds.includes(newState.channelId);
-    const matchesEnvFallback =
-      enabledVoiceIds.length === 0
-      && env.VOICE_CHANNEL_ID
-      && newState.channelId === env.VOICE_CHANNEL_ID;
+    const body = [
+      '### Manual Voice Session Leave',
+      `- User: <@${userId}> (\`${userId}\`)`,
+      `- Channel: ${channelName || '(unknown)'} (\`${channelId}\`)`,
+      `- Left at: ${formatDateTime(leftAt)}`,
+      `- Session: ${formatDuration(totalMs)}`,
+    ].join('\n');
 
-    const shouldLog = isTempChannel || manuallyEnabled || matchesEnvFallback;
-    if (!shouldLog) {
-      if (enabledVoiceIds.length > 0) {
-        debugLog('Skip: voice channel not enabled', {
-          enabledCount: enabledVoiceIds.length,
-          got: newState.channelId,
-        });
-      } else if (env.VOICE_CHANNEL_ID) {
-        debugLog('Skip: voice channel mismatch', {
-          expected: env.VOICE_CHANNEL_ID,
-          got: newState.channelId,
-        });
-      } else {
-        debugLog('Skip: voice channel not eligible for logging', {
-          got: newState.channelId,
-        });
-      }
-      return;
-    }
-
-    const channel = await getLogChannel(logChannelId);
-    if (!channel) return;
-
-    const message = `Voice Join: userId=${newState.id} voiceChannelId=${newState.channelId}`;
+    const container = new ContainerBuilder()
+      .setAccentColor(0xf59e0b)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
 
     try {
-      await channel.send(message);
+      await logChannel.send({
+        flags: MessageFlags.IsComponentsV2,
+        components: [container],
+        allowedMentions: { users: [userId] },
+      });
     } catch (error) {
-      console.error('Failed to send log message:', error);
+      console.error('Failed to send manual leave log:', error);
     }
   }
 
-  return { logJoin };
+  return { logManualLeave };
 }
 
 module.exports = { createVoiceLogger };

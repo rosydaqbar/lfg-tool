@@ -43,7 +43,6 @@ const joinToCreateManager = createJoinToCreateManager({
 const voiceLogger = createVoiceLogger({
   getLogChannel,
   debugLog,
-  configStore,
   env: { LOG_CHANNEL_ID, VOICE_CHANNEL_ID },
 });
 const healthServer = createHealthServer();
@@ -209,7 +208,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     );
 
     if (oldIsManualLogged) {
-      await configStore
+      const finalizedSession = await configStore
         .finalizeManualVoiceSession(
           guildId,
           oldChannelId,
@@ -219,7 +218,26 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         )
         .catch((error) => {
           console.error('Failed to finalize manual voice session:', error);
+          return null;
         });
+
+      if (finalizedSession) {
+        await voiceLogger
+          .logManualLeave(
+            {
+              guildId,
+              userId: finalizedSession.userId,
+              channelId: finalizedSession.channelId,
+              channelName: finalizedSession.channelName,
+              leftAt: finalizedSession.leftAt,
+              totalMs: finalizedSession.totalMs,
+            },
+            config
+          )
+          .catch((error) => {
+            console.error('Failed to send manual session leave log:', error);
+          });
+      }
     }
 
     if (newIsManualLogged) {
@@ -230,13 +248,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         });
     }
 
-    if (moved && oldChannelId && newChannelId) {
-      await voiceLogger
-        .logJoin(newState, config, { isTempChannel: Boolean(newTempInfo) })
-        .catch((error) => {
-          console.error('Failed to log voice join:', error);
-        });
-    }
   }
 
   if (oldState.channelId && oldState.channelId !== newState.channelId) {
@@ -246,10 +257,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   const joined = !oldState.channelId && newState.channelId;
   if (!joined) {
     debugLog('Skip: not a join');
-    return;
   }
-
-  await voiceLogger.logJoin(newState, config);
 });
 
 client.login(DISCORD_TOKEN);
