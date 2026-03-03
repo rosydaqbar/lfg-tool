@@ -1,5 +1,5 @@
-function createVoiceLogger({ getLogChannel, env, debugLog }) {
-  async function logJoin(newState, config) {
+function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
+  async function logJoin(newState, config, options = {}) {
     const guildId = newState.guild?.id;
     if (!guildId) {
       debugLog('Skip: missing guild id');
@@ -14,19 +14,37 @@ function createVoiceLogger({ getLogChannel, env, debugLog }) {
       return;
     }
 
-    if (enabledVoiceIds.length > 0 && !enabledVoiceIds.includes(newState.channelId)) {
-      debugLog('Skip: voice channel not enabled', {
-        enabledCount: enabledVoiceIds.length,
-        got: newState.channelId,
-      });
-      return;
+    let isTempChannel = options.isTempChannel === true;
+    if (!isTempChannel && newState.channelId && configStore?.getTempChannelInfo) {
+      const tempInfo = await configStore
+        .getTempChannelInfo(newState.channelId)
+        .catch(() => null);
+      isTempChannel = Boolean(tempInfo?.ownerId);
     }
 
-    if (enabledVoiceIds.length === 0 && env.VOICE_CHANNEL_ID && newState.channelId !== env.VOICE_CHANNEL_ID) {
-      debugLog('Skip: voice channel mismatch', {
-        expected: env.VOICE_CHANNEL_ID,
-        got: newState.channelId,
-      });
+    const manuallyEnabled = enabledVoiceIds.includes(newState.channelId);
+    const matchesEnvFallback =
+      enabledVoiceIds.length === 0
+      && env.VOICE_CHANNEL_ID
+      && newState.channelId === env.VOICE_CHANNEL_ID;
+
+    const shouldLog = isTempChannel || manuallyEnabled || matchesEnvFallback;
+    if (!shouldLog) {
+      if (enabledVoiceIds.length > 0) {
+        debugLog('Skip: voice channel not enabled', {
+          enabledCount: enabledVoiceIds.length,
+          got: newState.channelId,
+        });
+      } else if (env.VOICE_CHANNEL_ID) {
+        debugLog('Skip: voice channel mismatch', {
+          expected: env.VOICE_CHANNEL_ID,
+          got: newState.channelId,
+        });
+      } else {
+        debugLog('Skip: voice channel not eligible for logging', {
+          got: newState.channelId,
+        });
+      }
       return;
     }
 

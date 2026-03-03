@@ -20,7 +20,7 @@ function HeaderSectionComponent({ userName, selectedGuildId }: HeaderSectionProp
           Welcome back, {userName}
         </h1>
         <p className="max-w-2xl text-base text-muted-foreground">
-          Set log/LFG channels and configure Join-to-Create lobbies.
+          Set log/LFG channels, configure Join-to-Create lobbies, and manage voice log channels.
         </p>
         <Badge variant="outline" className="rounded-full px-3 py-1">
           Guild ID: <span className="font-mono">{selectedGuildId}</span>

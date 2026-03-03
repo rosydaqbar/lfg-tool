@@ -39,9 +39,12 @@ type VoiceSettingsSectionProps = {
   voiceChannels: Channel[];
   roles: Role[];
   joinToCreateLobbies: JoinToCreateLobby[];
+  enabledVoiceChannelIds: string[];
   onAddLobbyChannel: (channelId: string, roleId: string) => void;
   onToggleLobbyLfg: (channelId: string, lfgEnabled: boolean) => void;
   onRemoveLobbyChannel: (channelId: string) => void;
+  onAddEnabledVoiceChannel: (channelId: string) => void;
+  onRemoveEnabledVoiceChannel: (channelId: string) => void;
   onSave: () => void;
 };
 
@@ -52,15 +55,20 @@ function VoiceSettingsSectionComponent({
   voiceChannels,
   roles,
   joinToCreateLobbies,
+  enabledVoiceChannelIds,
   onAddLobbyChannel,
   onToggleLobbyLfg,
   onRemoveLobbyChannel,
+  onAddEnabledVoiceChannel,
+  onRemoveEnabledVoiceChannel,
   onSave,
 }: VoiceSettingsSectionProps) {
   const [lobbyPickerOpen, setLobbyPickerOpen] = useState(false);
   const [lobbyRolePickerOpen, setLobbyRolePickerOpen] = useState(false);
   const [selectedLobbyVoiceId, setSelectedLobbyVoiceId] = useState("");
   const [selectedLobbyRoleId, setSelectedLobbyRoleId] = useState("");
+  const [voiceLogPickerOpen, setVoiceLogPickerOpen] = useState(false);
+  const [selectedVoiceLogId, setSelectedVoiceLogId] = useState("");
 
   const selectedLobbyVoiceChannel = useMemo(
     () => voiceChannels.find((channel) => channel.id === selectedLobbyVoiceId),
@@ -92,6 +100,23 @@ function VoiceSettingsSectionComponent({
   );
 
   const availableLobbyChannels = voiceChannels;
+  const selectedVoiceLogChannel = useMemo(
+    () => voiceChannels.find((channel) => channel.id === selectedVoiceLogId),
+    [voiceChannels, selectedVoiceLogId]
+  );
+  const voiceLogChannelLabel = selectedVoiceLogChannel
+    ? selectedVoiceLogChannel.name
+    : selectedVoiceLogId
+      ? `ID: ${selectedVoiceLogId}`
+      : "Select a voice channel";
+
+  const availableVoiceLogChannels = useMemo(
+    () =>
+      voiceChannels.filter(
+        (channel) => !enabledVoiceChannelIds.includes(channel.id)
+      ),
+    [voiceChannels, enabledVoiceChannelIds]
+  );
 
   return (
     <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200">
@@ -319,6 +344,142 @@ function VoiceSettingsSectionComponent({
             <div className="text-xs text-muted-foreground">
               Join-to-Create lobbies create a temporary channel per user.
             </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">Voice Log channels</div>
+              <Badge variant="secondary" className="rounded-full px-3 py-1">
+                Manual {enabledVoiceChannelIds.length}
+              </Badge>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
+              Temp voice channels are logged automatically. Add manual channels here for
+              log-only tracking (no voice settings panel).
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+              <Popover open={voiceLogPickerOpen} onOpenChange={setVoiceLogPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={voiceLogPickerOpen}
+                    className="w-full justify-between"
+                    disabled={availableVoiceLogChannels.length === 0}
+                  >
+                    {voiceLogChannelLabel}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                  <Command>
+                    <CommandInput placeholder="Search voice channels..." />
+                    <CommandEmpty>No channels available.</CommandEmpty>
+                    <CommandList>
+                      <CommandGroup>
+                        {availableVoiceLogChannels.map((channel) => (
+                          <CommandItem
+                            key={channel.id}
+                            value={`${channel.name} ${channel.id}`}
+                            onSelect={() => {
+                              setSelectedVoiceLogId(channel.id);
+                              setVoiceLogPickerOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                selectedVoiceLogId === channel.id
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                            />
+                            <span>{channel.name}</span>
+                            <span className="ml-auto text-xs text-muted-foreground font-mono">
+                              {channel.id}
+                            </span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              <Button
+                type="button"
+                onClick={() => {
+                  onAddEnabledVoiceChannel(selectedVoiceLogId);
+                  setSelectedVoiceLogId("");
+                }}
+                disabled={!selectedVoiceLogId}
+                className="sm:shrink-0"
+              >
+                <Plus className="h-4 w-4" />
+                Add
+              </Button>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Voice channel</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>
+                    <div className="text-sm font-medium">Temp voice channels</div>
+                    <div className="text-xs text-muted-foreground">
+                      Automatically logged when created
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className="rounded-full px-3 py-1">
+                      Auto
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">
+                    Locked
+                  </TableCell>
+                </TableRow>
+                {enabledVoiceChannelIds.map((channelId) => {
+                  const channel = voiceChannels.find((item) => item.id === channelId);
+                  return (
+                    <TableRow key={channelId}>
+                      <TableCell>
+                        <div className="text-sm font-medium">
+                          {channel?.name ?? channelId}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono">
+                          {channelId}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="rounded-full px-3 py-1">
+                          Manual
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => onRemoveEnabledVoiceChannel(channelId)}
+                          aria-label={`Remove ${channel?.name ?? channelId}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            {!enabledVoiceChannelIds.length ? (
+              <div className="text-xs text-muted-foreground">
+                No manual voice log channels selected.
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">

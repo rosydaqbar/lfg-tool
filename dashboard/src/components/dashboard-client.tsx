@@ -126,6 +126,19 @@ export default function DashboardClient({ userName }: { userName: string }) {
     );
   }, []);
 
+  const handleAddEnabledVoiceChannel = useCallback((channelId: string) => {
+    const trimmed = channelId.trim();
+    if (!trimmed) return;
+    setEnabledVoiceIds((prev) => {
+      if (prev.includes(trimmed)) return prev;
+      return [...prev, trimmed];
+    });
+  }, []);
+
+  const handleRemoveEnabledVoiceChannel = useCallback((channelId: string) => {
+    setEnabledVoiceIds((prev) => prev.filter((id) => id !== channelId));
+  }, []);
+
   const handleSave = useCallback(async () => {
     const trimmedGuildId = selectedGuildId.trim();
     const trimmedLogChannelId = logChannelId.trim();
@@ -263,9 +276,12 @@ export default function DashboardClient({ userName }: { userName: string }) {
             voiceChannels={memoVoiceChannels}
             roles={memoRoles}
             joinToCreateLobbies={memoJoinToCreateLobbies}
+            enabledVoiceChannelIds={enabledVoiceIds}
             onAddLobbyChannel={handleAddLobbyChannel}
             onToggleLobbyLfg={handleToggleLobbyLfg}
             onRemoveLobbyChannel={handleRemoveLobbyChannel}
+            onAddEnabledVoiceChannel={handleAddEnabledVoiceChannel}
+            onRemoveEnabledVoiceChannel={handleRemoveEnabledVoiceChannel}
             onSave={handleSave}
           />
         </>

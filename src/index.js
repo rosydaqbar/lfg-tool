@@ -43,6 +43,7 @@ const joinToCreateManager = createJoinToCreateManager({
 const voiceLogger = createVoiceLogger({
   getLogChannel,
   debugLog,
+  configStore,
   env: { LOG_CHANNEL_ID, VOICE_CHANNEL_ID },
 });
 const healthServer = createHealthServer();
@@ -191,6 +192,14 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       await lfgManager
         .refreshJoinToCreatePrompt(newState.guild || oldState.guild, newChannelId)
         .catch(() => null);
+    }
+
+    if (moved && oldChannelId && newChannelId) {
+      await voiceLogger
+        .logJoin(newState, config, { isTempChannel: Boolean(newTempInfo) })
+        .catch((error) => {
+          console.error('Failed to log voice join:', error);
+        });
     }
   }
 
