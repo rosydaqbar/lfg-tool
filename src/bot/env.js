@@ -7,10 +7,22 @@ function requireToken() {
   }
 }
 
+function requireBotRuntimeEnv() {
+  const missing = [];
+  if (!process.env.DISCORD_TOKEN) missing.push('DISCORD_TOKEN');
+  if (!process.env.DATABASE_URL) missing.push('DATABASE_URL');
+
+  if (missing.length > 0) {
+    console.error(`Missing required environment variables: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+
 module.exports = {
   DISCORD_TOKEN,
   LOG_CHANNEL_ID,
   VOICE_CHANNEL_ID,
   DEBUG,
+  requireBotRuntimeEnv,
   requireToken,
 };

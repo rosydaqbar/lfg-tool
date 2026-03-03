@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const { Pool } = require('pg');
+const { buildPgSslConfig } = require('../src/lib/pg-ssl');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const SQLITE_PATH = process.env.SQLITE_PATH || './data/discord.db';
@@ -26,7 +27,7 @@ if (!fs.existsSync(schemaPath)) {
 const sqlite = new Database(sqlitePath, { readonly: true });
 const pool = new Pool({
   connectionString: DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: buildPgSslConfig(),
 });
 
 function readTable(table) {

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import Link from "next/link";
 import { Volume2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TempVoiceDeleteLog } from "./types";
+import { useAdaptivePolling } from "./use-adaptive-polling";
 
 type VoiceLogDeletedCardProps = {
   selectedGuildId: string;
@@ -34,12 +35,10 @@ function VoiceLogDeletedCardComponent({
   const [loadError, setLoadError] = useState<string | null>(null);
   const deleteLogsLoadedOnce = useRef(false);
 
-  useEffect(() => {
-    if (!selectedGuildId) return;
-    let active = true;
-
-    const loadDeleteLogs = async (showLoader: boolean) => {
-      if (showLoader) setLoadingDeleteLogs(true);
+  useAdaptivePolling(
+    async (showLoader) => {
+      if (!selectedGuildId) return true;
+      if (showLoader && !deleteLogsLoadedOnce.current) setLoadingDeleteLogs(true);
       try {
         const response = await fetch(
           `/api/guilds/${selectedGuildId}/voice-delete-logs?limit=5&offset=0`,
@@ -47,28 +46,21 @@ function VoiceLogDeletedCardComponent({
         );
         if (!response.ok) throw new Error("Failed to load delete logs");
         const data = (await response.json()) as { deleteLogs: TempVoiceDeleteLog[] };
-        if (!active) return;
         setDeleteLogs(data.deleteLogs ?? []);
         setLoadError(null);
         deleteLogsLoadedOnce.current = true;
+        return true;
       } catch (err) {
-        if (!active) return;
         setLoadError(
           err instanceof Error ? err.message : "Failed to load delete logs"
         );
+        return false;
       } finally {
-        if (active) setLoadingDeleteLogs(false);
+        setLoadingDeleteLogs(false);
       }
-    };
-
-    loadDeleteLogs(!deleteLogsLoadedOnce.current);
-    const interval = setInterval(() => loadDeleteLogs(false), 15000);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [selectedGuildId]);
+    },
+    [selectedGuildId]
+  );
 
   return (
     <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-[400ms]">

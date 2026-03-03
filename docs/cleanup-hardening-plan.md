@@ -91,44 +91,44 @@ Purpose: reduce duplication and simplify safe future changes.
 
 ### A. Security and Config
 
-- [ ] Add strict DB SSL config helper for all Postgres clients.
-- [ ] Remove hardcoded `rejectUnauthorized: false` defaults.
-- [ ] Add explicit local-dev override docs and env flags.
-- [ ] Add startup env validation in bot runtime.
-- [ ] Add startup env validation in dashboard runtime.
+- [x] Add strict DB SSL config helper for all Postgres clients.
+- [x] Remove hardcoded `rejectUnauthorized: false` defaults.
+- [x] Add explicit local-dev override docs and env flags.
+- [x] Add startup env validation in bot runtime.
+- [x] Add startup env validation in dashboard runtime.
 
 ### B. Runtime Performance (Bot)
 
-- [ ] Add short-lived cache for `getGuildConfig(guildId)` with in-flight promise dedupe.
-- [ ] Refactor `voiceStateUpdate` flow to reuse computed summaries per event.
-- [ ] Ensure no behavior changes to manual panel update/delete lifecycle.
-- [ ] Ensure no behavior changes to temp channel prompt refresh lifecycle.
+- [x] Add short-lived cache for `getGuildConfig(guildId)` with in-flight promise dedupe.
+- [x] Refactor `voiceStateUpdate` flow to reuse computed summaries per event.
+- [x] Ensure no behavior changes to manual panel update/delete lifecycle.
+- [x] Ensure no behavior changes to temp channel prompt refresh lifecycle.
 
 ### C. Query/DB Optimization
 
-- [ ] Consolidate duplicated stats query logic for aggregate + rank.
-- [ ] Add missing indexes for frequently filtered/sorted columns.
-- [ ] Verify index creation is idempotent in schema/migration scripts.
-- [ ] Capture before/after query timing for stats and mixed logs.
+- [x] Consolidate duplicated stats query logic for aggregate + rank.
+- [x] Add missing indexes for frequently filtered/sorted columns.
+- [x] Verify index creation is idempotent in schema/migration scripts.
+- [x] Capture before/after query timing for stats and mixed logs.
 
 ### D. Dashboard/API Efficiency
 
-- [ ] Implement visibility-aware polling in dashboard cards.
-- [ ] Add backoff on repeated API failures.
-- [ ] Split leaderboard fetch from mixed-log fetch path.
-- [ ] Keep existing API output format compatible for current UI.
+- [x] Implement visibility-aware polling in dashboard cards.
+- [x] Add backoff on repeated API failures.
+- [x] Split leaderboard fetch from mixed-log fetch path.
+- [x] Keep existing API output format compatible for current UI.
 
 ### E. Cache Hygiene
 
-- [ ] Add bounded size + TTL eviction for username cache.
-- [ ] Add TTL/invalidation strategy for text channel cache.
-- [ ] Add safe cleanup on failed fetch/edit/delete operations.
+- [x] Add bounded size + TTL eviction for username cache.
+- [x] Add TTL/invalidation strategy for text channel cache.
+- [x] Add safe cleanup on failed fetch/edit/delete operations.
 
 ### F. Refactor and Consistency
 
-- [ ] Identify shared DB logic candidates across bot/dashboard.
-- [ ] Extract shared utilities without changing behavior.
-- [ ] Unify error logging style and context tags.
+- [x] Identify shared DB logic candidates across bot/dashboard.
+- [x] Extract shared utilities without changing behavior.
+- [x] Unify error logging style and context tags.
 
 ## Acceptance Criteria
 
@@ -140,12 +140,19 @@ Purpose: reduce duplication and simplify safe future changes.
 
 ## Validation Checklist (Per Phase)
 
-- [ ] `node --check src/index.js`
-- [ ] `node --check src/config-store.js`
-- [ ] `node --check src/bot/voice-log.js`
-- [ ] `npm --prefix dashboard run build`
+- [x] `node --check src/index.js`
+- [x] `node --check src/config-store.js`
+- [x] `node --check src/bot/voice-log.js`
+- [x] `npm --prefix dashboard run build`
 - [ ] Manual smoke test for voice join/move/leave flows
 - [ ] Manual smoke test for dashboard tabs and voice-log pages
+
+## Artifacts
+
+- Index verification script: `scripts/verify-db-indexes.js`
+- Query benchmark script: `scripts/benchmark-voice-queries.js`
+- Latest benchmark snapshot: `docs/perf/voice-query-benchmark-2026-03-03T20-59-37-881Z.md`
+- Shared DB candidate notes: `docs/shared-db-refactor-candidates.md`
 
 ## Rollout Notes
 

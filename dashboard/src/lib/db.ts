@@ -1,5 +1,6 @@
 import "@/lib/env";
 import { Pool } from "pg";
+import { buildPgSslConfig } from "@/lib/pg-ssl";
 
 type GuildConfig = {
   logChannelId: string | null;
@@ -21,7 +22,7 @@ if (!DATABASE_URL) {
 const pool = DATABASE_URL
   ? new Pool({
       connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      ssl: buildPgSslConfig(),
     })
   : null;
 

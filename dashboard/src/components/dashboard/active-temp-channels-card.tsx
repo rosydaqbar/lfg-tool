@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { Volume2 } from "lucide-react";
 import {
   Card,
@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { TempChannel } from "./types";
+import { useAdaptivePolling } from "./use-adaptive-polling";
 
 type ActiveTempChannelsCardProps = {
   selectedGuildId: string;
@@ -30,41 +31,31 @@ function ActiveTempChannelsCardComponent({
   const [loadError, setLoadError] = useState<string | null>(null);
   const tempChannelsLoadedOnce = useRef(false);
 
-  useEffect(() => {
-    if (!selectedGuildId) return;
-    let active = true;
-
-    const loadTempChannels = async (showLoader: boolean) => {
-      if (showLoader) setLoadingTempChannels(true);
+  useAdaptivePolling(
+    async (showLoader) => {
+      if (!selectedGuildId) return true;
+      if (showLoader && !tempChannelsLoadedOnce.current) setLoadingTempChannels(true);
       try {
-        const response = await fetch(
-          `/api/guilds/${selectedGuildId}/temp-channels`,
-          { cache: "no-store" }
-        );
+        const response = await fetch(`/api/guilds/${selectedGuildId}/temp-channels`, {
+          cache: "no-store",
+        });
         if (!response.ok) throw new Error("Failed to load temp channels");
         const data = (await response.json()) as { tempChannels: TempChannel[] };
-        if (!active) return;
         setTempChannels(data.tempChannels ?? []);
         setLoadError(null);
         tempChannelsLoadedOnce.current = true;
+        return true;
       } catch (err) {
-        if (!active) return;
         setLoadError(
           err instanceof Error ? err.message : "Failed to load temp channels"
         );
+        return false;
       } finally {
-        if (active) setLoadingTempChannels(false);
+        setLoadingTempChannels(false);
       }
-    };
-
-    loadTempChannels(!tempChannelsLoadedOnce.current);
-    const interval = setInterval(() => loadTempChannels(false), 15000);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [selectedGuildId]);
+    },
+    [selectedGuildId]
+  );
 
   return (
     <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300">
@@ -74,7 +65,7 @@ function ActiveTempChannelsCardComponent({
           Active temp channels
         </CardTitle>
         <CardDescription>
-          Read-only view of Join-to-Create channels currently tracked. Refreshes every 15s.
+          Read-only view of Join-to-Create channels currently tracked.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

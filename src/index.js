@@ -3,18 +3,29 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
 const configStore = require('./config-store');
 const { createDebugLogger } = require('./bot/debug');
-const { requireToken, DISCORD_TOKEN, LOG_CHANNEL_ID, VOICE_CHANNEL_ID, DEBUG } = require('./bot/env');
+const {
+  requireBotRuntimeEnv,
+  requireToken,
+  DISCORD_TOKEN,
+  LOG_CHANNEL_ID,
+  VOICE_CHANNEL_ID,
+  DEBUG,
+} = require('./bot/env');
 const { createJoinToCreateManager } = require('./bot/join-to-create');
 const { createLfgManager } = require('./bot/lfg');
 const { createLogChannelFetcher } = require('./bot/log-channel');
 const { createVoiceLogger } = require('./bot/voice-log');
 const { createHealthServer } = require('./bot/health-server');
 const { createStatsManager } = require('./bot/stats');
+const { createLogger } = require('./lib/logger');
 
+const logger = createLogger('bot');
+
+requireBotRuntimeEnv();
 requireToken();
 
 if (!LOG_CHANNEL_ID) {
-  console.warn('LOG_CHANNEL_ID not set. Using dashboard configuration only.');
+  logger.warn('LOG_CHANNEL_ID not set. Using dashboard configuration only.');
 }
 
 const client = new Client({
@@ -50,23 +61,56 @@ const healthServer = createHealthServer();
 
 healthServer.start();
 
+const GUILD_CONFIG_TTL_MS = 5000;
+const guildConfigCache = new Map();
+const guildConfigInFlight = new Map();
+
+async function getCachedGuildConfig(guildId) {
+  const now = Date.now();
+  const cached = guildConfigCache.get(guildId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const pending = guildConfigInFlight.get(guildId);
+  if (pending) {
+    return pending;
+  }
+
+  const loadPromise = configStore
+    .getGuildConfig(guildId)
+    .then((value) => {
+      guildConfigCache.set(guildId, {
+        value,
+        expiresAt: Date.now() + GUILD_CONFIG_TTL_MS,
+      });
+      return value;
+    })
+    .finally(() => {
+      guildConfigInFlight.delete(guildId);
+    });
+
+  guildConfigInFlight.set(guildId, loadPromise);
+  return loadPromise;
+}
+
 let shuttingDown = false;
 
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`Received ${signal}. Shutting down...`);
+  logger.info(`Received ${signal}. Shutting down...`);
 
   try {
     lfgManager.stopPersistentLoop?.();
   } catch (error) {
-    console.error('Failed to stop persistent loop:', error);
+    logger.error('Failed to stop persistent loop:', error);
   }
 
   try {
     healthServer.stop();
   } catch (error) {
-    console.error('Failed to stop health server:', error);
+    logger.error('Failed to stop health server:', error);
   }
 
   try {
@@ -74,7 +118,7 @@ async function shutdown(signal) {
       await client.destroy();
     }
   } catch (error) {
-    console.error('Failed to destroy Discord client:', error);
+    logger.error('Failed to destroy Discord client:', error);
   }
 
   process.exit(0);
@@ -95,10 +139,10 @@ process.on('SIGINT', () => {
 });
 
 client.once(Events.ClientReady, () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  logger.info(`Logged in as ${client.user.tag}`);
   lfgManager.startPersistentLoop();
   statsManager.registerCommands().catch((error) => {
-    console.error('Failed to register slash commands:', error);
+    logger.error('Failed to register slash commands:', error);
   });
 });
 
@@ -150,14 +194,29 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     joinToCreateLobbies: [],
   };
   try {
-    config = await configStore.getGuildConfig(guildId);
+    config = await getCachedGuildConfig(guildId);
   } catch (error) {
     console.error('Failed to read dashboard config:', error);
   }
 
   await joinToCreateManager.handleJoinToCreate(oldState, newState, config);
 
+  const manualSummaryCache = new Map();
+
   async function buildManualActivitySummary(channelId) {
+    if (!channelId) {
+      return {
+        active: [],
+        history: [],
+        activeCount: 0,
+        historyCount: 0,
+      };
+    }
+
+    if (manualSummaryCache.has(channelId)) {
+      return manualSummaryCache.get(channelId);
+    }
+
     const manualActivityRows = await configStore
       .getManualVoiceActivity(guildId, channelId)
       .catch((error) => {
@@ -181,12 +240,15 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         return bTime - aTime;
       });
 
-    return {
+    const summary = {
       active,
       history,
       activeCount: active.length,
       historyCount: history.length,
     };
+
+    manualSummaryCache.set(channelId, summary);
+    return summary;
   }
 
   const member = newState.member || oldState.member;

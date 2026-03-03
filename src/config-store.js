@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const { buildPgSslConfig } = require('./lib/pg-ssl');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -9,7 +10,7 @@ if (!DATABASE_URL) {
 const pool = DATABASE_URL
   ? new Pool({
       connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      ssl: buildPgSslConfig(),
     })
   : null;
 
@@ -658,39 +659,7 @@ async function getVoiceStatsForUser(guildId, userId) {
   await ensureManualVoiceActivityTable();
   await ensureManualVoiceSessionLogsTable();
 
-  const aggregateRes = await query(
-    `
-      WITH temp_expanded AS (
-        SELECT
-          elem->>'userId' AS user_id,
-          CASE
-            WHEN (elem->>'totalMs') ~ '^[0-9]+$'
-              THEN (elem->>'totalMs')::bigint
-            ELSE 0
-          END AS total_ms
-        FROM temp_voice_delete_logs logs
-        CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
-        WHERE logs.guild_id = $1
-          AND elem ? 'userId'
-      ),
-      all_sessions AS (
-        SELECT user_id, total_ms FROM temp_expanded
-        UNION ALL
-        SELECT user_id, total_ms
-        FROM manual_voice_session_logs
-        WHERE guild_id = $1
-      )
-      SELECT
-        COALESCE(SUM(total_ms), 0)::bigint AS total_ms,
-        COUNT(*)::bigint AS sessions,
-        COALESCE(MAX(total_ms), 0)::bigint AS longest_ms
-      FROM all_sessions
-      WHERE user_id = $2
-    `,
-    [guildId, userId]
-  );
-
-  const rankRes = await query(
+  const summaryRes = await query(
     `
       WITH temp_expanded AS (
         SELECT
@@ -716,7 +685,8 @@ async function getVoiceStatsForUser(guildId, userId) {
         SELECT
           user_id,
           SUM(total_ms)::bigint AS total_ms,
-          COUNT(*)::bigint AS sessions
+          COUNT(*)::bigint AS sessions,
+          MAX(total_ms)::bigint AS longest_ms
         FROM all_sessions
         GROUP BY user_id
       ),
@@ -728,9 +698,18 @@ async function getVoiceStatsForUser(guildId, userId) {
           ) AS rank_position
         FROM leaderboard
       )
-      SELECT rank_position
-      FROM ranked
-      WHERE user_id = $2
+      target AS (
+        SELECT
+          COALESCE(l.total_ms, 0)::bigint AS total_ms,
+          COALESCE(l.sessions, 0)::bigint AS sessions,
+          COALESCE(l.longest_ms, 0)::bigint AS longest_ms,
+          r.rank_position
+        FROM (SELECT $2::text AS user_id) u
+        LEFT JOIN leaderboard l ON l.user_id = u.user_id
+        LEFT JOIN ranked r ON r.user_id = u.user_id
+      )
+      SELECT total_ms, sessions, longest_ms, rank_position
+      FROM target
     `,
     [guildId, userId]
   );
@@ -774,7 +753,7 @@ async function getVoiceStatsForUser(guildId, userId) {
     [guildId, userId]
   );
 
-  const aggregate = aggregateRes.rows[0] || {};
+  const summary = summaryRes.rows[0] || {};
   const tempActive = activeRes.rows[0] || null;
   const manualActive = manualActiveRes.rows[0] || null;
   let active = null;
@@ -804,11 +783,11 @@ async function getVoiceStatsForUser(guildId, userId) {
   }
 
   return {
-    totalMs: Number(aggregate.total_ms || 0),
-    sessions: Number(aggregate.sessions || 0),
-    longestMs: Number(aggregate.longest_ms || 0),
+    totalMs: Number(summary.total_ms || 0),
+    sessions: Number(summary.sessions || 0),
+    longestMs: Number(summary.longest_ms || 0),
     ownerCount: Number(ownerRes.rows[0]?.owner_count || 0),
-    rank: Number(rankRes.rows[0]?.rank_position || 0) || null,
+    rank: Number(summary.rank_position || 0) || null,
     activeNow: active
       ? {
           channelId: active.channel_id,

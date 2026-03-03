@@ -8,7 +8,27 @@ type CacheEntry = {
 const POSITIVE_CACHE_TTL_MS = 10 * 60 * 1000;
 const NEGATIVE_CACHE_TTL_MS = 60 * 1000;
 const LOOKUP_CONCURRENCY = 5;
+const MAX_CACHE_SIZE = 5000;
 const memberNameCache = new Map<string, CacheEntry>();
+
+function pruneExpiredEntries(now: number) {
+  for (const [key, value] of memberNameCache.entries()) {
+    if (value.expiresAt <= now) {
+      memberNameCache.delete(key);
+    }
+  }
+}
+
+function enforceCacheLimit() {
+  if (memberNameCache.size <= MAX_CACHE_SIZE) return;
+  const overflow = memberNameCache.size - MAX_CACHE_SIZE;
+  let removed = 0;
+  for (const key of memberNameCache.keys()) {
+    memberNameCache.delete(key);
+    removed += 1;
+    if (removed >= overflow) break;
+  }
+}
 
 function getBotToken() {
   return process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN || null;
@@ -85,6 +105,7 @@ export async function resolveGuildUsernames(
   userIds: string[]
 ) {
   const now = Date.now();
+  pruneExpiredEntries(now);
   const uniqueIds = Array.from(
     new Set(userIds.map((id) => id.trim()).filter(Boolean))
   );
@@ -113,6 +134,7 @@ export async function resolveGuildUsernames(
           expiresAt:
             Date.now() + (name ? POSITIVE_CACHE_TTL_MS : NEGATIVE_CACHE_TTL_MS),
         });
+        enforceCacheLimit();
         result.set(userId, name);
       })
     );

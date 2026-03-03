@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { Trophy } from "lucide-react";
 import {
   Card,
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import type { VoiceDeleteLeaderboardEntry } from "./types";
+import { useAdaptivePolling } from "./use-adaptive-polling";
 
 type VoiceLeaderboardCardProps = {
   selectedGuildId: string;
@@ -39,41 +40,32 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
   const [error, setError] = useState<string | null>(null);
   const loadedOnce = useRef(false);
 
-  useEffect(() => {
-    if (!selectedGuildId) return;
-    let active = true;
-
-    const load = async (showLoader: boolean) => {
-      if (showLoader) setLoading(true);
+  useAdaptivePolling(
+    async (showLoader) => {
+      if (!selectedGuildId) return true;
+      if (showLoader && !loadedOnce.current) setLoading(true);
       try {
         const response = await fetch(
-          `/api/guilds/${selectedGuildId}/voice-delete-logs?limit=1&offset=0&includeLeaderboard=1&leaderboardLimit=20&leaderboardOffset=${page * 20}`,
+          `/api/guilds/${selectedGuildId}/voice-leaderboard?limit=20&offset=${page * 20}`,
           { cache: "no-store" }
         );
         if (!response.ok) throw new Error("Failed to load leaderboard");
         const data = (await response.json()) as {
           leaderboard: VoiceDeleteLeaderboardEntry[];
         };
-        if (!active) return;
         setRows(data.leaderboard ?? []);
         setError(null);
         loadedOnce.current = true;
+        return true;
       } catch (err) {
-        if (!active) return;
         setError(err instanceof Error ? err.message : "Failed to load leaderboard");
+        return false;
       } finally {
-        if (active) setLoading(false);
+        setLoading(false);
       }
-    };
-
-    load(!loadedOnce.current);
-    const interval = setInterval(() => load(false), 15000);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [page, selectedGuildId]);
+    },
+    [page, selectedGuildId]
+  );
 
   const canPrev = page > 0;
   const canNext = rows.length === 20;
