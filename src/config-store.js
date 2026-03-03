@@ -697,7 +697,7 @@ async function getVoiceStatsForUser(guildId, userId) {
             ORDER BY total_ms DESC, sessions DESC, user_id ASC
           ) AS rank_position
         FROM leaderboard
-      )
+      ),
       target AS (
         SELECT
           COALESCE(l.total_ms, 0)::bigint AS total_ms,
