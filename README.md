@@ -5,13 +5,57 @@
 
 Join-to-Create Discord voice bot with LFG flow, global voice stats, manual voice-session logging, and a Next.js dashboard for configuration and monitoring.
 
-## Screenshot
+## Screenshots
 
-Placeholder (add your screenshot file later):
+You can add multiple screenshots by feature here. Save all images under `docs/screenshots/`.
 
-![Dashboard screenshot placeholder](docs/screenshots/dashboard-placeholder.png)
+### Discord Bot
 
-If the image does not exist yet, create it at `docs/screenshots/dashboard-placeholder.png`.
+#### Join-to-Create Prompt
+![Join-to-Create prompt](docs/screenshots/bot-join-to-create-prompt.png)
+
+#### Voice Settings Panel
+![Voice settings panel](docs/screenshots/bot-voice-settings-panel.png)
+
+#### LFG Modal and Post
+![LFG modal](docs/screenshots/bot-lfg-modal.png)
+![LFG post](docs/screenshots/bot-lfg-post.png)
+
+#### Temp Voice Log (In Channel)
+![Temp voice log panel](docs/screenshots/bot-temp-voice-log-panel.png)
+
+#### Manual Voice Log (In Channel)
+![Manual voice log panel](docs/screenshots/bot-manual-voice-log-panel.png)
+![Manual session leave log](docs/screenshots/bot-manual-session-leave-log.png)
+
+#### Stats
+![Stats me](docs/screenshots/bot-stats-me.png)
+![Stats leaderboard](docs/screenshots/bot-stats-leaderboard.png)
+
+### Dashboard (Local)
+
+#### Main Settings
+![Dashboard settings](docs/screenshots/dashboard-settings.png)
+
+#### Join-to-Create Lobbies
+![Dashboard JTC lobbies](docs/screenshots/dashboard-jtc-lobbies.png)
+
+#### Voice Log Channels
+![Dashboard voice log channels](docs/screenshots/dashboard-voice-log-channels.png)
+
+#### Active Temp Channels Tab
+![Dashboard active temp channels](docs/screenshots/dashboard-active-temp-channels.png)
+
+#### Voice Log Tab
+![Dashboard voice log tab](docs/screenshots/dashboard-voice-log-tab.png)
+
+#### Voice Leaderboard
+![Dashboard voice leaderboard](docs/screenshots/dashboard-voice-leaderboard.png)
+
+#### Full Voice Log Page
+![Dashboard voice log page](docs/screenshots/dashboard-voice-log-page.png)
+
+Tip: if a screenshot is missing, GitHub will show a broken image icon until you add the file.
 
 ## Current Features
 
