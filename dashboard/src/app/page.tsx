@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,9 +12,16 @@ import {
 } from "@/components/ui/card";
 import { authOptions } from "@/lib/auth";
 import DashboardClient from "@/components/dashboard-client";
+import { getSetupState } from "@/lib/db";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
+  if (session) {
+    const setup = await getSetupState();
+    if (!setup.setupComplete) {
+      redirect("/setup");
+    }
+  }
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">

@@ -25,11 +25,11 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ profile, account, user }) {
-      if (!adminId) return false;
       const discordId =
         getDiscordProfileId(profile) ??
         account?.providerAccountId ??
         (user?.id as string);
+      if (!adminId) return Boolean(discordId);
       return discordId === adminId;
     },
     async jwt({ token, account, profile, user }) {

@@ -13,6 +13,26 @@ type GuildConfig = {
   }[];
 };
 
+export type SetupState = {
+  ownerDiscordId: string | null;
+  setupComplete: boolean;
+  selectedGuildId: string | null;
+  logChannelId: string | null;
+  lfgChannelId: string | null;
+  databaseProvider: "local_postgres" | "supabase" | null;
+  databaseValidatedAt: string | null;
+  botTokenSet: boolean;
+  databaseUrlSet: boolean;
+  steps: {
+    ownerClaimed: boolean;
+    botTokenValidated: boolean;
+    guildValidated: boolean;
+    inviteChecked: boolean;
+    databaseValidated: boolean;
+    channelsSaved: boolean;
+  };
+};
+
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!DATABASE_URL) {
@@ -41,6 +61,7 @@ async function query(text: string, params?: unknown[]) {
 let lfgEnabledColumnEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
+let setupStateEnsured = false;
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -102,6 +123,180 @@ async function ensureManualVoiceSessionLogsTable() {
   } catch (error) {
     console.error("Failed to ensure manual_voice_session_logs table:", error);
   }
+}
+
+async function ensureSetupStateTable() {
+  if (setupStateEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS setup_state (
+          id SMALLINT PRIMARY KEY DEFAULT 1,
+          owner_discord_id TEXT,
+          setup_complete BOOLEAN NOT NULL DEFAULT FALSE,
+          selected_guild_id TEXT,
+          log_channel_id TEXT,
+          lfg_channel_id TEXT,
+          bot_token_encrypted TEXT,
+          database_provider TEXT,
+          database_url_encrypted TEXT,
+          database_validated_at TIMESTAMPTZ,
+          owner_claimed_at TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT setup_state_singleton CHECK (id = 1)
+        )
+      `
+    );
+    setupStateEnsured = true;
+  } catch (error) {
+    console.error("Failed to ensure setup_state table:", error);
+  }
+}
+
+function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupState {
+  return {
+    ownerDiscordId: (row?.owner_discord_id as string | null) ?? null,
+    setupComplete: Boolean(row?.setup_complete),
+    selectedGuildId: (row?.selected_guild_id as string | null) ?? null,
+    logChannelId: (row?.log_channel_id as string | null) ?? null,
+    lfgChannelId: (row?.lfg_channel_id as string | null) ?? null,
+    databaseProvider:
+      row?.database_provider === "local_postgres" ||
+      row?.database_provider === "supabase"
+        ? (row.database_provider as "local_postgres" | "supabase")
+        : null,
+    databaseValidatedAt:
+      typeof row?.database_validated_at === "string"
+        ? row.database_validated_at
+        : null,
+    botTokenSet: Boolean(row?.bot_token_encrypted),
+    databaseUrlSet: Boolean(row?.database_url_encrypted),
+    steps: {
+      ownerClaimed: Boolean(row?.owner_discord_id),
+      botTokenValidated: Boolean(row?.bot_token_encrypted),
+      guildValidated: Boolean(row?.selected_guild_id),
+      inviteChecked: Boolean(row?.selected_guild_id),
+      databaseValidated: Boolean(row?.database_validated_at),
+      channelsSaved: Boolean(row?.log_channel_id),
+    },
+  };
+}
+
+async function ensureSetupRow() {
+  await ensureSetupStateTable();
+  await query(
+    `
+      INSERT INTO setup_state (id)
+      VALUES (1)
+      ON CONFLICT (id) DO NOTHING
+    `
+  );
+}
+
+export async function getSetupState(): Promise<SetupState> {
+  await ensureSetupRow();
+  const res = await query(`SELECT * FROM setup_state WHERE id = 1`);
+  let state = parseSetupStateRow(res.rows[0]);
+
+  if (!state.setupComplete) {
+    let existing: { guild_id?: string; log_channel_id?: string; lfg_channel_id?: string } | undefined;
+    try {
+      const configRes = await query(
+        `
+          SELECT guild_id, log_channel_id, lfg_channel_id
+          FROM guild_config
+          WHERE log_channel_id IS NOT NULL
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `
+      );
+      existing = configRes.rows[0];
+    } catch (error) {
+      const pgError = error as { code?: string };
+      if (pgError.code !== "42P01") {
+        throw error;
+      }
+    }
+
+    if (existing?.guild_id) {
+      await updateSetupState({
+        setupComplete: true,
+        ownerDiscordId: process.env.ADMIN_DISCORD_USER_ID || null,
+        selectedGuildId: existing.guild_id,
+        logChannelId: existing.log_channel_id,
+        lfgChannelId: existing.lfg_channel_id,
+      });
+      const refreshed = await query(`SELECT * FROM setup_state WHERE id = 1`);
+      state = parseSetupStateRow(refreshed.rows[0]);
+    }
+  }
+
+  return state;
+}
+
+export async function updateSetupState(fields: {
+  ownerDiscordId?: string | null;
+  setupComplete?: boolean;
+  selectedGuildId?: string | null;
+  logChannelId?: string | null;
+  lfgChannelId?: string | null;
+  botTokenEncrypted?: string | null;
+  databaseProvider?: "local_postgres" | "supabase" | null;
+  databaseUrlEncrypted?: string | null;
+  databaseValidatedAt?: string | null;
+  ownerClaimedAt?: string | null;
+}) {
+  await ensureSetupRow();
+  const keys = Object.keys(fields) as (keyof typeof fields)[];
+  if (keys.length === 0) return;
+
+  const columnByKey: Record<keyof typeof fields, string> = {
+    ownerDiscordId: "owner_discord_id",
+    setupComplete: "setup_complete",
+    selectedGuildId: "selected_guild_id",
+    logChannelId: "log_channel_id",
+    lfgChannelId: "lfg_channel_id",
+    botTokenEncrypted: "bot_token_encrypted",
+    databaseProvider: "database_provider",
+    databaseUrlEncrypted: "database_url_encrypted",
+    databaseValidatedAt: "database_validated_at",
+    ownerClaimedAt: "owner_claimed_at",
+  };
+
+  const assignments: string[] = [];
+  const values: unknown[] = [];
+  keys.forEach((key, idx) => {
+    assignments.push(`${columnByKey[key]} = $${idx + 1}`);
+    values.push(fields[key]);
+  });
+
+  values.push(1);
+  await query(
+    `
+      UPDATE setup_state
+      SET ${assignments.join(", ")}, updated_at = NOW()
+      WHERE id = $${values.length}
+    `,
+    values
+  );
+}
+
+export async function getSetupSecretPayload() {
+  await ensureSetupRow();
+  const res = await query(
+    `
+      SELECT bot_token_encrypted, database_url_encrypted
+      FROM setup_state
+      WHERE id = 1
+    `
+  );
+
+  const row = res.rows[0] ?? {};
+  return {
+    botTokenEncrypted: (row.bot_token_encrypted as string | null) ?? null,
+    databaseUrlEncrypted: (row.database_url_encrypted as string | null) ?? null,
+  };
 }
 
 export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
