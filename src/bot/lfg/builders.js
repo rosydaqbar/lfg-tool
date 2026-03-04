@@ -107,11 +107,6 @@ function buildVoiceSettingsRows(channelId) {
         .setCustomId(`${REGION_PREFIX}:${channelId}`)
         .setEmoji('🌍')
         .setLabel('Region')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`${MY_STATS_PREFIX}:${channelId}`)
-        .setEmoji('📊')
-        .setLabel('My Stats')
         .setStyle(ButtonStyle.Secondary)
     ),
   ];
@@ -126,7 +121,7 @@ function formatDuration(totalMs) {
   return `${hours}h ${minutes}m`;
 }
 
-function buildVoiceActivityContainer(activity) {
+function buildVoiceActivityContainer(channelId, activity) {
   const active = (activity?.active || []).slice(0, 10);
   const history = (activity?.history || []).slice(0, 10);
 
@@ -163,7 +158,16 @@ function buildVoiceActivityContainer(activity) {
 
   return new ContainerBuilder()
     .setAccentColor(0x0ea5e9)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${MY_STATS_PREFIX}:${channelId}`)
+          .setEmoji('📊')
+          .setLabel('My Stats')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    );
 }
 
 function buildJoinToCreatePromptPayload({
@@ -218,7 +222,7 @@ function buildJoinToCreatePromptPayload({
       ...(lfgEnabled ? buildLfgPromptRows(channelId) : []),
       topSeparator,
       container,
-      buildVoiceActivityContainer(voiceActivity),
+      buildVoiceActivityContainer(channelId, voiceActivity),
     ],
     flags: MessageFlags.IsComponentsV2,
   };

@@ -1,8 +1,12 @@
 const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ContainerBuilder,
   MessageFlags,
   TextDisplayBuilder,
 } = require('discord.js');
+const { MY_STATS_PREFIX } = require('./lfg/constants');
 
 function formatDuration(totalMs) {
   const safeMs = Math.max(0, Number(totalMs) || 0);
@@ -73,12 +77,21 @@ function buildVoiceActivitySummaryBody(activity) {
 }
 
 function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
-  function buildManualPanelPayload(activity) {
+  function buildManualPanelPayload(channelId, activity) {
     const body = buildVoiceActivitySummaryBody(activity);
 
     const container = new ContainerBuilder()
       .setAccentColor(0x0ea5e9)
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(body))
+      .addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${MY_STATS_PREFIX}:${channelId}`)
+            .setEmoji('📊')
+            .setLabel('My Stats')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      );
 
     return {
       flags: MessageFlags.IsComponentsV2,
@@ -92,7 +105,7 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
       return;
     }
 
-    const payload = buildManualPanelPayload(activity);
+    const payload = buildManualPanelPayload(voiceChannel.id, activity);
 
     try {
       if (configStore?.getManualVoicePanelMessage) {
@@ -135,7 +148,7 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
       return;
     }
 
-    const payload = buildManualPanelPayload(activity);
+    const payload = buildManualPanelPayload(voiceChannel.id, activity);
     const messageId = await configStore
       .getManualVoicePanelMessage(guildId, voiceChannel.id)
       .catch(() => null);
