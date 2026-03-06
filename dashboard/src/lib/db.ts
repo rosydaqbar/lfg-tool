@@ -1,4 +1,6 @@
 import "@/lib/env";
+import fs from "fs";
+import path from "path";
 import { Pool } from "pg";
 import { buildPgSslConfig } from "@/lib/pg-ssl";
 
@@ -22,9 +24,13 @@ export type SetupState = {
   databaseProvider: "local_postgres" | "supabase" | null;
   databaseValidatedAt: string | null;
   botTokenSet: boolean;
+  botDisplayName: string | null;
+  discordClientId: string | null;
+  discordClientSecretSet: boolean;
   databaseUrlSet: boolean;
   steps: {
     ownerClaimed: boolean;
+    discordAppConfigured: boolean;
     botTokenValidated: boolean;
     guildValidated: boolean;
     inviteChecked: boolean;
@@ -34,10 +40,7 @@ export type SetupState = {
 };
 
 const DATABASE_URL = process.env.DATABASE_URL;
-
-if (!DATABASE_URL) {
-  console.error("Missing DATABASE_URL in environment.");
-}
+const SETUP_STATE_FALLBACK_PATH = path.resolve(process.cwd(), ".setup-state.json");
 
 const pool = DATABASE_URL
   ? new Pool({
@@ -56,6 +59,27 @@ async function getPool() {
 async function query(text: string, params?: unknown[]) {
   const db = await getPool();
   return db.query(text, params);
+}
+
+function readSetupStateFallback(): Record<string, unknown> {
+  try {
+    if (!fs.existsSync(SETUP_STATE_FALLBACK_PATH)) {
+      return {};
+    }
+    const raw = fs.readFileSync(SETUP_STATE_FALLBACK_PATH, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSetupStateFallback(nextState: Record<string, unknown>) {
+  fs.writeFileSync(
+    SETUP_STATE_FALLBACK_PATH,
+    JSON.stringify(nextState, null, 2),
+    "utf8"
+  );
 }
 
 let lfgEnabledColumnEnsured = false;
@@ -138,6 +162,9 @@ async function ensureSetupStateTable() {
           log_channel_id TEXT,
           lfg_channel_id TEXT,
           bot_token_encrypted TEXT,
+          bot_display_name TEXT,
+          discord_client_id TEXT,
+          discord_client_secret_encrypted TEXT,
           database_provider TEXT,
           database_url_encrypted TEXT,
           database_validated_at TIMESTAMPTZ,
@@ -148,6 +175,15 @@ async function ensureSetupStateTable() {
         )
       `
     );
+    await query(
+      "ALTER TABLE IF EXISTS setup_state ADD COLUMN IF NOT EXISTS bot_display_name TEXT"
+    );
+    await query(
+      "ALTER TABLE IF EXISTS setup_state ADD COLUMN IF NOT EXISTS discord_client_id TEXT"
+    );
+    await query(
+      "ALTER TABLE IF EXISTS setup_state ADD COLUMN IF NOT EXISTS discord_client_secret_encrypted TEXT"
+    );
     setupStateEnsured = true;
   } catch (error) {
     console.error("Failed to ensure setup_state table:", error);
@@ -155,35 +191,59 @@ async function ensureSetupStateTable() {
 }
 
 function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupState {
+  const value = (snake: string, camel: string) => row?.[snake] ?? row?.[camel];
+
   return {
-    ownerDiscordId: (row?.owner_discord_id as string | null) ?? null,
-    setupComplete: Boolean(row?.setup_complete),
-    selectedGuildId: (row?.selected_guild_id as string | null) ?? null,
-    logChannelId: (row?.log_channel_id as string | null) ?? null,
-    lfgChannelId: (row?.lfg_channel_id as string | null) ?? null,
+    ownerDiscordId: (value("owner_discord_id", "ownerDiscordId") as string | null) ?? null,
+    setupComplete: Boolean(value("setup_complete", "setupComplete")),
+    selectedGuildId: (value("selected_guild_id", "selectedGuildId") as string | null) ?? null,
+    logChannelId: (value("log_channel_id", "logChannelId") as string | null) ?? null,
+    lfgChannelId: (value("lfg_channel_id", "lfgChannelId") as string | null) ?? null,
     databaseProvider:
-      row?.database_provider === "local_postgres" ||
-      row?.database_provider === "supabase"
-        ? (row.database_provider as "local_postgres" | "supabase")
+      value("database_provider", "databaseProvider") === "local_postgres" ||
+      value("database_provider", "databaseProvider") === "supabase"
+        ? (value("database_provider", "databaseProvider") as "local_postgres" | "supabase")
         : null,
     databaseValidatedAt:
-      typeof row?.database_validated_at === "string"
-        ? row.database_validated_at
+      typeof value("database_validated_at", "databaseValidatedAt") === "string"
+        ? (value("database_validated_at", "databaseValidatedAt") as string)
         : null,
-    botTokenSet: Boolean(row?.bot_token_encrypted),
-    databaseUrlSet: Boolean(row?.database_url_encrypted),
+    botTokenSet: Boolean(value("bot_token_encrypted", "botTokenEncrypted")),
+    botDisplayName: (value("bot_display_name", "botDisplayName") as string | null) ?? null,
+    discordClientId: (value("discord_client_id", "discordClientId") as string | null) ?? null,
+    discordClientSecretSet: Boolean(
+      value("discord_client_secret_encrypted", "discordClientSecretEncrypted")
+    ),
+    databaseUrlSet: Boolean(value("database_url_encrypted", "databaseUrlEncrypted")),
     steps: {
-      ownerClaimed: Boolean(row?.owner_discord_id),
-      botTokenValidated: Boolean(row?.bot_token_encrypted),
-      guildValidated: Boolean(row?.selected_guild_id),
-      inviteChecked: Boolean(row?.selected_guild_id),
-      databaseValidated: Boolean(row?.database_validated_at),
-      channelsSaved: Boolean(row?.log_channel_id),
+      ownerClaimed: Boolean(value("owner_discord_id", "ownerDiscordId")),
+      discordAppConfigured: Boolean(
+        value("discord_client_id", "discordClientId")
+          && value("discord_client_secret_encrypted", "discordClientSecretEncrypted")
+      ),
+      botTokenValidated: Boolean(value("bot_token_encrypted", "botTokenEncrypted")),
+      guildValidated: Boolean(value("selected_guild_id", "selectedGuildId")),
+      inviteChecked: Boolean(value("selected_guild_id", "selectedGuildId")),
+      databaseValidated: Boolean(value("database_validated_at", "databaseValidatedAt")),
+      channelsSaved: Boolean(value("log_channel_id", "logChannelId")),
     },
   };
 }
 
 async function ensureSetupRow() {
+  if (!DATABASE_URL) {
+    const current = readSetupStateFallback();
+    if (!current.id) {
+      writeSetupStateFallback({
+        id: 1,
+        setupComplete: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return;
+  }
+
   await ensureSetupStateTable();
   await query(
     `
@@ -196,6 +256,12 @@ async function ensureSetupRow() {
 
 export async function getSetupState(): Promise<SetupState> {
   await ensureSetupRow();
+
+  if (!DATABASE_URL) {
+    const fallback = readSetupStateFallback();
+    return parseSetupStateRow(fallback);
+  }
+
   const res = await query(`SELECT * FROM setup_state WHERE id = 1`);
   let state = parseSetupStateRow(res.rows[0]);
 
@@ -242,12 +308,27 @@ export async function updateSetupState(fields: {
   logChannelId?: string | null;
   lfgChannelId?: string | null;
   botTokenEncrypted?: string | null;
+  botDisplayName?: string | null;
+  discordClientId?: string | null;
+  discordClientSecretEncrypted?: string | null;
   databaseProvider?: "local_postgres" | "supabase" | null;
   databaseUrlEncrypted?: string | null;
   databaseValidatedAt?: string | null;
   ownerClaimedAt?: string | null;
 }) {
   await ensureSetupRow();
+
+  if (!DATABASE_URL) {
+    const current = readSetupStateFallback();
+    const next = {
+      ...current,
+      ...fields,
+      updatedAt: new Date().toISOString(),
+    };
+    writeSetupStateFallback(next);
+    return;
+  }
+
   const keys = Object.keys(fields) as (keyof typeof fields)[];
   if (keys.length === 0) return;
 
@@ -258,6 +339,9 @@ export async function updateSetupState(fields: {
     logChannelId: "log_channel_id",
     lfgChannelId: "lfg_channel_id",
     botTokenEncrypted: "bot_token_encrypted",
+    botDisplayName: "bot_display_name",
+    discordClientId: "discord_client_id",
+    discordClientSecretEncrypted: "discord_client_secret_encrypted",
     databaseProvider: "database_provider",
     databaseUrlEncrypted: "database_url_encrypted",
     databaseValidatedAt: "database_validated_at",
@@ -284,9 +368,20 @@ export async function updateSetupState(fields: {
 
 export async function getSetupSecretPayload() {
   await ensureSetupRow();
+
+  if (!DATABASE_URL) {
+    const fallback = readSetupStateFallback();
+    return {
+      botTokenEncrypted: (fallback.botTokenEncrypted as string | null) ?? null,
+      databaseUrlEncrypted: (fallback.databaseUrlEncrypted as string | null) ?? null,
+      discordClientSecretEncrypted:
+        (fallback.discordClientSecretEncrypted as string | null) ?? null,
+    };
+  }
+
   const res = await query(
     `
-      SELECT bot_token_encrypted, database_url_encrypted
+      SELECT bot_token_encrypted, database_url_encrypted, discord_client_secret_encrypted
       FROM setup_state
       WHERE id = 1
     `
@@ -296,6 +391,8 @@ export async function getSetupSecretPayload() {
   return {
     botTokenEncrypted: (row.bot_token_encrypted as string | null) ?? null,
     databaseUrlEncrypted: (row.database_url_encrypted as string | null) ?? null,
+    discordClientSecretEncrypted:
+      (row.discord_client_secret_encrypted as string | null) ?? null,
   };
 }
 
@@ -341,8 +438,11 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
   };
 }
 
-export async function saveGuildConfig(guildId: string, config: GuildConfig) {
-  await ensureJoinToCreateLfgEnabledColumn();
+async function saveGuildConfigWithClient(
+  client: { query: (text: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+  guildId: string,
+  config: GuildConfig
+) {
   if (!config.logChannelId) {
     throw new Error("logChannelId is required");
   }
@@ -350,69 +450,90 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
     throw new Error("joinToCreateLobbies requires a role for each lobby");
   }
 
+  const lfgEnabledColumnRes = await client.query(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'join_to_create_lobbies'
+          AND column_name = 'lfg_enabled'
+      ) AS has_lfg_enabled
+    `
+  );
+  const hasLfgEnabledColumn = lfgEnabledColumnRes.rows[0]?.has_lfg_enabled === true;
+
+  await client.query(
+    `
+      INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT(guild_id) DO UPDATE SET
+        log_channel_id = EXCLUDED.log_channel_id,
+        lfg_channel_id = EXCLUDED.lfg_channel_id,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [guildId, config.logChannelId, config.lfgChannelId]
+  );
+
+  await client.query("DELETE FROM voice_watchlist WHERE guild_id = $1", [guildId]);
+  for (const channelId of config.enabledVoiceChannelIds) {
+    await client.query(
+      "INSERT INTO voice_watchlist (guild_id, voice_channel_id, enabled) VALUES ($1, $2, true)",
+      [guildId, channelId]
+    );
+  }
+
+  await client.query("DELETE FROM join_to_create_lobbies WHERE guild_id = $1", [guildId]);
+  for (const lobby of config.joinToCreateLobbies) {
+    if (hasLfgEnabledColumn) {
+      await client.query(
+        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES ($1, $2, $3, $4)",
+        [guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ?? true]
+      );
+    } else {
+      await client.query(
+        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id) VALUES ($1, $2, $3)",
+        [guildId, lobby.channelId, lobby.roleId]
+      );
+    }
+  }
+}
+
+export async function saveGuildConfig(guildId: string, config: GuildConfig) {
+  await ensureJoinToCreateLfgEnabledColumn();
   const db = await getPool();
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-
-    const lfgEnabledColumnRes = await client.query(
-      `
-        SELECT EXISTS (
-          SELECT 1
-          FROM information_schema.columns
-          WHERE table_name = 'join_to_create_lobbies'
-            AND column_name = 'lfg_enabled'
-        ) AS has_lfg_enabled
-      `
-    );
-    const hasLfgEnabledColumn =
-      lfgEnabledColumnRes.rows[0]?.has_lfg_enabled === true;
-
-    await client.query(
-      `
-        INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, updated_at)
-        VALUES ($1, $2, $3, NOW())
-        ON CONFLICT(guild_id) DO UPDATE SET
-          log_channel_id = EXCLUDED.log_channel_id,
-          lfg_channel_id = EXCLUDED.lfg_channel_id,
-          updated_at = EXCLUDED.updated_at
-      `,
-      [guildId, config.logChannelId, config.lfgChannelId]
-    );
-
-    await client.query("DELETE FROM voice_watchlist WHERE guild_id = $1", [
-      guildId,
-    ]);
-    for (const channelId of config.enabledVoiceChannelIds) {
-      await client.query(
-        "INSERT INTO voice_watchlist (guild_id, voice_channel_id, enabled) VALUES ($1, $2, true)",
-        [guildId, channelId]
-      );
-    }
-
-    await client.query("DELETE FROM join_to_create_lobbies WHERE guild_id = $1", [
-      guildId,
-    ]);
-    for (const lobby of config.joinToCreateLobbies) {
-      if (hasLfgEnabledColumn) {
-        await client.query(
-          "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES ($1, $2, $3, $4)",
-          [guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ?? true]
-        );
-      } else {
-        await client.query(
-          "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id) VALUES ($1, $2, $3)",
-          [guildId, lobby.channelId, lobby.roleId]
-        );
-      }
-    }
-
+    await saveGuildConfigWithClient(client, guildId, config);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
+  }
+}
+
+export async function saveGuildConfigWithDatabaseUrl(
+  databaseUrl: string,
+  guildId: string,
+  config: GuildConfig
+) {
+  const scopedPool = new Pool({
+    connectionString: databaseUrl,
+    ssl: buildPgSslConfig(),
+  });
+  const client = await scopedPool.connect();
+  try {
+    await client.query("BEGIN");
+    await saveGuildConfigWithClient(client, guildId, config);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+    await scopedPool.end().catch(() => null);
   }
 }
 

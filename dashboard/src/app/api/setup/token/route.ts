@@ -17,12 +17,27 @@ async function validateBotToken(token: string) {
     return { ok: false, message: "Invalid bot token" };
   }
 
-  const user = (await response.json()) as { id?: string; username?: string };
+  const user = (await response.json()) as {
+    id?: string;
+    username?: string;
+    global_name?: string | null;
+    discriminator?: string;
+  };
   if (!user?.id) {
     return { ok: false, message: "Failed to validate bot identity" };
   }
 
-  return { ok: true, botId: user.id, botName: user.username || user.id };
+  const tag = user.discriminator && user.discriminator !== "0"
+    ? `${user.username}#${user.discriminator}`
+    : user.username;
+  const displayName = user.global_name || user.username || user.id;
+
+  return {
+    ok: true,
+    botId: user.id,
+    botName: displayName,
+    botTag: tag || user.id,
+  };
 }
 
 export async function POST(request: Request) {
@@ -48,12 +63,14 @@ export async function POST(request: Request) {
   const encrypted = encryptSetupValue(token);
   await updateSetupState({
     botTokenEncrypted: encrypted,
+    botDisplayName: check.botTag || check.botName,
   });
 
   const setup = await getSetupState();
   return NextResponse.json({
     ok: true,
     botName: check.botName,
+    botTag: check.botTag,
     setup,
   });
 }

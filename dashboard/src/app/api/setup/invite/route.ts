@@ -25,7 +25,7 @@ export async function GET() {
 
   const setup = await getSetupState();
   const guildId = setup.selectedGuildId;
-  const clientId = process.env.DISCORD_CLIENT_ID;
+  const clientId = setup.discordClientId || process.env.DISCORD_CLIENT_ID || null;
 
   const inviteUrl = clientId
     ? `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=${REQUIRED_PERMISSIONS}&scope=bot%20applications.commands`

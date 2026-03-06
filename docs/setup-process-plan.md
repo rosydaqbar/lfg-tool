@@ -13,7 +13,8 @@ Provide a first-run setup flow that helps admins configure bot access, guild tar
 
 ## High-Level Flow
 
-1. Discord login (existing)
+0. Discord app credentials (`Client ID` + `Client Secret`) to enable OAuth
+1. Discord login
 2. Admin ownership/claim (first setup owner)
 3. Bot token input + validation
 4. Guild ID setup (select/input + validation)

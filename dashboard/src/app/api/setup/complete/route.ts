@@ -13,6 +13,8 @@ export async function POST() {
   const setup = await getSetupState();
   if (
     !setup.ownerDiscordId ||
+    !setup.discordClientId ||
+    !setup.discordClientSecretSet ||
     !setup.botTokenSet ||
     !setup.selectedGuildId ||
     !setup.databaseValidatedAt ||
