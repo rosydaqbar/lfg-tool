@@ -33,6 +33,7 @@ let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceActivityEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
 let manualVoicePanelMessageEnsured = false;
+let persistentLfgMessageEnsured = false;
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -168,6 +169,25 @@ async function ensureManualVoicePanelMessageTable() {
   }
 }
 
+async function ensurePersistentLfgMessageTable() {
+  if (persistentLfgMessageEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS lfg_persistent_message (
+          guild_id TEXT PRIMARY KEY,
+          channel_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    persistentLfgMessageEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure lfg_persistent_message table:', error);
+  }
+}
+
 async function getGuildConfig(guildId) {
   await ensureJoinToCreateLfgEnabledColumn();
   const configRes = await query(
@@ -218,6 +238,7 @@ async function getGuildConfig(guildId) {
 }
 
 async function getPersistentLfgMessage(guildId) {
+  await ensurePersistentLfgMessageTable();
   const res = await query(
     'SELECT channel_id, message_id FROM lfg_persistent_message WHERE guild_id = $1',
     [guildId]
@@ -231,6 +252,7 @@ async function getPersistentLfgMessage(guildId) {
 }
 
 async function setPersistentLfgMessage(guildId, channelId, messageId) {
+  await ensurePersistentLfgMessageTable();
   await query(
     `
       INSERT INTO lfg_persistent_message (guild_id, channel_id, message_id, updated_at)
@@ -245,6 +267,7 @@ async function setPersistentLfgMessage(guildId, channelId, messageId) {
 }
 
 async function clearPersistentLfgMessage(guildId) {
+  await ensurePersistentLfgMessageTable();
   await query('DELETE FROM lfg_persistent_message WHERE guild_id = $1', [
     guildId,
   ]);

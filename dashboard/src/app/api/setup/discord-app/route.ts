@@ -29,6 +29,22 @@ export async function POST(request: Request) {
   await updateSetupState({
     discordClientId: clientId,
     discordClientSecretEncrypted: encryptedSecret,
+    discordClientSecret: clientSecret,
+  });
+
+  return NextResponse.json({ ok: true, setup: await getSetupState() });
+}
+
+export async function DELETE() {
+  const auth = await requireSetupSession();
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  await updateSetupState({
+    discordClientId: null,
+    discordClientSecretEncrypted: null,
+    discordClientSecret: null,
   });
 
   return NextResponse.json({ ok: true, setup: await getSetupState() });

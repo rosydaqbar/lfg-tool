@@ -63,6 +63,7 @@ export async function POST(request: Request) {
   const encrypted = encryptSetupValue(token);
   await updateSetupState({
     botTokenEncrypted: encrypted,
+    botToken: token,
     botDisplayName: check.botTag || check.botName,
   });
 

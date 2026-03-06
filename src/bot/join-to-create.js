@@ -110,6 +110,35 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
     });
   }
 
+  async function sendJoinToCreateErrorLog({ guildId, memberId, lobbyChannelId, error, config }) {
+    const logChannelId = config?.logChannelId || env.LOG_CHANNEL_ID;
+    if (!logChannelId) return;
+
+    const logChannel = await client.channels.fetch(logChannelId).catch(() => null);
+    if (!logChannel || !logChannel.isTextBased()) return;
+
+    const errorCode = error?.code ? ` (${error.code})` : '';
+    const errorMessage = error?.message || 'Unknown error';
+    const missingPermHint = error?.code === 50013
+      ? '\nHint: Give bot permission to Manage Channels and Connect in this category.'
+      : '';
+
+    const content = [
+      '### Join-to-Create Error',
+      `- Guild: \`${guildId || '-'}\``,
+      `- Lobby Channel: <#${lobbyChannelId}> (\`${lobbyChannelId}\`)`,
+      `- User: <@${memberId}> (\`${memberId}\`)`,
+      `- Error: \`${errorMessage}${errorCode}\`${missingPermHint}`,
+    ].join('\n');
+
+    await logChannel.send({
+      content,
+      allowedMentions: { parse: [] },
+    }).catch((sendError) => {
+      console.error('Failed to send Join-to-Create error log:', sendError);
+    });
+  }
+
   function buildChannelName(member, fallbackId) {
     const base =
       member?.displayName || member?.user?.username || `User-${fallbackId}`;
@@ -279,6 +308,13 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
       );
     } catch (error) {
       console.error('Failed to create Join-to-Create channel:', error);
+      await sendJoinToCreateErrorLog({
+        guildId,
+        memberId: member.id,
+        lobbyChannelId,
+        error,
+        config,
+      });
     } finally {
       joinToCreatePending.delete(pendingKey);
     }

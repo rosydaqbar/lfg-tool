@@ -14,13 +14,20 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const config = await getGuildConfig(id);
-  return NextResponse.json({
-    logChannelId: config.logChannelId,
-    lfgChannelId: config.lfgChannelId,
-    enabledVoiceChannelIds: config.enabledVoiceChannelIds,
-    joinToCreateLobbies: config.joinToCreateLobbies,
-  });
+  try {
+    const config = await getGuildConfig(id);
+    return NextResponse.json({
+      logChannelId: config.logChannelId,
+      lfgChannelId: config.lfgChannelId,
+      enabledVoiceChannelIds: config.enabledVoiceChannelIds,
+      joinToCreateLobbies: config.joinToCreateLobbies,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: (error as Error).message || "Failed to load config" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PUT(

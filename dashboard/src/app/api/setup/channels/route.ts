@@ -50,12 +50,12 @@ export async function GET() {
   }
 
   const secrets = await getSetupSecretPayload();
-  if (!secrets.botTokenEncrypted) {
+  if (!secrets.botTokenEncrypted && !secrets.botToken) {
     return NextResponse.json({ error: "Bot token is not configured" }, { status: 400 });
   }
 
   try {
-    const botToken = decryptSetupValue(secrets.botTokenEncrypted);
+    const botToken = secrets.botToken || decryptSetupValue(secrets.botTokenEncrypted as string);
     const textChannels = await loadTextChannels(setup.selectedGuildId, botToken);
     return NextResponse.json({ textChannels });
   } catch {
@@ -95,13 +95,14 @@ export async function POST(request: Request) {
       });
     } else {
       const secrets = await getSetupSecretPayload();
-      if (!secrets.databaseUrlEncrypted) {
+      if (!secrets.databaseUrlEncrypted && !secrets.databaseUrl) {
         return NextResponse.json(
           { error: "Database is not configured. Complete database step first." },
           { status: 400 }
         );
       }
-      const setupDatabaseUrl = decryptSetupValue(secrets.databaseUrlEncrypted);
+      const setupDatabaseUrl = secrets.databaseUrl
+        || decryptSetupValue(secrets.databaseUrlEncrypted as string);
       await saveGuildConfigWithDatabaseUrl(setupDatabaseUrl, setup.selectedGuildId, {
         logChannelId,
         lfgChannelId,

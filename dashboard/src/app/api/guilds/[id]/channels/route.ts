@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
+import { getDashboardBotToken } from "@/lib/runtime-secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,10 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const botToken = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
+  const botToken = await getDashboardBotToken();
   if (!botToken) {
     return NextResponse.json(
-      { error: "Missing DISCORD_TOKEN" },
+      { error: "Missing bot token. Configure Step 3 in setup." },
       { status: 500 }
     );
   }
@@ -35,8 +36,9 @@ export async function GET(
   );
 
   if (!response.ok) {
+    const details = (await response.json().catch(() => null)) as { message?: string } | null;
     return NextResponse.json(
-      { error: "Failed to fetch channels" },
+      { error: details?.message || "Failed to fetch channels" },
       { status: response.status }
     );
   }

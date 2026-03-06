@@ -1,16 +1,22 @@
-import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { authOptions } from "@/lib/auth";
 import { getSetupState } from "@/lib/db";
 import { SetupBootstrapDiscordApp } from "@/components/setup/setup-bootstrap-discord";
+import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
 import { SetupWizard } from "@/components/setup/setup-wizard";
+import { getSafeServerSession } from "@/lib/safe-session";
 
-export default async function SetupPage() {
-  const session = await getServerSession(authOptions);
+export default async function SetupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ configureDiscord?: string }>;
+}) {
+  const params = await searchParams;
+  const session = await getSafeServerSession();
   const setup = await getSetupState();
+  const forceConfigureDiscord = params.configureDiscord === "1";
 
   if (setup.setupComplete) {
     redirect("/");
@@ -37,9 +43,14 @@ export default async function SetupPage() {
             </>
           ) : (
             setup.discordClientId && setup.discordClientSecretSet ? (
-              <Button asChild>
-                <Link href="/api/auth/signin/discord">Sign in with Discord</Link>
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button asChild>
+                  <Link href="/api/auth/signin/discord">Sign in with Discord</Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/setup?configureDiscord=1">Use different Client ID/Secret</Link>
+                </Button>
+              </div>
             ) : (
               <span>Configure Discord app credentials first.</span>
             )
@@ -52,18 +63,23 @@ export default async function SetupPage() {
           <CardHeader>
             <CardTitle>Setup Wizard</CardTitle>
             <CardDescription>
-              {setup.discordClientId && setup.discordClientSecretSet
+              {setup.discordClientId && setup.discordClientSecretSet && !forceConfigureDiscord
                 ? "Sign in with Discord to begin first-time setup."
                 : "Provide Discord Client ID and Client Secret first to enable OAuth login."}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {setup.discordClientId && setup.discordClientSecretSet ? (
+            {setup.discordClientId && setup.discordClientSecretSet && !forceConfigureDiscord ? (
               <Button asChild>
                 <Link href="/api/auth/signin/discord">Sign in with Discord</Link>
               </Button>
             ) : (
-              <SetupBootstrapDiscordApp />
+              <div className="space-y-4">
+                <SetupBootstrapDiscordApp />
+                {setup.discordClientId && setup.discordClientSecretSet ? (
+                  <SetupResetDiscordButton endpoint="/api/setup/bootstrap-discord-app" />
+                ) : null}
+              </div>
             )}
           </CardContent>
         </Card>

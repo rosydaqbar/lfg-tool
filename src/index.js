@@ -1,5 +1,8 @@
 require('dotenv').config();
 
+const { applyRuntimeConfig } = require('./bot/runtime-config');
+applyRuntimeConfig();
+
 const { Client, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
 const configStore = require('./config-store');
 const { createDebugLogger } = require('./bot/debug');

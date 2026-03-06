@@ -3,9 +3,17 @@ import fs from "fs";
 import path from "path";
 import type { NextAuthOptions } from "next-auth";
 import DiscordProvider from "next-auth/providers/discord";
+import { getSetupState } from "@/lib/db";
 import { decryptSetupValue } from "@/lib/setup-crypto";
 
 const adminId = process.env.ADMIN_DISCORD_USER_ID;
+const DASHBOARD_DIR_NAME = "dashboard";
+
+function getWorkspaceRoot() {
+  return path.basename(process.cwd()).toLowerCase() === DASHBOARD_DIR_NAME
+    ? path.resolve(process.cwd(), "..")
+    : process.cwd();
+}
 
 function loadDiscordOAuthCredentials() {
   const envClientId = process.env.DISCORD_CLIENT_ID;
@@ -14,33 +22,38 @@ function loadDiscordOAuthCredentials() {
     return { clientId: envClientId, clientSecret: envClientSecret };
   }
 
-  const candidates = [
-    path.resolve(process.cwd(), ".setup-state.json"),
-    path.resolve(process.cwd(), "dashboard", ".setup-state.json"),
-  ];
+  const setupStatePath = path.resolve(getWorkspaceRoot(), ".setup-state.json");
 
-  for (const filePath of candidates) {
-    try {
-      if (!fs.existsSync(filePath)) continue;
-      const raw = fs.readFileSync(filePath, "utf8");
+  try {
+    if (fs.existsSync(setupStatePath)) {
+      const raw = fs.readFileSync(setupStatePath, "utf8");
       const parsed = JSON.parse(raw) as {
         discordClientId?: string;
         discordClientSecretEncrypted?: string;
+        discordClientSecret?: string;
       };
-      if (!parsed.discordClientId || !parsed.discordClientSecretEncrypted) continue;
-      return {
-        clientId: parsed.discordClientId,
-        clientSecret: decryptSetupValue(parsed.discordClientSecretEncrypted),
-      };
-    } catch {
-      // ignore fallback parse/decrypt errors
+      if (parsed.discordClientId) {
+        if (parsed.discordClientSecret && parsed.discordClientSecret.trim()) {
+          return {
+            clientId: parsed.discordClientId,
+            clientSecret: parsed.discordClientSecret.trim(),
+          };
+        }
+
+        if (parsed.discordClientSecretEncrypted) {
+          return {
+            clientId: parsed.discordClientId,
+            clientSecret: decryptSetupValue(parsed.discordClientSecretEncrypted),
+          };
+        }
+      }
     }
+  } catch {
+    // ignore fallback parse/decrypt errors
   }
 
   return { clientId: "", clientSecret: "" };
 }
-
-const discordOAuth = loadDiscordOAuthCredentials();
 
 function getDiscordProfileId(profile: unknown) {
   if (!profile || typeof profile !== "object") return undefined;
@@ -48,44 +61,81 @@ function getDiscordProfileId(profile: unknown) {
   return typeof value.id === "string" ? value.id : undefined;
 }
 
-export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
-  providers: [
-    DiscordProvider({
-      clientId: discordOAuth.clientId,
-      clientSecret: discordOAuth.clientSecret,
-      authorization: {
-        params: {
-          scope: "identify guilds",
-        },
+export function getAuthOptions(): NextAuthOptions {
+  const discordOAuth = loadDiscordOAuthCredentials();
+
+  return {
+    session: { strategy: "jwt" },
+    logger: {
+      error(code, metadata) {
+        if (code === "JWT_SESSION_ERROR") {
+          return;
+        }
+        console.error("[next-auth][error]", code, metadata ?? {});
       },
-    }),
-  ],
-  callbacks: {
-    async signIn({ profile, account, user }) {
-      const discordId =
-        getDiscordProfileId(profile) ??
-        account?.providerAccountId ??
-        (user?.id as string);
-      if (!adminId) return Boolean(discordId);
-      return discordId === adminId;
+      warn(code) {
+        console.warn("[next-auth][warn]", code);
+      },
+      debug(code, metadata) {
+        if (process.env.NODE_ENV !== "development") return;
+        console.debug("[next-auth][debug]", code, metadata ?? {});
+      },
     },
-    async jwt({ token, account, profile, user }) {
-      if (account?.access_token) {
-        token.accessToken = account.access_token;
-      }
-      const discordId =
-        getDiscordProfileId(profile) ??
-        account?.providerAccountId ??
-        (user?.id as string);
-      if (discordId) token.discordId = discordId;
-      return token;
+    providers: [
+      DiscordProvider({
+        clientId: discordOAuth.clientId,
+        clientSecret: discordOAuth.clientSecret,
+        authorization: {
+          params: {
+            scope: "identify guilds",
+          },
+        },
+      }),
+    ],
+    callbacks: {
+      async signIn({ profile, account, user }) {
+        const discordId =
+          getDiscordProfileId(profile) ??
+          account?.providerAccountId ??
+          (user?.id as string);
+        if (!discordId) return false;
+
+        // Always allow setup bootstrap flow before setup is completed.
+        try {
+          const setup = await getSetupState();
+          if (!setup.setupComplete) {
+            return true;
+          }
+
+          if (setup.ownerDiscordId) {
+            return discordId === setup.ownerDiscordId;
+          }
+        } catch {
+          // Fall back to admin env check below.
+        }
+
+        if (!adminId) return true;
+        return discordId === adminId;
+      },
+      async jwt({ token, account, profile, user }) {
+        if (account?.access_token) {
+          token.accessToken = account.access_token;
+        }
+        const discordId =
+          getDiscordProfileId(profile) ??
+          account?.providerAccountId ??
+          (user?.id as string);
+        if (discordId) token.discordId = discordId;
+        return token;
+      },
+      async session({ session, token }) {
+        session.user = session.user ?? {};
+        session.user.id = token.discordId as string | undefined;
+        session.accessToken = token.accessToken as string | undefined;
+        return session;
+      },
     },
-    async session({ session, token }) {
-      session.user = session.user ?? {};
-      session.user.id = token.discordId as string | undefined;
-      session.accessToken = token.accessToken as string | undefined;
-      return session;
-    },
-  },
-};
+  };
+}
+
+export const authOptions = getAuthOptions();

@@ -30,6 +30,32 @@ export async function POST(request: Request) {
   await updateSetupState({
     discordClientId: clientId,
     discordClientSecretEncrypted: encryptSetupValue(clientSecret),
+    discordClientSecret: clientSecret,
+  });
+
+  return NextResponse.json({ ok: true, setup: await getSetupState() });
+}
+
+export async function DELETE() {
+  const setup = await getSetupState();
+  if (setup.setupComplete) {
+    return NextResponse.json(
+      { error: "Setup already completed. Sign in to manage credentials." },
+      { status: 403 }
+    );
+  }
+
+  if (setup.ownerDiscordId) {
+    return NextResponse.json(
+      { error: "Owner already claimed. Sign in to reset credentials." },
+      { status: 403 }
+    );
+  }
+
+  await updateSetupState({
+    discordClientId: null,
+    discordClientSecretEncrypted: null,
+    discordClientSecret: null,
   });
 
   return NextResponse.json({ ok: true, setup: await getSetupState() });

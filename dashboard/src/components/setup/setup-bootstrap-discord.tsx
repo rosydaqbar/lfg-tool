@@ -67,6 +67,14 @@ export function SetupBootstrapDiscordApp() {
         />
       </div>
 
+      <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+        <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+        <code className="block rounded bg-background px-2 py-1 break-all">
+          http://localhost:3000/api/auth/callback/discord
+        </code>
+        <p>Add this exact URI in Discord Developer Portal - OAuth2 - Redirects.</p>
+      </div>
+
       <Button onClick={saveDiscordApp} disabled={busy || !clientId.trim() || !clientSecret.trim()}>
         Save and Enable Login
       </Button>

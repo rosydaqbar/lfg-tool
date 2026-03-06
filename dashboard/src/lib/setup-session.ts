@@ -1,9 +1,8 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { getSetupState } from "@/lib/db";
+import { getSafeServerSession } from "@/lib/safe-session";
 
 export async function requireSetupSession() {
-  const session = await getServerSession(authOptions);
+  const session = await getSafeServerSession();
   if (!session?.user?.id) {
     return null;
   }

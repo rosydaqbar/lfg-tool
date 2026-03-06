@@ -21,7 +21,7 @@ export type SetupState = {
   selectedGuildId: string | null;
   logChannelId: string | null;
   lfgChannelId: string | null;
-  databaseProvider: "local_postgres" | "supabase" | null;
+  databaseProvider: "local_postgres" | "local_sqlite" | "supabase" | null;
   databaseValidatedAt: string | null;
   botTokenSet: boolean;
   botDisplayName: string | null;
@@ -40,7 +40,15 @@ export type SetupState = {
 };
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const SETUP_STATE_FALLBACK_PATH = path.resolve(process.cwd(), ".setup-state.json");
+const DASHBOARD_DIR_NAME = "dashboard";
+const workspaceRoot = path.basename(process.cwd()).toLowerCase() === DASHBOARD_DIR_NAME
+  ? path.resolve(process.cwd(), "..")
+  : process.cwd();
+const SETUP_STATE_FALLBACK_PATH = path.resolve(workspaceRoot, ".setup-state.json");
+const sqlitePathInput = process.env.SQLITE_PATH || "dashboard-local.db";
+const SQLITE_PATH = path.isAbsolute(sqlitePathInput)
+  ? sqlitePathInput
+  : path.resolve(workspaceRoot, sqlitePathInput);
 
 const pool = DATABASE_URL
   ? new Pool({
@@ -48,6 +56,97 @@ const pool = DATABASE_URL
       ssl: buildPgSslConfig(),
     })
   : null;
+
+type SqliteStatement = {
+  get: (...args: unknown[]) => unknown;
+  all: (...args: unknown[]) => unknown;
+  run: (...args: unknown[]) => unknown;
+};
+
+type SqliteDatabase = {
+  pragma: (statement: string) => unknown;
+  exec: (sql: string) => unknown;
+  prepare: (sql: string) => SqliteStatement;
+  transaction: <T extends (...args: never[]) => unknown>(fn: T) => T;
+};
+
+let sqliteDb: SqliteDatabase | null = null;
+
+function getSqliteDb() {
+  if (sqliteDb) return sqliteDb;
+  fs.mkdirSync(path.dirname(SQLITE_PATH), { recursive: true });
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Database = require("better-sqlite3");
+  const db = new Database(SQLITE_PATH) as SqliteDatabase;
+  db.pragma("journal_mode = WAL");
+  const ensureColumn = (tableName: string, columnName: string, columnDef: string) => {
+    const columns = db
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all() as { name: string }[];
+    if (columns.some((column) => column.name === columnName)) {
+      return;
+    }
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
+  };
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS guild_config (
+      guild_id TEXT PRIMARY KEY,
+      log_channel_id TEXT,
+      lfg_channel_id TEXT,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS voice_watchlist (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      voice_channel_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS join_to_create_lobbies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      lobby_channel_id TEXT NOT NULL,
+      role_id TEXT,
+      lfg_enabled INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS temp_voice_channels (
+      channel_id TEXT PRIMARY KEY,
+      guild_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      lfg_channel_id TEXT,
+      lfg_message_id TEXT,
+      role_id TEXT,
+      lfg_enabled INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS temp_voice_delete_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      channel_name TEXT,
+      owner_id TEXT NOT NULL,
+      deleted_at TEXT NOT NULL,
+      history_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS manual_voice_session_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      channel_name TEXT,
+      owner_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      joined_at TEXT NOT NULL,
+      left_at TEXT NOT NULL,
+      total_ms INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+  `);
+  ensureColumn("join_to_create_lobbies", "role_id", "TEXT");
+  ensureColumn("join_to_create_lobbies", "lfg_enabled", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn("temp_voice_channels", "role_id", "TEXT");
+  ensureColumn("temp_voice_channels", "lfg_enabled", "INTEGER NOT NULL DEFAULT 1");
+  sqliteDb = db;
+  return db;
+}
 
 async function getPool() {
   if (!pool) {
@@ -86,6 +185,47 @@ let lfgEnabledColumnEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
 let setupStateEnsured = false;
+let coreConfigTablesEnsured = false;
+
+async function ensureCoreConfigTables() {
+  if (coreConfigTablesEnsured || !DATABASE_URL) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS guild_config (
+          guild_id TEXT PRIMARY KEY,
+          log_channel_id TEXT,
+          lfg_channel_id TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_watchlist (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          voice_channel_id TEXT NOT NULL,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS join_to_create_lobbies (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          lobby_channel_id TEXT NOT NULL,
+          role_id TEXT,
+          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
+    coreConfigTablesEnsured = true;
+  } catch (error) {
+    console.error("Failed to ensure core config tables:", error);
+  }
+}
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -201,27 +341,41 @@ function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupStat
     lfgChannelId: (value("lfg_channel_id", "lfgChannelId") as string | null) ?? null,
     databaseProvider:
       value("database_provider", "databaseProvider") === "local_postgres" ||
+      value("database_provider", "databaseProvider") === "local_sqlite" ||
       value("database_provider", "databaseProvider") === "supabase"
-        ? (value("database_provider", "databaseProvider") as "local_postgres" | "supabase")
+        ? (value("database_provider", "databaseProvider") as "local_postgres" | "local_sqlite" | "supabase")
         : null,
     databaseValidatedAt:
       typeof value("database_validated_at", "databaseValidatedAt") === "string"
         ? (value("database_validated_at", "databaseValidatedAt") as string)
         : null,
-    botTokenSet: Boolean(value("bot_token_encrypted", "botTokenEncrypted")),
+    botTokenSet: Boolean(
+      value("bot_token_encrypted", "botTokenEncrypted")
+      || value("bot_token", "botToken")
+    ),
     botDisplayName: (value("bot_display_name", "botDisplayName") as string | null) ?? null,
     discordClientId: (value("discord_client_id", "discordClientId") as string | null) ?? null,
     discordClientSecretSet: Boolean(
       value("discord_client_secret_encrypted", "discordClientSecretEncrypted")
+      || value("discord_client_secret", "discordClientSecret")
     ),
-    databaseUrlSet: Boolean(value("database_url_encrypted", "databaseUrlEncrypted")),
+    databaseUrlSet: Boolean(
+      value("database_url_encrypted", "databaseUrlEncrypted")
+      || value("database_url", "databaseUrl")
+    ),
     steps: {
       ownerClaimed: Boolean(value("owner_discord_id", "ownerDiscordId")),
       discordAppConfigured: Boolean(
         value("discord_client_id", "discordClientId")
-          && value("discord_client_secret_encrypted", "discordClientSecretEncrypted")
+          && (
+            value("discord_client_secret_encrypted", "discordClientSecretEncrypted")
+            || value("discord_client_secret", "discordClientSecret")
+          )
       ),
-      botTokenValidated: Boolean(value("bot_token_encrypted", "botTokenEncrypted")),
+      botTokenValidated: Boolean(
+        value("bot_token_encrypted", "botTokenEncrypted")
+        || value("bot_token", "botToken")
+      ),
       guildValidated: Boolean(value("selected_guild_id", "selectedGuildId")),
       inviteChecked: Boolean(value("selected_guild_id", "selectedGuildId")),
       databaseValidated: Boolean(value("database_validated_at", "databaseValidatedAt")),
@@ -308,11 +462,14 @@ export async function updateSetupState(fields: {
   logChannelId?: string | null;
   lfgChannelId?: string | null;
   botTokenEncrypted?: string | null;
+  botToken?: string | null;
   botDisplayName?: string | null;
   discordClientId?: string | null;
   discordClientSecretEncrypted?: string | null;
-  databaseProvider?: "local_postgres" | "supabase" | null;
+  discordClientSecret?: string | null;
+  databaseProvider?: "local_postgres" | "local_sqlite" | "supabase" | null;
   databaseUrlEncrypted?: string | null;
+  databaseUrl?: string | null;
   databaseValidatedAt?: string | null;
   ownerClaimedAt?: string | null;
 }) {
@@ -332,28 +489,35 @@ export async function updateSetupState(fields: {
   const keys = Object.keys(fields) as (keyof typeof fields)[];
   if (keys.length === 0) return;
 
-  const columnByKey: Record<keyof typeof fields, string> = {
+  const columnByKey: Partial<Record<keyof typeof fields, string>> = {
     ownerDiscordId: "owner_discord_id",
     setupComplete: "setup_complete",
     selectedGuildId: "selected_guild_id",
     logChannelId: "log_channel_id",
     lfgChannelId: "lfg_channel_id",
     botTokenEncrypted: "bot_token_encrypted",
+    botToken: undefined,
     botDisplayName: "bot_display_name",
     discordClientId: "discord_client_id",
     discordClientSecretEncrypted: "discord_client_secret_encrypted",
+    discordClientSecret: undefined,
     databaseProvider: "database_provider",
     databaseUrlEncrypted: "database_url_encrypted",
+    databaseUrl: undefined,
     databaseValidatedAt: "database_validated_at",
     ownerClaimedAt: "owner_claimed_at",
   };
 
   const assignments: string[] = [];
   const values: unknown[] = [];
-  keys.forEach((key, idx) => {
-    assignments.push(`${columnByKey[key]} = $${idx + 1}`);
+  keys.forEach((key) => {
+    const column = columnByKey[key];
+    if (!column) return;
+    assignments.push(`${column} = $${values.length + 1}`);
     values.push(fields[key]);
   });
+
+  if (assignments.length === 0) return;
 
   values.push(1);
   await query(
@@ -373,9 +537,12 @@ export async function getSetupSecretPayload() {
     const fallback = readSetupStateFallback();
     return {
       botTokenEncrypted: (fallback.botTokenEncrypted as string | null) ?? null,
+      botToken: (fallback.botToken as string | null) ?? null,
       databaseUrlEncrypted: (fallback.databaseUrlEncrypted as string | null) ?? null,
+      databaseUrl: (fallback.databaseUrl as string | null) ?? null,
       discordClientSecretEncrypted:
         (fallback.discordClientSecretEncrypted as string | null) ?? null,
+      discordClientSecret: (fallback.discordClientSecret as string | null) ?? null,
     };
   }
 
@@ -390,13 +557,156 @@ export async function getSetupSecretPayload() {
   const row = res.rows[0] ?? {};
   return {
     botTokenEncrypted: (row.bot_token_encrypted as string | null) ?? null,
+    botToken: null,
     databaseUrlEncrypted: (row.database_url_encrypted as string | null) ?? null,
+    databaseUrl: null,
     discordClientSecretEncrypted:
       (row.discord_client_secret_encrypted as string | null) ?? null,
+    discordClientSecret: null,
   };
 }
 
+function getSetupDatabaseUrlFallback() {
+  if (DATABASE_URL) return null;
+  const fallback = readSetupStateFallback();
+  const provider = fallback.databaseProvider;
+  if (provider !== "supabase" && provider !== "local_postgres") {
+    return null;
+  }
+
+  const databaseUrl = typeof fallback.databaseUrl === "string"
+    ? fallback.databaseUrl.trim()
+    : "";
+  if (!databaseUrl) {
+    return null;
+  }
+
+  return databaseUrl;
+}
+
+async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: string): Promise<GuildConfig> {
+  const scopedPool = new Pool({
+    connectionString: databaseUrl,
+    ssl: buildPgSslConfig(),
+  });
+
+  const client = await scopedPool.connect();
+  try {
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS guild_config (
+          guild_id TEXT PRIMARY KEY,
+          log_channel_id TEXT,
+          lfg_channel_id TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_watchlist (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          voice_channel_id TEXT NOT NULL,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS join_to_create_lobbies (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          lobby_channel_id TEXT NOT NULL,
+          role_id TEXT,
+          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
+
+    const configRes = await client.query(
+      "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1",
+      [guildId]
+    );
+    const configRow = configRes.rows[0] ?? {};
+
+    const watchlistRes = await client.query(
+      "SELECT voice_channel_id FROM voice_watchlist WHERE guild_id = $1 AND enabled = true",
+      [guildId]
+    );
+
+    let lobbyRes;
+    try {
+      lobbyRes = await client.query(
+        "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = $1",
+        [guildId]
+      );
+    } catch (error) {
+      const pgError = error as { code?: string };
+      if (pgError.code !== "42703") throw error;
+      lobbyRes = await client.query(
+        "SELECT lobby_channel_id, role_id FROM join_to_create_lobbies WHERE guild_id = $1",
+        [guildId]
+      );
+    }
+
+    return {
+      logChannelId: configRow.log_channel_id ?? null,
+      lfgChannelId: configRow.lfg_channel_id ?? null,
+      enabledVoiceChannelIds: watchlistRes.rows.map(
+        (row) => row.voice_channel_id
+      ),
+      joinToCreateLobbies: lobbyRes.rows.map((row) => ({
+        channelId: row.lobby_channel_id,
+        roleId: row.role_id ?? null,
+        lfgEnabled: row.lfg_enabled ?? true,
+      })),
+    };
+  } finally {
+    client.release();
+    await scopedPool.end().catch(() => null);
+  }
+}
+
 export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      return getGuildConfigWithDatabaseUrl(setupDatabaseUrl, guildId);
+    }
+
+    const db = getSqliteDb();
+    const configRow = db
+      .prepare(
+        "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = ?"
+      )
+      .get(guildId) as { log_channel_id?: string | null; lfg_channel_id?: string | null } | undefined;
+
+    const watchRows = db
+      .prepare(
+        "SELECT voice_channel_id FROM voice_watchlist WHERE guild_id = ? AND enabled = 1"
+      )
+      .all(guildId) as { voice_channel_id: string }[];
+
+    const lobbyRows = db
+      .prepare(
+        "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = ?"
+      )
+      .all(guildId) as { lobby_channel_id: string; role_id?: string | null; lfg_enabled?: number }[];
+
+    return {
+      logChannelId: configRow?.log_channel_id ?? null,
+      lfgChannelId: configRow?.lfg_channel_id ?? null,
+      enabledVoiceChannelIds: watchRows.map((row) => row.voice_channel_id),
+      joinToCreateLobbies: lobbyRows.map((row) => ({
+        channelId: row.lobby_channel_id,
+        roleId: row.role_id ?? null,
+        lfgEnabled: row.lfg_enabled !== 0,
+      })),
+    };
+  }
+
+  await ensureCoreConfigTables();
   await ensureJoinToCreateLfgEnabledColumn();
   const configRes = await query(
     "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1",
@@ -498,7 +808,176 @@ async function saveGuildConfigWithClient(
   }
 }
 
+async function runDeleteIgnoreMissingTable(
+  client: { query: (text: string, params?: unknown[]) => Promise<unknown> },
+  sql: string,
+  params: unknown[]
+) {
+  try {
+    await client.query(sql, params);
+  } catch (error) {
+    const pgError = error as { code?: string };
+    if (pgError.code === "42P01") {
+      return;
+    }
+    throw error;
+  }
+}
+
+function runSqliteDeleteIgnoreMissingTable(db: SqliteDatabase, sql: string, args: unknown[]) {
+  try {
+    db.prepare(sql).run(...args);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.toLowerCase().includes("no such table")) {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function clearGuildSettingsWithClient(
+  client: { query: (text: string, params?: unknown[]) => Promise<unknown> },
+  guildId: string
+) {
+  await runDeleteIgnoreMissingTable(
+    client,
+    "DELETE FROM join_to_create_lobbies WHERE guild_id = $1",
+    [guildId]
+  );
+  await runDeleteIgnoreMissingTable(
+    client,
+    "DELETE FROM voice_watchlist WHERE guild_id = $1",
+    [guildId]
+  );
+  await runDeleteIgnoreMissingTable(
+    client,
+    "DELETE FROM lfg_persistent_message WHERE guild_id = $1",
+    [guildId]
+  );
+  await runDeleteIgnoreMissingTable(
+    client,
+    "DELETE FROM guild_config WHERE guild_id = $1",
+    [guildId]
+  );
+}
+
+export async function clearGuildSettings(guildId: string) {
+  const targetGuildId = guildId.trim();
+  if (!targetGuildId) return;
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query("BEGIN");
+        await clearGuildSettingsWithClient(client, targetGuildId);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+      return;
+    }
+
+    const db = getSqliteDb();
+    const tx = db.transaction(() => {
+      runSqliteDeleteIgnoreMissingTable(
+        db,
+        "DELETE FROM join_to_create_lobbies WHERE guild_id = ?",
+        [targetGuildId]
+      );
+      runSqliteDeleteIgnoreMissingTable(
+        db,
+        "DELETE FROM voice_watchlist WHERE guild_id = ?",
+        [targetGuildId]
+      );
+      runSqliteDeleteIgnoreMissingTable(
+        db,
+        "DELETE FROM lfg_persistent_message WHERE guild_id = ?",
+        [targetGuildId]
+      );
+      runSqliteDeleteIgnoreMissingTable(
+        db,
+        "DELETE FROM guild_config WHERE guild_id = ?",
+        [targetGuildId]
+      );
+    });
+    tx();
+    return;
+  }
+
+  const db = await getPool();
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await clearGuildSettingsWithClient(client, targetGuildId);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function saveGuildConfig(guildId: string, config: GuildConfig) {
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      await saveGuildConfigWithDatabaseUrl(setupDatabaseUrl, guildId, config);
+      return;
+    }
+
+    const db = getSqliteDb();
+    const now = new Date().toISOString();
+    const tx = db.transaction(() => {
+      if (!config.logChannelId) {
+        throw new Error("logChannelId is required");
+      }
+      if (config.joinToCreateLobbies.some((item) => !item.roleId)) {
+        throw new Error("joinToCreateLobbies requires a role for each lobby");
+      }
+
+      db.prepare(
+        `
+          INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, updated_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(guild_id) DO UPDATE SET
+            log_channel_id = excluded.log_channel_id,
+            lfg_channel_id = excluded.lfg_channel_id,
+            updated_at = excluded.updated_at
+        `
+      ).run(guildId, config.logChannelId, config.lfgChannelId, now);
+
+      db.prepare("DELETE FROM voice_watchlist WHERE guild_id = ?").run(guildId);
+      for (const channelId of config.enabledVoiceChannelIds) {
+        db.prepare(
+          "INSERT INTO voice_watchlist (guild_id, voice_channel_id, enabled) VALUES (?, ?, 1)"
+        ).run(guildId, channelId);
+      }
+
+      db.prepare("DELETE FROM join_to_create_lobbies WHERE guild_id = ?").run(guildId);
+      for (const lobby of config.joinToCreateLobbies) {
+        db.prepare(
+          "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES (?, ?, ?, ?)"
+        ).run(guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ? 1 : 0);
+      }
+    });
+
+    tx();
+    return;
+  }
+
+  await ensureCoreConfigTables();
   await ensureJoinToCreateLfgEnabledColumn();
   const db = await getPool();
   const client = await db.connect();
@@ -525,6 +1004,37 @@ export async function saveGuildConfigWithDatabaseUrl(
   });
   const client = await scopedPool.connect();
   try {
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS guild_config (
+          guild_id TEXT PRIMARY KEY,
+          log_channel_id TEXT,
+          lfg_channel_id TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_watchlist (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          voice_channel_id TEXT NOT NULL,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS join_to_create_lobbies (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          lobby_channel_id TEXT NOT NULL,
+          role_id TEXT,
+          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
     await client.query("BEGIN");
     await saveGuildConfigWithClient(client, guildId, config);
     await client.query("COMMIT");
@@ -538,6 +1048,27 @@ export async function saveGuildConfigWithDatabaseUrl(
 }
 
 export async function getTempChannels(guildId: string) {
+  if (!DATABASE_URL) {
+    const db = getSqliteDb();
+    const rows = db
+      .prepare(
+        `
+          SELECT channel_id, owner_id, created_at, lfg_channel_id, lfg_message_id
+          FROM temp_voice_channels
+          WHERE guild_id = ?
+          ORDER BY created_at DESC
+        `
+      )
+      .all(guildId) as {
+        channel_id: string;
+        owner_id: string;
+        created_at: string;
+        lfg_channel_id: string | null;
+        lfg_message_id: string | null;
+      }[];
+    return rows;
+  }
+
   const res = await query(
     `
       SELECT channel_id, owner_id, created_at, lfg_channel_id, lfg_message_id
@@ -573,6 +1104,21 @@ export async function getTempVoiceDeleteLogs(
   limit = 100,
   offset = 0
 ) {
+  if (!DATABASE_URL) {
+    return [] as {
+      id: string;
+      sourceType: "temp_deleted" | "manual_session";
+      label: "Temp Deleted" | "Manual Voice Session";
+      channelId: string;
+      channelName: string | null;
+      ownerId: string;
+      eventAt: string;
+      joinedAt: string | null;
+      leftAt: string | null;
+      history: { userId: string; totalMs: number }[];
+    }[];
+  }
+
   await ensureTempVoiceDeleteLogsTable();
   await ensureManualVoiceSessionLogsTable();
   const safeLimit = Number.isFinite(limit)
@@ -675,6 +1221,14 @@ export async function getTempVoiceDeleteLeaderboard(
   limit = 20,
   offset = 0
 ) {
+  if (!DATABASE_URL) {
+    return [] as {
+      userId: string;
+      totalMs: number;
+      sessions: number;
+    }[];
+  }
+
   await ensureTempVoiceDeleteLogsTable();
   await ensureManualVoiceSessionLogsTable();
   const safeLimit = Number.isFinite(limit)

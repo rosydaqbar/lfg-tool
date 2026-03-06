@@ -165,6 +165,10 @@ function createStatsManager({ client, configStore }) {
         try {
           await guild.commands.set([command]);
         } catch (error) {
+          if (error?.code === 50001) {
+            console.warn(`Skipped stats command registration for guild ${guild.id}: missing access.`);
+            return;
+          }
           console.error(`Failed to register stats command for guild ${guild.id}:`, error);
         }
       })

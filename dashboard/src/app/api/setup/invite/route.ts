@@ -36,14 +36,25 @@ export async function GET() {
   }
 
   const secrets = await getSetupSecretPayload();
-  if (!secrets.botTokenEncrypted) {
+  if (!secrets.botTokenEncrypted && !secrets.botToken) {
     return NextResponse.json(
       { error: "Bot token is not configured", inviteUrl },
       { status: 400 }
     );
   }
 
-  const botToken = decryptSetupValue(secrets.botTokenEncrypted);
+  let botToken = secrets.botToken || null;
+  if (!botToken && secrets.botTokenEncrypted) {
+    try {
+      botToken = decryptSetupValue(secrets.botTokenEncrypted);
+    } catch {
+      return NextResponse.json({ error: "Failed to decrypt bot token" }, { status: 400 });
+    }
+  }
+  if (!botToken) {
+    return NextResponse.json({ error: "Bot token is not configured", inviteUrl }, { status: 400 });
+  }
+
   const botId = await fetchBotIdentity(botToken);
   if (!botId) {
     return NextResponse.json({ error: "Invalid bot token", inviteUrl }, { status: 400 });

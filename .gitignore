@@ -2,3 +2,5 @@ node_modules/
 .env
 logs/
 data/
+.setup-state.json
+.setup-state.json.bak

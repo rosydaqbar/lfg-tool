@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
 
 type SetupState = {
   ownerDiscordId: string | null;
@@ -10,7 +11,7 @@ type SetupState = {
   selectedGuildId: string | null;
   logChannelId: string | null;
   lfgChannelId: string | null;
-  databaseProvider: "local_postgres" | "supabase" | null;
+  databaseProvider: "local_postgres" | "local_sqlite" | "supabase" | null;
   databaseValidatedAt: string | null;
   botTokenSet: boolean;
   botDisplayName: string | null;
@@ -56,7 +57,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [alreadyInvited, setAlreadyInvited] = useState<boolean | null>(null);
 
-  const [dbProvider, setDbProvider] = useState<"local_postgres" | "supabase">("supabase");
+  const [dbProvider, setDbProvider] = useState<"local_postgres" | "local_sqlite" | "supabase">("local_sqlite");
   const [dbUrlInput, setDbUrlInput] = useState("");
   const [applySchema, setApplySchema] = useState(true);
 
@@ -65,6 +66,8 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [lfgChannelId, setLfgChannelId] = useState("");
 
   const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  const localSqlitePath = "dashboard-local.db";
 
   function getProgressStep(state: SetupState): WizardStep {
     if (!state.ownerDiscordId) return 1;
@@ -222,14 +225,56 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       const response = await fetch("/api/setup/database", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: dbProvider, databaseUrl: dbUrlInput.trim(), applySchema }),
+        body: JSON.stringify(
+          dbProvider === "local_sqlite"
+            ? { provider: dbProvider, sqlitePath: dbUrlInput.trim(), applySchema }
+            : { provider: dbProvider, databaseUrl: dbUrlInput.trim(), applySchema }
+        ),
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(payload?.error || "Database validation failed");
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; details?: string; hint?: string | null }
+        | null;
+      if (!response.ok) {
+        const parts = [payload?.error || "Database validation failed"];
+        if (payload?.details) parts.push(`Details: ${payload.details}`);
+        if (payload?.hint) parts.push(`Hint: ${payload.hint}`);
+        throw new Error(parts.join("\n"));
+      }
       await reloadState({ keepStep: true });
       setCurrentStep(7);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Database validation failed");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function quickLocalDatabaseSetup() {
+    setBusyKey("database-local-quick");
+    setError(null);
+    try {
+      setDbProvider("local_sqlite");
+      setDbUrlInput(localSqlitePath);
+      const response = await fetch("/api/setup/database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "local_sqlite",
+          sqlitePath: localSqlitePath,
+          applySchema: true,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(
+          payload?.error
+            || "Failed to initialize local .db file."
+        );
+      }
+      await reloadState({ keepStep: true });
+      setCurrentStep(7);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed local database quick setup");
     } finally {
       setBusyKey(null);
     }
@@ -357,6 +402,13 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             onChange={(event) => setDiscordClientSecretInput(event.target.value)}
             placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
           />
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+            <code className="block rounded bg-background px-2 py-1 break-all">
+              http://localhost:3000/api/auth/callback/discord
+            </code>
+            <p>Add this exact URI in Discord Developer Portal - OAuth2 - Redirects.</p>
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setCurrentStep(1)}>Back</Button>
             <Button
@@ -370,6 +422,9 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
               Save Discord App
             </Button>
           </div>
+          {setup?.discordClientId && setup?.discordClientSecretSet ? (
+            <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
+          ) : null}
         </section>
       ) : null}
 
@@ -450,7 +505,6 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         <section className="rounded-xl border border-border bg-card p-5 space-y-3">
           <h2 className="text-lg font-semibold">Step 6 - Database</h2>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setCurrentStep(5)}>Back</Button>
             <Button
               type="button"
               variant={dbProvider === "supabase" ? "default" : "outline"}
@@ -460,19 +514,70 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             </Button>
             <Button
               type="button"
+              variant={dbProvider === "local_sqlite" ? "default" : "outline"}
+              onClick={() => setDbProvider("local_sqlite")}
+            >
+              Local .db (SQLite)
+            </Button>
+            <Button
+              type="button"
               variant={dbProvider === "local_postgres" ? "default" : "outline"}
               onClick={() => setDbProvider("local_postgres")}
             >
               Local Postgres
             </Button>
           </div>
-          <label htmlFor="db-url" className="text-sm font-medium">Database URL</label>
+
+          {(dbProvider === "local_sqlite" || dbProvider === "local_postgres") ? (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900">
+              <p className="font-medium">Local database warning</p>
+              <p>
+                If you use a local database, you must host the Discord bot locally as well so it can access
+                your database.
+              </p>
+            </div>
+          ) : null}
+
+          {dbProvider === "supabase" ? (
+            <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-900 space-y-1">
+              <p className="font-medium">Supabase connection tip</p>
+              <p>Use the Transaction pooler connection string (port `6543`) with `sslmode=require`.</p>
+            </div>
+          ) : null}
+
+          {dbProvider === "local_sqlite" ? (
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-2">
+              <p className="font-medium text-foreground">Local SQLite helper</p>
+              <p>This option creates a local `.db` file automatically on your machine.</p>
+              <Button
+                type="button"
+                onClick={quickLocalDatabaseSetup}
+                disabled={busyKey === "database-local-quick"}
+              >
+                {busyKey === "database-local-quick" ? "Setting up..." : "One-Click Local Setup"}
+              </Button>
+              <p>Suggested file path:</p>
+              <code className="block rounded bg-background px-2 py-1 break-all">{localSqlitePath}</code>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDbUrlInput(localSqlitePath)}
+              >
+                Use Suggested .db Path
+              </Button>
+            </div>
+          ) : null}
+
+          <label htmlFor="db-url" className="text-sm font-medium">
+            {dbProvider === "local_sqlite" ? "SQLite file path" : "Database URL"}
+          </label>
           <Input
             id="db-url"
             type="password"
             value={dbUrlInput}
             onChange={(event) => setDbUrlInput(event.target.value)}
-            placeholder="postgresql://..."
+            placeholder={dbProvider === "local_sqlite" ? "dashboard-local.db" : "postgresql://..."}
           />
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input
@@ -482,9 +587,12 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             />
             Apply baseline schema check
           </label>
-          <Button onClick={validateDatabase} disabled={busyKey === "database" || !dbUrlInput.trim()}>
-            Validate Database
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setCurrentStep(5)}>Back</Button>
+            <Button onClick={validateDatabase} disabled={busyKey === "database" || !dbUrlInput.trim()}>
+              Validate Database
+            </Button>
+          </div>
         </section>
       ) : null}
 

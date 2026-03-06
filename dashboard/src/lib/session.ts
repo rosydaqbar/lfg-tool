@@ -1,10 +1,9 @@
 import "@/lib/env";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { getSetupState } from "@/lib/db";
+import { getSafeServerSession } from "@/lib/safe-session";
 
 export async function requireAdminSession() {
-  const session = await getServerSession(authOptions);
+  const session = await getSafeServerSession();
   let adminId = process.env.ADMIN_DISCORD_USER_ID;
   if (!adminId) {
     const setup = await getSetupState();
