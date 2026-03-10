@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import {
-  getSetupSecretPayload,
+  getGuildConfig,
   getSetupState,
   saveGuildConfig,
-  saveGuildConfigWithDatabaseUrl,
+  getSetupSecretPayload,
   updateSetupState,
 } from "@/lib/db";
 import { decryptSetupValue } from "@/lib/setup-crypto";
@@ -85,31 +85,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const databaseUrl = process.env.DATABASE_URL || null;
-    if (databaseUrl) {
-      await saveGuildConfig(setup.selectedGuildId, {
-        logChannelId,
-        lfgChannelId,
-        enabledVoiceChannelIds: [],
-        joinToCreateLobbies: [],
-      });
-    } else {
-      const secrets = await getSetupSecretPayload();
-      if (!secrets.databaseUrlEncrypted && !secrets.databaseUrl) {
-        return NextResponse.json(
-          { error: "Database is not configured. Complete database step first." },
-          { status: 400 }
-        );
-      }
-      const setupDatabaseUrl = secrets.databaseUrl
-        || decryptSetupValue(secrets.databaseUrlEncrypted as string);
-      await saveGuildConfigWithDatabaseUrl(setupDatabaseUrl, setup.selectedGuildId, {
-        logChannelId,
-        lfgChannelId,
-        enabledVoiceChannelIds: [],
-        joinToCreateLobbies: [],
-      });
-    }
+    const existingConfig = await getGuildConfig(setup.selectedGuildId);
+    await saveGuildConfig(setup.selectedGuildId, {
+      logChannelId,
+      lfgChannelId,
+      enabledVoiceChannelIds: existingConfig.enabledVoiceChannelIds,
+      joinToCreateLobbies: existingConfig.joinToCreateLobbies,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: (error as Error).message || "Failed to save channels" },

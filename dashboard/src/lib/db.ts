@@ -1047,8 +1047,58 @@ export async function saveGuildConfigWithDatabaseUrl(
   }
 }
 
+async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: string) {
+  const scopedPool = new Pool({
+    connectionString: databaseUrl,
+    ssl: buildPgSslConfig(),
+  });
+  const client = await scopedPool.connect();
+  try {
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS temp_voice_channels (
+          channel_id TEXT PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          owner_id TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL,
+          lfg_channel_id TEXT,
+          lfg_message_id TEXT,
+          role_id TEXT,
+          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
+
+    const res = await client.query(
+      `
+        SELECT channel_id, owner_id, created_at, lfg_channel_id, lfg_message_id
+        FROM temp_voice_channels
+        WHERE guild_id = $1
+        ORDER BY created_at DESC
+      `,
+      [guildId]
+    );
+
+    return res.rows as {
+      channel_id: string;
+      owner_id: string;
+      created_at: string;
+      lfg_channel_id: string | null;
+      lfg_message_id: string | null;
+    }[];
+  } finally {
+    client.release();
+    await scopedPool.end().catch(() => null);
+  }
+}
+
 export async function getTempChannels(guildId: string) {
   if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      return getTempChannelsWithDatabaseUrl(setupDatabaseUrl, guildId);
+    }
+
     const db = getSqliteDb();
     const rows = db
       .prepare(
@@ -1105,18 +1155,247 @@ export async function getTempVoiceDeleteLogs(
   offset = 0
 ) {
   if (!DATABASE_URL) {
-    return [] as {
-      id: string;
-      sourceType: "temp_deleted" | "manual_session";
-      label: "Temp Deleted" | "Manual Voice Session";
-      channelId: string;
-      channelName: string | null;
-      ownerId: string;
-      eventAt: string;
-      joinedAt: string | null;
-      leftAt: string | null;
-      history: { userId: string; totalMs: number }[];
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS temp_voice_delete_logs (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              channel_name TEXT,
+              owner_id TEXT NOT NULL,
+              deleted_at TIMESTAMPTZ NOT NULL,
+              history_json JSONB NOT NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+          `
+        );
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS manual_voice_session_logs (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              channel_name TEXT,
+              owner_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              joined_at TIMESTAMPTZ NOT NULL,
+              left_at TIMESTAMPTZ NOT NULL,
+              total_ms BIGINT NOT NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+          `
+        );
+
+        const safeLimit = Number.isFinite(limit)
+          ? Math.min(200, Math.max(1, Math.floor(limit)))
+          : 100;
+        const safeOffset = Number.isFinite(offset)
+          ? Math.max(0, Math.floor(offset))
+          : 0;
+
+        const res = await client.query(
+          `
+            SELECT
+              source_type,
+              row_id,
+              channel_id,
+              channel_name,
+              owner_id,
+              event_at,
+              joined_at,
+              left_at,
+              history_json
+            FROM (
+              SELECT
+                'temp_deleted'::text AS source_type,
+                id AS row_id,
+                channel_id,
+                channel_name,
+                owner_id,
+                deleted_at AS event_at,
+                NULL::timestamptz AS joined_at,
+                NULL::timestamptz AS left_at,
+                history_json
+              FROM temp_voice_delete_logs
+              WHERE guild_id = $1
+
+              UNION ALL
+
+              SELECT
+                'manual_session'::text AS source_type,
+                id AS row_id,
+                channel_id,
+                channel_name,
+                owner_id,
+                left_at AS event_at,
+                joined_at,
+                left_at,
+                jsonb_build_array(
+                  jsonb_build_object('userId', user_id, 'totalMs', total_ms)
+                ) AS history_json
+              FROM manual_voice_session_logs
+              WHERE guild_id = $1
+            ) combined
+            ORDER BY event_at DESC
+            LIMIT $2
+            OFFSET $3
+          `,
+          [guildId, safeLimit, safeOffset]
+        );
+
+        return (res.rows as DeleteLogRow[]).map((row) => {
+          const rawHistory = Array.isArray(row.history_json) ? row.history_json : [];
+          const history = rawHistory
+            .map((item) => {
+              if (!item || typeof item !== "object") return null;
+              const value = item as { userId?: unknown; totalMs?: unknown };
+              if (typeof value.userId !== "string") return null;
+              return {
+                userId: value.userId,
+                totalMs: Number(value.totalMs ?? 0),
+              };
+            })
+            .filter((item): item is { userId: string; totalMs: number } => item !== null);
+
+          return {
+            id: `${row.source_type}:${String(row.row_id)}`,
+            sourceType: row.source_type,
+            label:
+              row.source_type === "manual_session"
+                ? "Manual Voice Session"
+                : "Temp Deleted",
+            channelId: row.channel_id,
+            channelName: row.channel_name,
+            ownerId: row.owner_id,
+            eventAt: row.event_at,
+            joinedAt: row.joined_at,
+            leftAt: row.left_at,
+            history,
+          };
+        });
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const safeLimit = Number.isFinite(limit)
+      ? Math.min(200, Math.max(1, Math.floor(limit)))
+      : 100;
+    const safeOffset = Number.isFinite(offset)
+      ? Math.max(0, Math.floor(offset))
+      : 0;
+
+    const db = getSqliteDb();
+    const rows = db
+      .prepare(
+        `
+          SELECT
+            source_type,
+            row_id,
+            channel_id,
+            channel_name,
+            owner_id,
+            event_at,
+            joined_at,
+            left_at,
+            history_json
+          FROM (
+            SELECT
+              'temp_deleted' AS source_type,
+              id AS row_id,
+              channel_id,
+              channel_name,
+              owner_id,
+              deleted_at AS event_at,
+              NULL AS joined_at,
+              NULL AS left_at,
+              history_json
+            FROM temp_voice_delete_logs
+            WHERE guild_id = ?
+
+            UNION ALL
+
+            SELECT
+              'manual_session' AS source_type,
+              id AS row_id,
+              channel_id,
+              channel_name,
+              owner_id,
+              left_at AS event_at,
+              joined_at,
+              left_at,
+              json_array(json_object('userId', user_id, 'totalMs', total_ms)) AS history_json
+            FROM manual_voice_session_logs
+            WHERE guild_id = ?
+          ) combined
+          ORDER BY event_at DESC
+          LIMIT ?
+          OFFSET ?
+        `
+      )
+      .all(guildId, guildId, safeLimit, safeOffset) as {
+      source_type: "temp_deleted" | "manual_session";
+      row_id: number | string;
+      channel_id: string;
+      channel_name: string | null;
+      owner_id: string;
+      event_at: string;
+      joined_at: string | null;
+      left_at: string | null;
+      history_json: unknown;
     }[];
+
+    return rows.map((row) => {
+      const parsedHistory = (() => {
+        if (Array.isArray(row.history_json)) return row.history_json;
+        if (typeof row.history_json === "string") {
+          try {
+            const parsed = JSON.parse(row.history_json) as unknown;
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        }
+        return [];
+      })();
+
+      const history = parsedHistory
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const value = item as { userId?: unknown; totalMs?: unknown };
+          if (typeof value.userId !== "string") return null;
+          return {
+            userId: value.userId,
+            totalMs: Number(value.totalMs ?? 0),
+          };
+        })
+        .filter((item): item is { userId: string; totalMs: number } => item !== null);
+
+      return {
+        id: `${row.source_type}:${String(row.row_id)}`,
+        sourceType: row.source_type,
+        label:
+          row.source_type === "manual_session"
+            ? "Manual Voice Session"
+            : "Temp Deleted",
+        channelId: row.channel_id,
+        channelName: row.channel_name,
+        ownerId: row.owner_id,
+        eventAt: row.event_at,
+        joinedAt: row.joined_at,
+        leftAt: row.left_at,
+        history,
+      };
+    });
   }
 
   await ensureTempVoiceDeleteLogsTable();
@@ -1222,11 +1501,171 @@ export async function getTempVoiceDeleteLeaderboard(
   offset = 0
 ) {
   if (!DATABASE_URL) {
-    return [] as {
-      userId: string;
-      totalMs: number;
-      sessions: number;
-    }[];
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS temp_voice_delete_logs (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              channel_name TEXT,
+              owner_id TEXT NOT NULL,
+              deleted_at TIMESTAMPTZ NOT NULL,
+              history_json JSONB NOT NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+          `
+        );
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS manual_voice_session_logs (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              channel_name TEXT,
+              owner_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              joined_at TIMESTAMPTZ NOT NULL,
+              left_at TIMESTAMPTZ NOT NULL,
+              total_ms BIGINT NOT NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+          `
+        );
+
+        const safeLimit = Number.isFinite(limit)
+          ? Math.min(200, Math.max(1, Math.floor(limit)))
+          : 20;
+        const safeOffset = Number.isFinite(offset)
+          ? Math.max(0, Math.floor(offset))
+          : 0;
+
+        const res = await client.query(
+          `
+            WITH temp_expanded AS (
+              SELECT
+                elem->>'userId' AS user_id,
+                CASE
+                  WHEN (elem->>'totalMs') ~ '^[0-9]+$'
+                    THEN (elem->>'totalMs')::bigint
+                  ELSE 0
+                END AS total_ms
+              FROM temp_voice_delete_logs logs
+              CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
+              WHERE logs.guild_id = $1
+                AND elem ? 'userId'
+            ),
+            all_sessions AS (
+              SELECT user_id, total_ms FROM temp_expanded
+              UNION ALL
+              SELECT user_id, total_ms
+              FROM manual_voice_session_logs
+              WHERE guild_id = $1
+            )
+            SELECT
+              user_id,
+              SUM(total_ms)::bigint AS total_ms,
+              COUNT(*)::bigint AS sessions
+            FROM all_sessions
+            GROUP BY user_id
+            ORDER BY total_ms DESC, sessions DESC, user_id ASC
+            LIMIT $2
+            OFFSET $3
+          `,
+          [guildId, safeLimit, safeOffset]
+        );
+
+        return (res.rows as DeleteLeaderboardRow[]).map((row) => ({
+          userId: row.user_id,
+          totalMs: Number(row.total_ms ?? 0),
+          sessions: Number(row.sessions ?? 0),
+        }));
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const safeLimit = Number.isFinite(limit)
+      ? Math.min(200, Math.max(1, Math.floor(limit)))
+      : 20;
+    const safeOffset = Number.isFinite(offset)
+      ? Math.max(0, Math.floor(offset))
+      : 0;
+
+    const db = getSqliteDb();
+    const aggregate = new Map<string, { totalMs: number; sessions: number }>();
+
+    const tempRows = db
+      .prepare(
+        `
+          SELECT history_json
+          FROM temp_voice_delete_logs
+          WHERE guild_id = ?
+        `
+      )
+      .all(guildId) as { history_json: unknown }[];
+
+    for (const row of tempRows) {
+      let parsedHistory: unknown[] = [];
+      if (Array.isArray(row.history_json)) {
+        parsedHistory = row.history_json;
+      } else if (typeof row.history_json === "string") {
+        try {
+          const parsed = JSON.parse(row.history_json) as unknown;
+          parsedHistory = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          parsedHistory = [];
+        }
+      }
+
+      for (const item of parsedHistory) {
+        if (!item || typeof item !== "object") continue;
+        const value = item as { userId?: unknown; totalMs?: unknown };
+        if (typeof value.userId !== "string") continue;
+        const current = aggregate.get(value.userId) ?? { totalMs: 0, sessions: 0 };
+        current.totalMs += Math.max(0, Number(value.totalMs) || 0);
+        current.sessions += 1;
+        aggregate.set(value.userId, current);
+      }
+    }
+
+    const manualRows = db
+      .prepare(
+        `
+          SELECT user_id, total_ms
+          FROM manual_voice_session_logs
+          WHERE guild_id = ?
+        `
+      )
+      .all(guildId) as { user_id: string; total_ms: number }[];
+
+    for (const row of manualRows) {
+      const current = aggregate.get(row.user_id) ?? { totalMs: 0, sessions: 0 };
+      current.totalMs += Math.max(0, Number(row.total_ms) || 0);
+      current.sessions += 1;
+      aggregate.set(row.user_id, current);
+    }
+
+    return [...aggregate.entries()]
+      .map(([userId, stats]) => ({
+        userId,
+        totalMs: stats.totalMs,
+        sessions: stats.sessions,
+      }))
+      .sort((a, b) => {
+        if (b.totalMs !== a.totalMs) return b.totalMs - a.totalMs;
+        if (b.sessions !== a.sessions) return b.sessions - a.sessions;
+        return a.userId.localeCompare(b.userId);
+      })
+      .slice(safeOffset, safeOffset + safeLimit);
   }
 
   await ensureTempVoiceDeleteLogsTable();

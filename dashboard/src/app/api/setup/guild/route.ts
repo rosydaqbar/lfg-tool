@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSetupState, updateSetupState } from "@/lib/db";
+import { getGuildConfig, getSetupState, updateSetupState } from "@/lib/db";
 import { requireSetupSession } from "@/lib/setup-session";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,22 @@ export async function POST(request: Request) {
     );
   }
 
-  await updateSetupState({ selectedGuildId: guildId });
+  let hydratedLogChannelId: string | null = null;
+  let hydratedLfgChannelId: string | null = null;
+  try {
+    const existingConfig = await getGuildConfig(guildId);
+    hydratedLogChannelId = existingConfig.logChannelId;
+    hydratedLfgChannelId = existingConfig.lfgChannelId;
+  } catch {
+    hydratedLogChannelId = null;
+    hydratedLfgChannelId = null;
+  }
+
+  await updateSetupState({
+    selectedGuildId: guildId,
+    logChannelId: hydratedLogChannelId,
+    lfgChannelId: hydratedLfgChannelId,
+  });
   const setup = await getSetupState();
   return NextResponse.json({ ok: true, guildName: selectedGuild.name, setup });
 }

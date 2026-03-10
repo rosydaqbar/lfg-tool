@@ -3,11 +3,27 @@ import fs from "fs";
 import path from "path";
 import { Pool } from "pg";
 import { buildPgSslConfig } from "@/lib/pg-ssl";
-import { getSetupState, updateSetupState } from "@/lib/db";
+import { getGuildConfig, getSetupState, updateSetupState } from "@/lib/db";
 import { encryptSetupValue } from "@/lib/setup-crypto";
 import { requireSetupSession } from "@/lib/setup-session";
 
 export const dynamic = "force-dynamic";
+
+async function hydrateSetupChannelsFromExistingConfig() {
+  const setup = await getSetupState();
+  const selectedGuildId = (setup.selectedGuildId || "").trim();
+  if (!selectedGuildId) return;
+
+  try {
+    const config = await getGuildConfig(selectedGuildId);
+    await updateSetupState({
+      logChannelId: config.logChannelId,
+      lfgChannelId: config.lfgChannelId,
+    });
+  } catch {
+    // ignore hydration errors; setup database validation can still succeed
+  }
+}
 
 const BASELINE_SCHEMA = [
   `
@@ -127,6 +143,8 @@ export async function POST(request: Request) {
       databaseValidatedAt: new Date().toISOString(),
     });
 
+    await hydrateSetupChannelsFromExistingConfig();
+
     const setup = await getSetupState();
     return NextResponse.json({ ok: true, setup, sqlitePath: resolvedPath });
   }
@@ -171,6 +189,8 @@ export async function POST(request: Request) {
     databaseUrl,
     databaseValidatedAt: new Date().toISOString(),
   });
+
+  await hydrateSetupChannelsFromExistingConfig();
 
   const setup = await getSetupState();
   return NextResponse.json({ ok: true, setup });
