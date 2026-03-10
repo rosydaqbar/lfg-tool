@@ -53,6 +53,7 @@ const joinToCreateManager = createJoinToCreateManager({
   configStore,
   lfgManager,
   env: { LOG_CHANNEL_ID },
+  debugLog,
 });
 const voiceLogger = createVoiceLogger({
   getLogChannel,

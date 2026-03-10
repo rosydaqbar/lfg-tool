@@ -28,12 +28,75 @@ async function query(text, params) {
 
 let lfgEnabledColumnEnsured = false;
 let tempVoiceLfgEnabledColumnEnsured = false;
+let tempVoiceOwnerLookupIndexEnsured = false;
 let tempVoiceActivityEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceActivityEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
 let manualVoicePanelMessageEnsured = false;
 let persistentLfgMessageEnsured = false;
+
+const TEMP_OWNER_CACHE_TTL_MS = 15_000;
+const tempOwnerByOwnerKeyCache = new Map();
+const tempOwnerByChannelIdCache = new Map();
+
+function ownerCacheKey(guildId, ownerId) {
+  return `${guildId}:${ownerId}`;
+}
+
+function setTempOwnerCache(guildId, ownerId, channelId) {
+  if (!guildId || !ownerId || !channelId) return;
+  const key = ownerCacheKey(guildId, ownerId);
+  tempOwnerByOwnerKeyCache.set(key, {
+    channelId,
+    expiresAt: Date.now() + TEMP_OWNER_CACHE_TTL_MS,
+  });
+  tempOwnerByChannelIdCache.set(channelId, { guildId, ownerId });
+}
+
+function clearTempOwnerCacheByOwner(guildId, ownerId) {
+  if (!guildId || !ownerId) return;
+  const key = ownerCacheKey(guildId, ownerId);
+  const current = tempOwnerByOwnerKeyCache.get(key);
+  if (current?.channelId) {
+    const reverse = tempOwnerByChannelIdCache.get(current.channelId);
+    if (reverse?.guildId === guildId && reverse?.ownerId === ownerId) {
+      tempOwnerByChannelIdCache.delete(current.channelId);
+    }
+  }
+  tempOwnerByOwnerKeyCache.delete(key);
+}
+
+function clearTempOwnerCacheByChannel(channelId) {
+  if (!channelId) return;
+  const reverse = tempOwnerByChannelIdCache.get(channelId);
+  if (reverse?.guildId && reverse?.ownerId) {
+    const key = ownerCacheKey(reverse.guildId, reverse.ownerId);
+    const current = tempOwnerByOwnerKeyCache.get(key);
+    if (current?.channelId === channelId) {
+      tempOwnerByOwnerKeyCache.delete(key);
+    }
+  }
+  tempOwnerByChannelIdCache.delete(channelId);
+}
+
+function getCachedTempChannelByOwner(guildId, ownerId) {
+  if (!guildId || !ownerId) return null;
+  const key = ownerCacheKey(guildId, ownerId);
+  const cached = tempOwnerByOwnerKeyCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    tempOwnerByOwnerKeyCache.delete(key);
+    if (cached.channelId) {
+      const reverse = tempOwnerByChannelIdCache.get(cached.channelId);
+      if (reverse?.guildId === guildId && reverse?.ownerId === ownerId) {
+        tempOwnerByChannelIdCache.delete(cached.channelId);
+      }
+    }
+    return null;
+  }
+  return cached.channelId;
+}
 
 async function ensureJoinToCreateLfgEnabledColumn() {
   if (lfgEnabledColumnEnsured) return;
@@ -56,6 +119,18 @@ async function ensureTempVoiceLfgEnabledColumn() {
     tempVoiceLfgEnabledColumnEnsured = true;
   } catch (error) {
     console.error('Failed to ensure temp_voice_channels.lfg_enabled column:', error);
+  }
+}
+
+async function ensureTempVoiceOwnerLookupIndex() {
+  if (tempVoiceOwnerLookupIndexEnsured) return;
+  try {
+    await query(
+      'CREATE INDEX IF NOT EXISTS idx_temp_voice_guild_owner_created ON temp_voice_channels(guild_id, owner_id, created_at DESC)'
+    );
+    tempVoiceOwnerLookupIndexEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure temp_voice_channels owner lookup index:', error);
   }
 }
 
@@ -323,6 +398,7 @@ async function addTempChannel(
   lfgEnabled = true
 ) {
   await ensureTempVoiceLfgEnabledColumn();
+  await ensureTempVoiceOwnerLookupIndex();
   await query(
     `
       INSERT INTO temp_voice_channels (
@@ -343,6 +419,7 @@ async function addTempChannel(
     `,
     [guildId, channelId, ownerId, roleId, lfgEnabled]
   );
+  setTempOwnerCache(guildId, ownerId, channelId);
 }
 
 async function getTempChannelsForGuild(guildId) {
@@ -354,11 +431,21 @@ async function getTempChannelsForGuild(guildId) {
 }
 
 async function getTempChannelByOwner(guildId, ownerId) {
+  await ensureTempVoiceOwnerLookupIndex();
+  const cachedChannelId = getCachedTempChannelByOwner(guildId, ownerId);
+  if (cachedChannelId) {
+    return cachedChannelId;
+  }
+
   const res = await query(
     'SELECT channel_id FROM temp_voice_channels WHERE guild_id = $1 AND owner_id = $2 ORDER BY created_at DESC LIMIT 1',
     [guildId, ownerId]
   );
-  return res.rows[0]?.channel_id ?? null;
+  const channelId = res.rows[0]?.channel_id ?? null;
+  if (channelId) {
+    setTempOwnerCache(guildId, ownerId, channelId);
+  }
+  return channelId;
 }
 
 async function getTempChannelOwner(channelId) {
@@ -403,17 +490,43 @@ async function updateTempChannelMessage(channelId, lfgChannelId, lfgMessageId) {
 }
 
 async function updateTempChannelOwner(channelId, ownerId) {
+  const existingRes = await query(
+    'SELECT guild_id, owner_id FROM temp_voice_channels WHERE channel_id = $1',
+    [channelId]
+  );
+  const existing = existingRes.rows[0] || null;
+
   await query(
     'UPDATE temp_voice_channels SET owner_id = $1 WHERE channel_id = $2',
     [ownerId, channelId]
   );
+
+  if (existing?.guild_id && existing?.owner_id) {
+    clearTempOwnerCacheByOwner(existing.guild_id, existing.owner_id);
+  } else {
+    clearTempOwnerCacheByChannel(channelId);
+  }
+  if (existing?.guild_id) {
+    setTempOwnerCache(existing.guild_id, ownerId, channelId);
+  }
 }
 
 async function removeTempChannel(channelId) {
+  const infoRes = await query(
+    'SELECT guild_id, owner_id FROM temp_voice_channels WHERE channel_id = $1',
+    [channelId]
+  );
+  const info = infoRes.rows[0] || null;
+
   await clearVoiceActivity(channelId).catch(() => null);
   await query('DELETE FROM temp_voice_channels WHERE channel_id = $1', [
     channelId,
   ]);
+
+  if (info?.guild_id && info?.owner_id) {
+    clearTempOwnerCacheByOwner(info.guild_id, info.owner_id);
+  }
+  clearTempOwnerCacheByChannel(channelId);
 }
 
 async function upsertVoiceJoin(channelId, userId, joinedAt = new Date()) {

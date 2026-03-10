@@ -1,7 +1,15 @@
 const { ChannelType, MessageFlags, OverwriteType } = require('discord.js');
 
-function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
+function createJoinToCreateManager({ client, configStore, lfgManager, env, debugLog }) {
   const joinToCreatePending = new Set();
+  const joinToCreateCooldown = new Map();
+  const JTC_COOLDOWN_MS = 1500;
+
+  function debugTiming(stage, data) {
+    if (typeof debugLog === 'function') {
+      debugLog(stage, data);
+    }
+  }
 
   function formatDuration(totalMs) {
     const safeMs = Math.max(0, Number(totalMs) || 0);
@@ -220,6 +228,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
   }
 
   async function handleJoinToCreate(oldState, newState, config) {
+    const startedAtMs = Date.now();
     const guildId = newState.guild?.id;
     const lobbyIds = config.joinToCreateLobbyIds || [];
     const lobbyChannelId = newState.channelId;
@@ -239,20 +248,50 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
     if (!member || member.user?.bot) return;
 
     const pendingKey = `${guildId}:${member.id}`;
+    const cooldownUntil = joinToCreateCooldown.get(pendingKey) || 0;
+    if (cooldownUntil > Date.now()) return;
+    if (cooldownUntil) {
+      joinToCreateCooldown.delete(pendingKey);
+    }
     if (joinToCreatePending.has(pendingKey)) return;
     joinToCreatePending.add(pendingKey);
 
     try {
+      const lookupStartedAt = Date.now();
       const existingTempId = await configStore.getTempChannelByOwner(
         guildId,
         member.id
       );
+      debugTiming('jtc.lookup_existing_owner_temp', {
+        guildId,
+        memberId: member.id,
+        existingTempId,
+        ms: Date.now() - lookupStartedAt,
+      });
+
       if (existingTempId) {
+        const existingFetchStartedAt = Date.now();
         const existingChannel = await newState.guild.channels
           .fetch(existingTempId)
           .catch(() => null);
+        debugTiming('jtc.fetch_existing_temp_channel', {
+          guildId,
+          memberId: member.id,
+          existingTempId,
+          found: Boolean(existingChannel),
+          ms: Date.now() - existingFetchStartedAt,
+        });
         if (existingChannel && existingChannel.isVoiceBased()) {
+          const reuseMoveStartedAt = Date.now();
           await newState.setChannel(existingChannel);
+          joinToCreateCooldown.set(pendingKey, Date.now() + JTC_COOLDOWN_MS);
+          debugTiming('jtc.reuse_existing_temp_channel_moved', {
+            guildId,
+            memberId: member.id,
+            channelId: existingChannel.id,
+            ms: Date.now() - reuseMoveStartedAt,
+            totalMs: Date.now() - startedAtMs,
+          });
           return;
         }
         await configStore.removeTempChannel(existingTempId);
@@ -270,6 +309,8 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
         typeof lobbyChannel.position === 'number'
           ? lobbyChannel.position + 1
           : null;
+
+      const createStartedAt = Date.now();
       const createdChannel = await newState.guild.channels.create({
         name: channelName,
         type: channelType,
@@ -280,15 +321,15 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
         rtcRegion: lobbyChannel.rtcRegion ?? undefined,
         videoQualityMode: lobbyChannel.videoQualityMode,
       });
+      debugTiming('jtc.created_temp_channel', {
+        guildId,
+        memberId: member.id,
+        lobbyChannelId,
+        createdChannelId: createdChannel.id,
+        ms: Date.now() - createStartedAt,
+      });
 
-      if (typeof targetPosition === 'number') {
-        await createdChannel
-          .setPosition(targetPosition)
-          .catch((error) => {
-            console.error('Failed to position temp channel:', error);
-          });
-      }
-
+      const dbCreateStartedAt = Date.now();
       await configStore.addTempChannel(
         guildId,
         createdChannel.id,
@@ -296,16 +337,65 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env }) {
         lobbyRoleId,
         lobbyLfgEnabled
       );
-      await configStore.upsertVoiceJoin(createdChannel.id, member.id, new Date());
+
+      debugTiming('jtc.persist_temp_channel', {
+        guildId,
+        memberId: member.id,
+        createdChannelId: createdChannel.id,
+        ms: Date.now() - dbCreateStartedAt,
+      });
+
+      const moveStartedAt = Date.now();
       await newState.setChannel(createdChannel);
+      joinToCreateCooldown.set(pendingKey, Date.now() + JTC_COOLDOWN_MS);
+      debugTiming('jtc.moved_member_to_temp', {
+        guildId,
+        memberId: member.id,
+        createdChannelId: createdChannel.id,
+        ms: Date.now() - moveStartedAt,
+      });
+
       const lfgChannelId =
         config.lfgChannelId || config.logChannelId || env.LOG_CHANNEL_ID;
-      await lfgManager.sendJoinToCreatePrompt(
-        createdChannel,
-        member,
-        lfgChannelId,
-        lobbyLfgEnabled
-      );
+
+      const postMoveStartedAt = Date.now();
+      const postMoveTasks = [
+        configStore
+          .upsertVoiceJoin(createdChannel.id, member.id, new Date())
+          .catch((error) => {
+            console.error('Failed to mark voice join for new temp channel:', error);
+          }),
+        lfgManager
+          .sendJoinToCreatePrompt(
+            createdChannel,
+            member,
+            lfgChannelId,
+            lobbyLfgEnabled
+          )
+          .catch((error) => {
+            console.error('Failed to send Join-to-Create prompt:', error);
+          }),
+      ];
+
+      if (typeof targetPosition === 'number') {
+        postMoveTasks.push(
+          createdChannel
+            .setPosition(targetPosition)
+            .catch((error) => {
+              console.error('Failed to position temp channel:', error);
+            })
+        );
+      }
+
+      await Promise.all(postMoveTasks);
+
+      debugTiming('jtc.post_move_tasks_complete', {
+        guildId,
+        memberId: member.id,
+        createdChannelId: createdChannel.id,
+        ms: Date.now() - postMoveStartedAt,
+        totalMs: Date.now() - startedAtMs,
+      });
     } catch (error) {
       console.error('Failed to create Join-to-Create channel:', error);
       await sendJoinToCreateErrorLog({
