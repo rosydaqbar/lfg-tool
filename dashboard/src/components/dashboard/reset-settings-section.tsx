@@ -30,9 +30,17 @@ type ResetSettingsSectionProps = {
 };
 
 type BotStatusResponse = {
-  online: boolean;
-  healthUrl: string;
+  online: boolean | null;
+  status?: "online" | "offline" | "unverified";
+  source?: "discord_api" | "healthcheck";
   checkedAt: string;
+  bot?: {
+    id: string;
+    username: string;
+    displayName: string;
+  };
+  guildId?: string | null;
+  inSelectedGuild?: boolean | null;
   payload?: {
     status?: string;
     uptimeSeconds?: number;
@@ -101,8 +109,9 @@ function ResetSettingsSectionComponent({
       } catch {
         if (!mounted) return;
         setBotStatus({
-          online: false,
-          healthUrl: "http://127.0.0.1:80",
+          online: null,
+          status: "unverified",
+          source: "discord_api",
           checkedAt: new Date().toISOString(),
           error: "Unable to check bot status right now.",
         });
@@ -182,6 +191,10 @@ function ResetSettingsSectionComponent({
               <Badge className="rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-emerald-800">
                 Online
               </Badge>
+            ) : botStatus?.status === "unverified" ? (
+              <Badge className="rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-amber-800">
+                Unverified
+              </Badge>
             ) : (
               <Badge className="rounded-full border border-red-500/40 bg-red-500/15 px-3 py-1 text-red-800">
                 Offline
@@ -193,13 +206,26 @@ function ResetSettingsSectionComponent({
               ? "Checking if your bot is running..."
               : botStatus?.online
                 ? "Good news: your bot is running."
+                : botStatus?.status === "unverified"
+                  ? "Bot status cannot be verified yet. Make sure bot token is configured in setup."
                 : "Your bot is offline. Open the Local tab and follow each step exactly. Railway tabs are only for cloud hosting."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-xl border border-border/60 bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-            Health endpoint: <code>{botStatus?.healthUrl || "http://127.0.0.1:80"}</code>
+            Check method: <code>{botStatus?.source === "discord_api" ? "Discord API" : "Unknown"}</code>
           </div>
+
+          {!statusLoading && botStatus?.bot ? (
+            <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              Bot: <code>{botStatus.bot.displayName}</code> (<code>{botStatus.bot.id}</code>)
+              {typeof botStatus.inSelectedGuild === "boolean" ? (
+                <span>
+                  {" "}• Selected guild membership: <code>{botStatus.inSelectedGuild ? "Joined" : "Not joined"}</code>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
           {!statusLoading && !botStatus?.online ? (
             <>

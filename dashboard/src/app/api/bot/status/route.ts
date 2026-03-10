@@ -1,52 +1,93 @@
 import { NextResponse } from "next/server";
+import { getSetupState } from "@/lib/db";
+import { getDashboardBotToken } from "@/lib/runtime-secrets";
 
 export const dynamic = "force-dynamic";
 
-type HealthPayload = {
-  status?: string;
-  uptimeSeconds?: number;
-  timestamp?: string;
-};
-
 export async function GET() {
-  const healthUrl = (process.env.BOT_HEALTHCHECK_URL || "http://127.0.0.1:80").trim();
   const checkedAt = new Date().toISOString();
+  const botToken = await getDashboardBotToken();
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000);
+  if (!botToken) {
+    return NextResponse.json({
+      online: null,
+      status: "unverified",
+      checkedAt,
+      source: "discord_api",
+      error: "Bot token is not configured.",
+    });
+  }
 
   try {
-    const response = await fetch(healthUrl, {
+    const meResponse = await fetch("https://discord.com/api/v10/users/@me", {
       method: "GET",
       cache: "no-store",
-      signal: controller.signal,
+      headers: {
+        Authorization: `Bot ${botToken}`,
+      },
     });
 
-    if (!response.ok) {
+    if (!meResponse.ok) {
+      let details = "Invalid bot token or Discord API rejected request.";
+      try {
+        const payload = (await meResponse.json()) as { message?: string };
+        if (payload?.message) details = payload.message;
+      } catch {
+        // ignore parse errors
+      }
       return NextResponse.json({
         online: false,
-        healthUrl,
+        status: "offline",
         checkedAt,
-        error: `Health endpoint returned ${response.status}`,
+        source: "discord_api",
+        error: details,
       });
     }
 
-    const payload = (await response.json().catch(() => null)) as HealthPayload | null;
+    const mePayload = (await meResponse.json()) as {
+      id: string;
+      username: string;
+      discriminator?: string;
+      global_name?: string | null;
+    };
+
+    const setup = await getSetupState();
+    const guildId = (setup.selectedGuildId || "").trim();
+    let inSelectedGuild: boolean | null = null;
+    if (guildId) {
+      const memberResponse = await fetch(
+        `https://discord.com/api/v10/guilds/${guildId}/members/@me`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Authorization: `Bot ${botToken}`,
+          },
+        }
+      );
+      inSelectedGuild = memberResponse.ok;
+    }
 
     return NextResponse.json({
       online: true,
-      healthUrl,
+      status: "online",
       checkedAt,
-      payload,
+      source: "discord_api",
+      bot: {
+        id: mePayload.id,
+        username: mePayload.username,
+        displayName: mePayload.global_name || mePayload.username,
+      },
+      guildId: guildId || null,
+      inSelectedGuild,
     });
   } catch {
     return NextResponse.json({
       online: false,
-      healthUrl,
+      status: "offline",
       checkedAt,
-      error: "Bot health check failed",
+      source: "discord_api",
+      error: "Discord API status check failed",
     });
-  } finally {
-    clearTimeout(timeout);
   }
 }
