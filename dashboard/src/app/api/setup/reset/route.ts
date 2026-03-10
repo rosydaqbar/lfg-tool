@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { clearGuildSettings, getSetupState, updateSetupState } from "@/lib/db";
+import { getSetupState, updateSetupState } from "@/lib/db";
 import { requireAdminSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +32,6 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-
-  await clearGuildSettings(currentGuildId);
 
   await updateSetupState({
     setupComplete: false,
