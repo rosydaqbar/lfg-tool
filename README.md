@@ -1,250 +1,181 @@
 # Discord LFG Voice Bot + Dashboard
 
 > [!IMPORTANT]
-> I vibe-coded this project and shipped it fast. You can use it freely (CC0), but please use it wisely: review the code, verify permissions, and test in a safe server before using it in production.
+> This project is provided under CC0. Please review code, validate permissions, and test in a safe server before production use.
 
-Join-to-Create Discord voice bot with LFG flow, global voice stats, manual voice-session logging, and a Next.js dashboard for configuration and monitoring.
+Join-to-Create Discord voice bot with LFG flow, voice-session logging, global stats, and a Next.js dashboard with setup wizard and guild-scoped management.
+
+## What It Does Now
+
+- Discord bot features
+  - Join-to-Create lobbies (create per-user temp channels, auto-delete when empty)
+  - Temp voice panel controls (rename, lock, transfer owner, claim, region, size)
+  - LFG modal + post flow from temp channels
+  - Persistent LFG message refresh loop
+  - Manual voice channel logging (in-channel panel + leave session logs)
+  - Voice stats commands (`/stats me`, `/stats user`, `/stats leaderboard`)
+  - In-panel buttons for `My Stats` and `Leaderboard`
+- Dashboard features
+  - First-run setup wizard (`/setup`) with resumable state
+  - Setup stores runtime state in root `.setup-state.json`
+  - Guild config management (log channel, optional LFG channel)
+  - Join-to-Create lobby management
+  - Voice Log channel settings (manual channel include/exclude)
+  - Active Temp Channels tab
+  - Voice Log history (`/voice-log`) and paginated leaderboard
+  - Bot status card checked via Discord API (token + selected guild membership)
+  - Role-based dashboard access (guild owner or Administrator role)
+
+## Data Safety Notes
+
+- `Reset settings` is now non-destructive for database rows.
+  - It resets setup state only.
+  - It does not delete guild records/tables.
+- Setup save paths were hardened to avoid accidental config wiping.
+  - Existing guild voice settings are preserved when setup channels are updated.
 
 ## Screenshots
 
-You can add multiple screenshots by feature here. Save all images under `docs/screenshots/`.
+Store all screenshots under root `screenshots/`.
 
-### Discord Bot
+Example structure:
 
-#### Join-to-Create Prompt
-![Join-to-Create prompt](docs/screenshots/bot-join-to-create-prompt.png)
+- `screenshots/bot-join-to-create-prompt.png`
+- `screenshots/bot-voice-settings-panel.png`
+- `screenshots/bot-lfg-modal.png`
+- `screenshots/bot-lfg-post.png`
+- `screenshots/bot-manual-voice-log-panel.png`
+- `screenshots/bot-stats-leaderboard.png`
+- `screenshots/dashboard-settings.png`
+- `screenshots/dashboard-jtc-lobbies.png`
+- `screenshots/dashboard-voice-log-channels.png`
+- `screenshots/dashboard-voice-log-page.png`
 
-#### Voice Settings Panel
-![Voice settings panel](docs/screenshots/bot-voice-settings-panel.png)
+## Project Structure
 
-#### LFG Modal and Post
-![LFG modal](docs/screenshots/bot-lfg-modal.png)
-![LFG post](docs/screenshots/bot-lfg-post.png)
+- Bot runtime
+  - Entry: `src/index.js`
+  - Data layer: `src/config-store.js`
+  - LFG modules: `src/bot/lfg/*`
+  - Stats module: `src/bot/stats.js`
+  - Health server: `src/bot/health-server.js`
+- Dashboard (Next.js App Router)
+  - App/API: `dashboard/src/app/*`
+  - Components: `dashboard/src/components/*`
+  - Dashboard DB/runtime helpers: `dashboard/src/lib/*`
+- Landing page (separate app)
+  - `landing/*`
+- Scripts
+  - Command deploy: `scripts/deploy-commands.js`
+  - SQLite -> Postgres migration: `scripts/migrate-sqlite-to-postgres.js`
+  - Schema/index/perf helpers: `scripts/*`
 
-#### Temp Voice Log (In Channel)
-![Temp voice log panel](docs/screenshots/bot-temp-voice-log-panel.png)
+## Runtime and Storage Model
 
-#### Manual Voice Log (In Channel)
-![Manual voice log panel](docs/screenshots/bot-manual-voice-log-panel.png)
-![Manual session leave log](docs/screenshots/bot-manual-session-leave-log.png)
-
-#### Stats
-![Stats me](docs/screenshots/bot-stats-me.png)
-![Stats leaderboard](docs/screenshots/bot-stats-leaderboard.png)
-
-### Dashboard (Local)
-
-#### Main Settings
-![Dashboard settings](docs/screenshots/dashboard-settings.png)
-
-#### Join-to-Create Lobbies
-![Dashboard JTC lobbies](docs/screenshots/dashboard-jtc-lobbies.png)
-
-#### Voice Log Channels
-![Dashboard voice log channels](docs/screenshots/dashboard-voice-log-channels.png)
-
-#### Active Temp Channels Tab
-![Dashboard active temp channels](docs/screenshots/dashboard-active-temp-channels.png)
-
-#### Voice Log Tab
-![Dashboard voice log tab](docs/screenshots/dashboard-voice-log-tab.png)
-
-#### Voice Leaderboard
-![Dashboard voice leaderboard](docs/screenshots/dashboard-voice-leaderboard.png)
-
-#### Full Voice Log Page
-![Dashboard voice log page](docs/screenshots/dashboard-voice-log-page.png)
-
-Tip: if a screenshot is missing, GitHub will show a broken image icon until you add the file.
-
-## Current Features
-
-- Join-to-Create lobbies
-  - Creates per-user temp voice channels from lobby join
-  - Moves owner into new temp channel
-  - Deletes temp channel when empty
-  - Supports role pairing per lobby
-  - Supports per-lobby `lfg_enabled`
-- Temp channel voice settings panel (in voice chat)
-  - Rename, size limit, lock/unlock, transfer owner, claim owner, region
-  - `My Stats` button in panel
-  - Prompt auto-refreshes on relevant state changes
-- LFG flow
-  - Send LFG post via modal from temp channel prompt
-  - Cooldown enforcement
-  - Disband message edit/cleanup
-  - Persistent LFG message loop
-- Voice logging
-  - Temp voice delete snapshots (history persisted)
-  - Manual voice log channels (log-only, no temp settings controls)
-  - Manual in-channel Voice Log panel lifecycle:
-    - create/update while users are present
-    - delete when channel becomes empty
-  - Manual leave log containers (non-pinging mention format)
-- Stats
-  - `/stats me`
-  - `/stats user` (admin-only)
-  - `/stats leaderboard`
-  - Global aggregation includes temp + manual session logs
-- Dashboard
-  - Guild config management (log/LFG channels, lobbies, roles)
-  - Voice Log channels section:
-    - Temp channels auto-logged
-    - Manual channels add/remove
-  - Active temp channels tab
-  - Mixed Voice Log tab (Temp Deleted + Manual Voice Session labels)
-  - Voice leaderboard with pagination
-  - Voice Log page (`/voice-log`) for full history
-  - Adaptive polling/backoff and lazy tab loading
-
-## Architecture
-
-- Bot runtime: Node.js + `discord.js`
-- Dashboard: Next.js App Router + shadcn/ui
-- Database: Postgres (`DATABASE_URL`)
-
-Core paths:
-- Bot entry: `src/index.js`
-- Config store/data layer: `src/config-store.js`
-- LFG modules: `src/bot/lfg/*`
-- Stats module: `src/bot/stats.js`
-- Dashboard app: `dashboard/src/*`
+- Bot + dashboard share setup/runtime state from root `.setup-state.json`.
+- Database source priority in dashboard data access is:
+  1. `DATABASE_URL` env
+  2. setup-state database URL
+  3. SQLite fallback
+- Supported setup DB providers:
+  - `supabase`
+  - `local_postgres`
+  - `local_sqlite`
 
 ## Requirements
 
 - Node.js 18+
-- Postgres database
-- Discord bot with required permissions/intents
+- Discord bot token + app credentials
+- Database (Postgres recommended; SQLite supported)
 
 ## Environment Variables
 
-Root `.env` is used by bot and dashboard.
+Root `.env` is used by the bot and also by dashboard runtime.
 
-Required (bot):
+Common required values:
+
 - `DISCORD_TOKEN`
-- `DATABASE_URL`
-
-Required (dashboard):
-- `DATABASE_URL`
+- `DATABASE_URL` (recommended for direct runtime)
 - `DISCORD_CLIENT_ID`
 - `DISCORD_CLIENT_SECRET`
 - `NEXTAUTH_SECRET`
-- `ADMIN_DISCORD_USER_ID`
-- `DISCORD_TOKEN` or `DISCORD_BOT_TOKEN` (for Discord API lookups)
 
-Optional/common:
-- `LOG_CHANNEL_ID` (fallback log channel)
-- `VOICE_CHANNEL_ID` (legacy fallback for single-channel logging)
+Common optional values:
+
+- `DISCORD_BOT_TOKEN` (dashboard fallback if `DISCORD_TOKEN` not set)
+- `NEXTAUTH_URL` (e.g. `http://localhost:3000`)
+- `ADMIN_DISCORD_USER_ID` (optional; owner fallback from setup is supported)
+- `SQLITE_PATH` (default `./data/discord.db`)
+- `LOG_CHANNEL_ID` (legacy fallback)
+- `VOICE_CHANNEL_ID` (legacy fallback)
 - `DEBUG=true`
 
 Postgres SSL controls:
-- `PG_SSL_MODE` (default: `require`)
-- `PG_SSL_REJECT_UNAUTHORIZED` (default: `true`)
-- `PG_SSL_CA` or `PG_SSL_CA_BASE64` (optional custom CA)
 
-For providers with self-signed/intermediate chain issues, temporary workaround:
-- `PG_SSL_REJECT_UNAUTHORIZED=false`
+- `PG_SSL_MODE` (default `require`)
+- `PG_SSL_REJECT_UNAUTHORIZED` (default `true`)
+- `PG_SSL_CA` or `PG_SSL_CA_BASE64` (optional CA)
 
-## Discord Bot
+## Quick Start
 
-### Setup
-
-1. Install root deps:
+1. Install root dependencies:
    - `npm install`
 2. Create env file:
    - `cp .env.example .env`
-   - fill required variables
-3. Run the bot:
+3. Start bot:
    - `npm start`
+4. Run dashboard in another terminal:
+   - `npm --prefix dashboard install`
+   - `npm --prefix dashboard run dev`
+5. Open dashboard and finish setup wizard:
+   - `http://localhost:3000/setup`
 
-### Commands
+## Commands
 
-- Bot start: `npm start`
+Root commands:
+
+- Start bot: `npm start`
 - Deploy checks: `npm run deploy`
 - Deploy slash commands: `npm run deploy:commands`
 - SQLite -> Postgres migration: `npm run migrate:postgres`
-- Verify expected DB indexes: `npm run db:verify-indexes`
-- Capture voice query benchmark: `npm run perf:voice-queries`
+- Verify DB indexes: `npm run db:verify-indexes`
+- Benchmark voice queries: `npm run perf:voice-queries`
 
-## Landing Page (Vercel)
+Dashboard commands:
 
-Landing app lives in `landing/` and is intended to be deployed on Vercel only.
+- Dev: `npm --prefix dashboard run dev`
+- Build: `npm --prefix dashboard run build`
+- Start: `npm --prefix dashboard run start`
 
-### Local development
-
-1. Install landing deps:
-   - `npm --prefix landing install`
-2. Run locally:
-   - `npm run landing:dev`
-
-### Commands (landing)
+Landing commands:
 
 - Dev: `npm run landing:dev`
 - Build: `npm run landing:build`
 - Start: `npm run landing:start`
 
-### Vercel setup
-
-When creating/importing project in Vercel:
-
-- Framework: `Next.js`
-- Root Directory: `landing`
-- Build Command: default (`next build`)
-- Output Directory: default (`.next`)
-
-This keeps deployment split as intended:
-- Landing page on Vercel
-- Bot on Railway
-- Dashboard local-only
-
-## Dashboard (Local Hosting)
-
-This dashboard is meant to be run and hosted locally.
-
-### Setup (local)
-
-1. Install dashboard deps:
-   - `npm --prefix dashboard install`
-2. Run dashboard locally:
-   - `npm --prefix dashboard run dev`
-
-### Commands (dashboard)
-
-- Dev: `npm --prefix dashboard run dev`
-- Build: `npm --prefix dashboard run build`
-
-
 ## Discord Intents and Permissions
 
 Gateway intents:
+
 - `Guilds`
 - `GuildVoiceStates`
 
-Bot permissions (minimum expected):
+Minimum bot permissions:
+
 - `View Channel`
 - `Send Messages`
 - `Manage Channels`
 - `Move Members`
 
-Depending on your setup, you may also need:
-- `Manage Roles` (if using role-related lobby behavior)
+Optional depending on setup:
 
-## Data and Schema
-
-Primary storage is Postgres.
-
-Schema source:
-- `scripts/schema-postgres.sql`
-
-Manual utility docs/artifacts:
-- Cleanup/hardening plan: `docs/cleanup-hardening-plan.md`
-- Shared DB refactor notes: `docs/shared-db-refactor-candidates.md`
-- Performance snapshots: `docs/perf/`
+- `Manage Roles`
 
 ## Notes
 
-- This repository evolves quickly; review recent commits before deploying to production.
-- Test in a staging Discord server before applying to a large community server.
+- Dashboard bot status now verifies via Discord API, so remote-hosted bot setups are supported.
+- Keep `.setup-state.json` private; it contains sensitive setup/runtime secrets.
+- This repository evolves quickly; review recent commits before production deployment.
 
 ## License
 
