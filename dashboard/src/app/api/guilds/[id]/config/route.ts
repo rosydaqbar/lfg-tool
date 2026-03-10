@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getGuildConfig, saveGuildConfig } from "@/lib/db";
-import { requireAdminSession } from "@/lib/session";
+import { requireDashboardGuildAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -9,18 +9,25 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const session = await requireAdminSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const access = await requireDashboardGuildAccess(id);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const config = await getGuildConfig(id);
-  return NextResponse.json({
-    logChannelId: config.logChannelId,
-    lfgChannelId: config.lfgChannelId,
-    enabledVoiceChannelIds: config.enabledVoiceChannelIds,
-    joinToCreateLobbies: config.joinToCreateLobbies,
-  });
+  try {
+    const config = await getGuildConfig(id);
+    return NextResponse.json({
+      logChannelId: config.logChannelId,
+      lfgChannelId: config.lfgChannelId,
+      enabledVoiceChannelIds: config.enabledVoiceChannelIds,
+      joinToCreateLobbies: config.joinToCreateLobbies,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: (error as Error).message || "Failed to load config" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PUT(
@@ -28,9 +35,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const session = await requireAdminSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const access = await requireDashboardGuildAccess(id);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const body = (await request.json()) as {

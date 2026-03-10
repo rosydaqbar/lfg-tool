@@ -9,6 +9,7 @@ const {
   CLAIM_APPROVE_PREFIX,
   CLAIM_DECLINE_PREFIX,
   CLAIM_PREFIX,
+  LEADERBOARD_PREFIX,
   LFG_SEND_PREFIX,
   LFG_SETTINGS_PREFIX,
   MY_STATS_PREFIX,
@@ -236,6 +237,19 @@ async function handleButtonInteraction(interaction, deps) {
     }
 
     await deps.replyMyStats(interaction, { ephemeral: false });
+    return true;
+  }
+
+  if (prefix === LEADERBOARD_PREFIX) {
+    if (typeof deps.replyLeaderboard !== 'function') {
+      await interaction.reply({
+        content: 'Fitur leaderboard belum siap. Coba lagi sebentar.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    await deps.replyLeaderboard(interaction, { ephemeral: false });
     return true;
   }
 

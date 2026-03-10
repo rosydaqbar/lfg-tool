@@ -1,20 +1,26 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/session";
+import { requireDashboardGuildAccess } from "@/lib/session";
+import { getDashboardBotToken } from "@/lib/runtime-secrets";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await requireAdminSession();
-  if (!session?.accessToken) {
+  const access = await requireDashboardGuildAccess();
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+
+  const botToken = await getDashboardBotToken();
+  if (!botToken) {
     return NextResponse.json(
-      { error: "Missing Discord access token. Sign out and sign in again." },
-      { status: 401 }
+      { error: "Missing bot token. Configure Step 3 in setup." },
+      { status: 500 }
     );
   }
 
-  const response = await fetch("https://discord.com/api/v10/users/@me/guilds", {
+  const response = await fetch(`https://discord.com/api/v10/guilds/${access.guildId}`, {
     headers: {
-      Authorization: `Bearer ${session.accessToken}`,
+      Authorization: `Bot ${botToken}`,
     },
     cache: "no-store",
   });
@@ -33,17 +39,19 @@ export async function GET() {
     );
   }
 
-  const guilds = (await response.json()) as {
+  const guild = (await response.json()) as {
     id: string;
     name: string;
     icon: string | null;
-  }[];
+  };
 
   return NextResponse.json({
-    guilds: guilds.map((guild) => ({
-      id: guild.id,
-      name: guild.name,
-      icon: guild.icon,
-    })),
+    guilds: [
+      {
+        id: guild.id,
+        name: guild.name,
+        icon: guild.icon,
+      },
+    ],
   });
 }

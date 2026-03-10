@@ -1,5 +1,5 @@
-import { getServerSession } from "next-auth";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,11 +9,29 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { authOptions } from "@/lib/auth";
 import DashboardClient from "@/components/dashboard-client";
+import { getSetupState } from "@/lib/db";
+import { getSafeServerSession } from "@/lib/safe-session";
+import { requireDashboardGuildAccess } from "@/lib/session";
 
 export default async function Home() {
-  const session = await getServerSession(authOptions);
+  const setup = await getSetupState();
+  const session = await getSafeServerSession();
+
+  const hasDiscordOAuthBootstrap =
+    Boolean(setup.discordClientId) && Boolean(setup.discordClientSecretSet);
+
+  const shouldShowSetupCta = !setup.setupComplete && !hasDiscordOAuthBootstrap;
+  const dashboardAccess =
+    session && setup.setupComplete
+      ? await requireDashboardGuildAccess()
+      : null;
+
+  if (session) {
+    if (!setup.setupComplete) {
+      redirect("/setup");
+    }
+  }
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
@@ -54,24 +72,57 @@ export default async function Home() {
               <CardHeader>
                 <CardTitle className="text-2xl">Sign in to continue</CardTitle>
                 <CardDescription>
-                  Authenticate with Discord to load your guilds and configure
-                  logging.
+                  {setup.setupComplete || hasDiscordOAuthBootstrap
+                    ? "Authenticate with Discord to load your guilds and configure logging."
+                    : "Start the setup wizard to configure Discord app credentials, bot token, guild, database, and channels."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button asChild className="w-full">
-                  <Link href="/api/auth/signin/discord">
-                    Sign in with Discord
-                  </Link>
-                </Button>
+                <div className="grid gap-2">
+                  <Button asChild className="w-full">
+                    <Link href={setup.setupComplete || hasDiscordOAuthBootstrap ? "/api/auth/signin/discord" : "/setup"}>
+                      {setup.setupComplete || hasDiscordOAuthBootstrap ? "Sign in with Discord" : "Setup Discord bot"}
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" className="w-full">
+                    <Link href="/setup">Open Setup</Link>
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Only the admin Discord user is allowed to access the dashboard.
+                  {setup.setupComplete || hasDiscordOAuthBootstrap
+                    ? "Only the admin Discord user is allowed to access the dashboard."
+                    : "First-run setup required before dashboard access."}
                 </p>
               </CardContent>
             </Card>
           </div>
+        ) : dashboardAccess && !dashboardAccess.ok ? (
+          <div className="mx-auto w-full max-w-xl">
+            <Card className="border-destructive/50 bg-destructive/10">
+              <CardHeader>
+                <CardTitle className="text-destructive">Access denied</CardTitle>
+                <CardDescription className="text-destructive/90">
+                  You cannot access this dashboard due to lack access.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-destructive/90">{dashboardAccess.error}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild>
+                    <Link href="/api/auth/signin/discord">Sign in with a different account</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href="/setup">Open Setup</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         ) : (
-          <DashboardClient userName={session.user?.name ?? "Admin"} />
+          <DashboardClient
+            userName={session.user?.name ?? "Admin"}
+            selectedGuildId={setup.selectedGuildId ?? ""}
+          />
         )}
       </main>
     </div>

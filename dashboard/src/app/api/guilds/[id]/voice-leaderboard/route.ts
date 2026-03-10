@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTempVoiceDeleteLeaderboard } from "@/lib/db";
 import { resolveGuildUsernames } from "@/lib/discord-usernames";
-import { requireAdminSession } from "@/lib/session";
+import { requireDashboardGuildAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +10,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const session = await requireAdminSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const access = await requireDashboardGuildAccess(id);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   const { searchParams } = new URL(request.url);

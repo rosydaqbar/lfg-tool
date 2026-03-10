@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/session";
+import { requireDashboardGuildAccess } from "@/lib/session";
+import { getDashboardBotToken } from "@/lib/runtime-secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -8,15 +9,15 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const session = await requireAdminSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const access = await requireDashboardGuildAccess(id);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const botToken = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN;
+  const botToken = await getDashboardBotToken();
   if (!botToken) {
     return NextResponse.json(
-      { error: "Missing DISCORD_TOKEN" },
+      { error: "Missing bot token. Configure Step 3 in setup." },
       { status: 500 }
     );
   }
@@ -32,8 +33,9 @@ export async function GET(
   );
 
   if (!response.ok) {
+    const details = (await response.json().catch(() => null)) as { message?: string } | null;
     return NextResponse.json(
-      { error: "Failed to fetch roles" },
+      { error: details?.message || "Failed to fetch roles" },
       { status: response.status }
     );
   }

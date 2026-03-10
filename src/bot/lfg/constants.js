@@ -19,6 +19,7 @@ const CLAIM_DECLINE_PREFIX = 'jtc_claim_no';
 const REGION_PREFIX = 'jtc_region';
 const REGION_SELECT_PREFIX = 'jtc_region_select';
 const MY_STATS_PREFIX = 'jtc_my_stats';
+const LEADERBOARD_PREFIX = 'jtc_leaderboard';
 
 const LFG_COOLDOWN_MS = 10 * 60 * 1000;
 const PERSISTENT_LFG_INTERVAL_MS = 60 * 1000;
@@ -41,6 +42,7 @@ module.exports = {
   LFG_MODAL_PREFIX,
   LFG_SEND_PREFIX,
   LFG_SETTINGS_PREFIX,
+  LEADERBOARD_PREFIX,
   MY_STATS_PREFIX,
   PERSISTENT_LFG_INTERVAL_MS,
   REGION_PREFIX,

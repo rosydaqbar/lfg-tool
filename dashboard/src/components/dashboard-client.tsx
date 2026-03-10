@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -10,6 +11,7 @@ import { VoiceSettingsSection } from "@/components/dashboard/voice-settings-sect
 import { ActiveTempChannelsCard } from "@/components/dashboard/active-temp-channels-card";
 import { VoiceLogDeletedCard } from "@/components/dashboard/voice-log-deleted-card";
 import { VoiceLeaderboardCard } from "@/components/dashboard/voice-leaderboard-card";
+import { ResetSettingsSection } from "@/components/dashboard/reset-settings-section";
 import type {
   ChannelsResponse,
   Channel,
@@ -19,10 +21,14 @@ import type {
   RolesResponse,
 } from "@/components/dashboard/types";
 
-const GUILD_ID = "670147766839803924";
-
-export default function DashboardClient({ userName }: { userName: string }) {
-  const selectedGuildId = GUILD_ID;
+export default function DashboardClient({
+  userName,
+  selectedGuildId,
+}: {
+  userName: string;
+  selectedGuildId: string;
+}) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<
     "settings" | "active-temp" | "voice-log"
   >("settings");
@@ -40,7 +46,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!selectedGuildId) return;
+    if (!selectedGuildId) {
+      setError("No guild selected in setup. Open /setup and pick a guild.");
+      return;
+    }
     let active = true;
     setLoadingConfig(true);
     setError(null);
@@ -54,15 +63,24 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
     Promise.all([
       fetch(`/api/guilds/${selectedGuildId}/channels`).then(async (response) => {
-        if (!response.ok) throw new Error("Failed to load channels");
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error || "Failed to load channels");
+        }
         return response.json() as Promise<ChannelsResponse>;
       }),
       fetch(`/api/guilds/${selectedGuildId}/config`).then(async (response) => {
-        if (!response.ok) throw new Error("Failed to load config");
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error || "Failed to load config");
+        }
         return response.json() as Promise<ConfigResponse>;
       }),
       fetch(`/api/guilds/${selectedGuildId}/roles`).then(async (response) => {
-        if (!response.ok) throw new Error("Failed to load roles");
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error || "Failed to load roles");
+        }
         return response.json() as Promise<RolesResponse>;
       }),
     ])
@@ -220,6 +238,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
     [joinToCreateLobbies]
   );
 
+  const handleResetComplete = useCallback(() => {
+    router.push("/setup");
+    router.refresh();
+  }, [router]);
+
   return (
     <div className="flex flex-col gap-10">
       <HeaderSection userName={userName} selectedGuildId={selectedGuildId} />
@@ -283,6 +306,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
             onAddEnabledVoiceChannel={handleAddEnabledVoiceChannel}
             onRemoveEnabledVoiceChannel={handleRemoveEnabledVoiceChannel}
             onSave={handleSave}
+          />
+
+          <ResetSettingsSection
+            selectedGuildId={selectedGuildId}
+            onResetComplete={handleResetComplete}
           />
         </>
       ) : null}

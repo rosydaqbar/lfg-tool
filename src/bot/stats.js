@@ -165,6 +165,10 @@ function createStatsManager({ client, configStore }) {
         try {
           await guild.commands.set([command]);
         } catch (error) {
+          if (error?.code === 50001) {
+            console.warn(`Skipped stats command registration for guild ${guild.id}: missing access.`);
+            return;
+          }
           console.error(`Failed to register stats command for guild ${guild.id}:`, error);
         }
       })
@@ -195,7 +199,7 @@ function createStatsManager({ client, configStore }) {
     await replyStats(interaction, interaction.user, options);
   }
 
-  async function replyLeaderboard(interaction) {
+  async function replyLeaderboard(interaction, options = {}) {
     const guildId = interaction.guildId;
     if (!guildId) {
       await interaction.reply({
@@ -207,10 +211,13 @@ function createStatsManager({ client, configStore }) {
 
     const rows = await configStore.getVoiceLeaderboard(guildId, 10);
     if (!rows.length) {
-      await interaction.reply({
+      const payload = {
         content: 'Belum ada data leaderboard voice.',
-        flags: MessageFlags.Ephemeral,
-      });
+      };
+      if (options.ephemeral !== false) {
+        payload.flags = MessageFlags.Ephemeral;
+      }
+      await interaction.reply(payload);
       return;
     }
 
@@ -221,6 +228,20 @@ function createStatsManager({ client, configStore }) {
       );
     }
 
+    const totalDurationMs = rows.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.totalMs) || 0),
+      0
+    );
+    const totalSessions = rows.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.sessions) || 0),
+      0
+    );
+    const topUser = rows[0];
+    const summaryParagraph =
+      `Top ${rows.length} leaderboard saat ini mencatat total \`${formatDuration(totalDurationMs)}\` ` +
+      `dalam \`${totalSessions}\` sesi voice. Peringkat pertama dipegang ` +
+      `<@${topUser.userId}> dengan total \`${formatDuration(topUser.totalMs)}\`.`;
+
     const avatarUrl = interaction.user.displayAvatarURL({
       extension: 'png',
       size: 128,
@@ -230,9 +251,11 @@ function createStatsManager({ client, configStore }) {
     await interaction.reply(
       buildStatsContainerPayload({
         title: '### Voice Leaderboard (Top 10)',
+        introParagraph: summaryParagraph,
         lines,
         avatarUrl,
         accentColor: 0xf59e0b,
+        ephemeral: options.ephemeral ?? false,
       })
     );
   }
@@ -274,6 +297,7 @@ function createStatsManager({ client, configStore }) {
 
   return {
     handleInteraction,
+    replyLeaderboard,
     replyMyStats,
     registerCommands,
   };

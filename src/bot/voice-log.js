@@ -6,7 +6,7 @@ const {
   MessageFlags,
   TextDisplayBuilder,
 } = require('discord.js');
-const { MY_STATS_PREFIX } = require('./lfg/constants');
+const { LEADERBOARD_PREFIX, MY_STATS_PREFIX } = require('./lfg/constants');
 
 function formatDuration(totalMs) {
   const safeMs = Math.max(0, Number(totalMs) || 0);
@@ -89,6 +89,11 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
             .setCustomId(`${MY_STATS_PREFIX}:${channelId}`)
             .setEmoji('📊')
             .setLabel('My Stats')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`${LEADERBOARD_PREFIX}:${channelId}`)
+            .setEmoji('🏆')
+            .setLabel('Leaderboard')
             .setStyle(ButtonStyle.Secondary)
         )
       );
