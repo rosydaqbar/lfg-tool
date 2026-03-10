@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSetupState } from "@/lib/db";
 import { SetupBootstrapDiscordApp } from "@/components/setup/setup-bootstrap-discord";
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
 import { SetupWizard } from "@/components/setup/setup-wizard";
+import { ResetSettingsSection } from "@/components/dashboard/reset-settings-section";
 import { getSafeServerSession } from "@/lib/safe-session";
 
 export default async function SetupPage({
@@ -17,18 +17,17 @@ export default async function SetupPage({
   const session = await getSafeServerSession();
   const setup = await getSetupState();
   const forceConfigureDiscord = params.configureDiscord === "1";
-
-  if (setup.setupComplete) {
-    redirect("/");
-  }
+  const isSetupLocked = setup.setupComplete;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-12">
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Step 0 - Discord Login</CardTitle>
+          <CardTitle>{isSetupLocked ? "Setup Status" : "Step 0 - Discord Login"}</CardTitle>
           <CardDescription>
-            Login is required before the setup wizard can continue.
+            {isSetupLocked
+              ? "Setup is already completed. This page is read-only. Sign in to reset setup from dashboard settings."
+              : "Login is required before the setup wizard can continue."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -59,28 +58,61 @@ export default async function SetupPage({
       </Card>
 
       {!session?.user?.id ? (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{isSetupLocked ? "Setup Locked" : "Setup Wizard"}</CardTitle>
+              <CardDescription>
+                {isSetupLocked
+                  ? "Setup has already been completed. Sign in and use Reset Setting in dashboard settings if you need to run setup again."
+                  : setup.discordClientId && setup.discordClientSecretSet && !forceConfigureDiscord
+                  ? "Sign in with Discord to begin first-time setup."
+                  : "Provide Discord Client ID and Client Secret first to enable OAuth login."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isSetupLocked && forceConfigureDiscord ? (
+                <div className="space-y-4">
+                  <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900">
+                    OAuth recovery mode: update Discord Client ID/Secret, then sign in again.
+                  </div>
+                  <SetupBootstrapDiscordApp />
+                </div>
+              ) : isSetupLocked ? (
+                <Button asChild>
+                  <Link href="/api/auth/signin/discord">Sign in with Discord</Link>
+                </Button>
+              ) : setup.discordClientId && setup.discordClientSecretSet && !forceConfigureDiscord ? (
+                <Button asChild>
+                  <Link href="/api/auth/signin/discord">Sign in with Discord</Link>
+                </Button>
+              ) : (
+                <div className="space-y-4">
+                  <SetupBootstrapDiscordApp />
+                  {setup.discordClientId && setup.discordClientSecretSet ? (
+                    <SetupResetDiscordButton endpoint="/api/setup/bootstrap-discord-app" />
+                  ) : null}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {isSetupLocked ? (
+            <ResetSettingsSection selectedGuildId={setup.selectedGuildId ?? ""} afterResetHref="/setup" />
+          ) : null}
+        </div>
+      ) : isSetupLocked ? (
         <Card>
           <CardHeader>
-            <CardTitle>Setup Wizard</CardTitle>
+            <CardTitle>Setup Completed</CardTitle>
             <CardDescription>
-              {setup.discordClientId && setup.discordClientSecretSet && !forceConfigureDiscord
-                ? "Sign in with Discord to begin first-time setup."
-                : "Provide Discord Client ID and Client Secret first to enable OAuth login."}
+              Setup is already finished and this page is read-only. To reset setup, open dashboard settings and use Reset Setting.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {setup.discordClientId && setup.discordClientSecretSet && !forceConfigureDiscord ? (
-              <Button asChild>
-                <Link href="/api/auth/signin/discord">Sign in with Discord</Link>
-              </Button>
-            ) : (
-              <div className="space-y-4">
-                <SetupBootstrapDiscordApp />
-                {setup.discordClientId && setup.discordClientSecretSet ? (
-                  <SetupResetDiscordButton endpoint="/api/setup/bootstrap-discord-app" />
-                ) : null}
-              </div>
-            )}
+            <Button asChild>
+              <Link href="/">Open Dashboard</Link>
+            </Button>
           </CardContent>
         </Card>
       ) : (

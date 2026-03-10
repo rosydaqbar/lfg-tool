@@ -6,9 +6,6 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const session = await requireAdminSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
 
   const body = (await request.json().catch(() => null)) as
     | { guildIdConfirm?: string }
@@ -17,6 +14,10 @@ export async function POST(request: Request) {
 
   const setup = await getSetupState();
   const currentGuildId = (setup.selectedGuildId || "").trim();
+
+  if (!session && !setup.setupComplete) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   if (!currentGuildId) {
     return NextResponse.json(

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const setup = await getSetupState();
-  if (setup.ownerDiscordId || setup.setupComplete) {
+  if (setup.ownerDiscordId && !setup.setupComplete) {
     return NextResponse.json(
       { error: "Setup is already initialized. Sign in to continue." },
       { status: 403 }

@@ -3,10 +3,8 @@ import fs from "fs";
 import path from "path";
 import type { NextAuthOptions } from "next-auth";
 import DiscordProvider from "next-auth/providers/discord";
-import { getSetupState } from "@/lib/db";
 import { decryptSetupValue } from "@/lib/setup-crypto";
 
-const adminId = process.env.ADMIN_DISCORD_USER_ID;
 const DASHBOARD_DIR_NAME = "dashboard";
 
 function getWorkspaceRoot() {
@@ -93,29 +91,8 @@ export function getAuthOptions(): NextAuthOptions {
       }),
     ],
     callbacks: {
-      async signIn({ profile, account, user }) {
-        const discordId =
-          getDiscordProfileId(profile) ??
-          account?.providerAccountId ??
-          (user?.id as string);
-        if (!discordId) return false;
-
-        // Always allow setup bootstrap flow before setup is completed.
-        try {
-          const setup = await getSetupState();
-          if (!setup.setupComplete) {
-            return true;
-          }
-
-          if (setup.ownerDiscordId) {
-            return discordId === setup.ownerDiscordId;
-          }
-        } catch {
-          // Fall back to admin env check below.
-        }
-
-        if (!adminId) return true;
-        return discordId === adminId;
+      async signIn() {
+        return true;
       },
       async jwt({ token, account, profile, user }) {
         if (account?.access_token) {

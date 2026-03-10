@@ -135,6 +135,9 @@ function VoiceSettingsSectionComponent({
             <Badge variant="secondary" className="rounded-full px-4 py-1">
               Join-to-Create {joinToCreateLobbyIds.length}
             </Badge>
+            <Badge variant="secondary" className="rounded-full px-4 py-1">
+              Voice Log {enabledVoiceChannelIds.length}
+            </Badge>
           </div>
         </div>
         <Separator />
@@ -147,14 +150,15 @@ function VoiceSettingsSectionComponent({
             <Skeleton className="h-10 w-full" />
           </div>
         ) : voiceChannels.length ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-medium">Join-to-Create lobbies</div>
-              <Badge variant="secondary" className="rounded-full px-3 py-1">
-                Selected {joinToCreateLobbyIds.length}
-              </Badge>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
+          <div className="space-y-6">
+            <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">Join-to-Create lobbies</div>
+                <Badge variant="secondary" className="rounded-full px-3 py-1">
+                  Selected {joinToCreateLobbyIds.length}
+                </Badge>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
               <Popover open={lobbyPickerOpen} onOpenChange={setLobbyPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -265,9 +269,9 @@ function VoiceSettingsSectionComponent({
                 <Plus className="h-4 w-4" />
                 Add
               </Button>
-            </div>
-            {joinToCreateLobbies.length ? (
-              <Table>
+              </div>
+              {joinToCreateLobbies.length ? (
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Lobby channel</TableHead>
@@ -330,34 +334,34 @@ function VoiceSettingsSectionComponent({
                     );
                   })}
                 </TableBody>
-              </Table>
-            ) : (
+                </Table>
+              ) : (
+                <div className="text-xs text-muted-foreground">
+                  No lobbies selected yet. Users will need a lobby to create squads.
+                </div>
+              )}
+              {roles.length === 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  No roles were found. The bot token needs permission to read roles.
+                </div>
+              ) : null}
               <div className="text-xs text-muted-foreground">
-                No lobbies selected yet. Users will need a lobby to create squads.
+                Join-to-Create lobbies create a temporary channel per user.
               </div>
-            )}
-            {roles.length === 0 ? (
-              <div className="text-xs text-muted-foreground">
-                No roles were found. The bot token needs permission to read roles.
-              </div>
-            ) : null}
-            <div className="text-xs text-muted-foreground">
-              Join-to-Create lobbies create a temporary channel per user.
             </div>
 
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-medium">Voice Log channels</div>
-              <Badge variant="secondary" className="rounded-full px-3 py-1">
-                Manual {enabledVoiceChannelIds.length}
-              </Badge>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
-              Temp voice channels are logged automatically. Add manual channels here for
-              log-only tracking (no voice settings panel).
-            </div>
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">Voice Log channels</div>
+                <Badge variant="secondary" className="rounded-full px-3 py-1">
+                  Manual {enabledVoiceChannelIds.length}
+                </Badge>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
+                Temp voice channels are logged automatically. Add manual channels here for
+                log-only tracking (no voice settings panel).
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
               <Popover open={voiceLogPickerOpen} onOpenChange={setVoiceLogPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -417,8 +421,8 @@ function VoiceSettingsSectionComponent({
                 <Plus className="h-4 w-4" />
                 Add
               </Button>
-            </div>
-            <Table>
+              </div>
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Voice channel</TableHead>
@@ -474,12 +478,13 @@ function VoiceSettingsSectionComponent({
                   );
                 })}
               </TableBody>
-            </Table>
-            {!enabledVoiceChannelIds.length ? (
-              <div className="text-xs text-muted-foreground">
-                No manual voice log channels selected.
-              </div>
-            ) : null}
+              </Table>
+              {!enabledVoiceChannelIds.length ? (
+                <div className="text-xs text-muted-foreground">
+                  No manual voice log channels selected.
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
