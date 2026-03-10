@@ -137,6 +137,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     configStore,
     env,
     getLogChannel,
+    replyLeaderboard: statsManager?.replyLeaderboard,
     replyMyStats: statsManager?.replyMyStats,
   };
 

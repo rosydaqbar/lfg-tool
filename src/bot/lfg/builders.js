@@ -31,6 +31,7 @@ const {
   LFG_MESSAGE_INPUT_ID,
   LFG_MODAL_PREFIX,
   LFG_SEND_PREFIX,
+  LEADERBOARD_PREFIX,
   MY_STATS_PREFIX,
   REGION_PREFIX,
   REGION_SELECT_PREFIX,
@@ -165,6 +166,11 @@ function buildVoiceActivityContainer(channelId, activity) {
           .setCustomId(`${MY_STATS_PREFIX}:${channelId}`)
           .setEmoji('📊')
           .setLabel('My Stats')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`${LEADERBOARD_PREFIX}:${channelId}`)
+          .setEmoji('🏆')
+          .setLabel('Leaderboard')
           .setStyle(ButtonStyle.Secondary)
       )
     );
