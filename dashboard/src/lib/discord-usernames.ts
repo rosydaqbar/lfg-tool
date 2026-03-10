@@ -1,4 +1,4 @@
-import "@/lib/env";
+import "./env";
 
 type CacheEntry = {
   name: string | null;

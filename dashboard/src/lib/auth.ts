@@ -1,4 +1,4 @@
-import "@/lib/env";
+import "./env";
 import fs from "fs";
 import path from "path";
 import type { NextAuthOptions } from "next-auth";

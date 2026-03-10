@@ -1,4 +1,4 @@
-import "@/lib/env";
+import "./env";
 import { getSetupState } from "@/lib/db";
 import { getSafeServerSession } from "@/lib/safe-session";
 import { getDashboardBotToken } from "@/lib/runtime-secrets";

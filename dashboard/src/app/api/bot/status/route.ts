@@ -55,8 +55,8 @@ export async function GET() {
     const guildId = (setup.selectedGuildId || "").trim();
     let inSelectedGuild: boolean | null = null;
     if (guildId) {
-      const memberResponse = await fetch(
-        `https://discord.com/api/v10/guilds/${guildId}/members/@me`,
+      const guildResponse = await fetch(
+        `https://discord.com/api/v10/guilds/${guildId}`,
         {
           method: "GET",
           cache: "no-store",
@@ -65,7 +65,13 @@ export async function GET() {
           },
         }
       );
-      inSelectedGuild = memberResponse.ok;
+      if (guildResponse.ok) {
+        inSelectedGuild = true;
+      } else if (guildResponse.status === 403 || guildResponse.status === 404) {
+        inSelectedGuild = false;
+      } else {
+        inSelectedGuild = null;
+      }
     }
 
     return NextResponse.json({
