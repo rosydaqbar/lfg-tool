@@ -57,9 +57,12 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [alreadyInvited, setAlreadyInvited] = useState<boolean | null>(null);
 
-  const [dbProvider, setDbProvider] = useState<"local_postgres" | "local_sqlite" | "supabase">("local_sqlite");
+  const [dbProvider, setDbProvider] = useState<"local_postgres" | "local_sqlite" | "supabase">("supabase");
   const [dbUrlInput, setDbUrlInput] = useState("");
   const [applySchema, setApplySchema] = useState(true);
+  const [schemaSql, setSchemaSql] = useState("");
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaCopied, setSchemaCopied] = useState(false);
 
   const [textChannels, setTextChannels] = useState<TextChannel[]>([]);
   const [logChannelId, setLogChannelId] = useState("");
@@ -297,6 +300,41 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     }
   }
 
+  async function loadSchemaSql() {
+    if (schemaLoading || schemaSql) return;
+    setSchemaLoading(true);
+    try {
+      const response = await fetch("/api/setup/database/schema", { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; schemaSql?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to load schema SQL");
+      }
+      setSchemaSql(payload?.schemaSql || "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load schema SQL");
+    } finally {
+      setSchemaLoading(false);
+    }
+  }
+
+  async function copySchemaSql() {
+    if (!schemaSql.trim()) return;
+    try {
+      await navigator.clipboard.writeText(schemaSql);
+      setSchemaCopied(true);
+      setTimeout(() => setSchemaCopied(false), 1600);
+    } catch {
+      setError("Failed to copy schema SQL. Copy manually from the code block.");
+    }
+  }
+
+  useEffect(() => {
+    if (currentStep !== 6 || dbProvider !== "supabase") return;
+    loadSchemaSql().catch(() => null);
+  }, [currentStep, dbProvider]);
+
   async function saveChannels() {
     setBusyKey("channels-save");
     setError(null);
@@ -504,6 +542,13 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       {currentStep === 6 ? (
         <section className="rounded-xl border border-border bg-card p-5 space-y-3">
           <h2 className="text-lg font-semibold">Step 6 - Database</h2>
+          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-foreground">
+            <p className="font-medium">Recommended: Supabase</p>
+            <p className="text-muted-foreground">
+              Supabase is the main recommended option for this project because it is managed,
+              reliable, and easier to keep online for dashboard + bot in production.
+            </p>
+          </div>
           <div className="flex gap-2">
             <Button
               type="button"
@@ -517,21 +562,21 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
               variant={dbProvider === "local_sqlite" ? "default" : "outline"}
               onClick={() => setDbProvider("local_sqlite")}
             >
-              Local .db (SQLite)
+              Local .db (SQLite) (Beta)
             </Button>
             <Button
               type="button"
               variant={dbProvider === "local_postgres" ? "default" : "outline"}
               onClick={() => setDbProvider("local_postgres")}
             >
-              Local Postgres
+              Local Postgres (Beta)
             </Button>
           </div>
 
           {(dbProvider === "local_sqlite" || dbProvider === "local_postgres") ? (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900">
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-foreground">
               <p className="font-medium">Local database warning</p>
-              <p>
+              <p className="text-muted-foreground">
                 If you use a local database, you must host the Discord bot locally as well so it can access
                 your database.
               </p>
@@ -539,9 +584,9 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           ) : null}
 
           {dbProvider === "supabase" ? (
-            <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-900 space-y-1">
+            <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-foreground space-y-1">
               <p className="font-medium">Supabase connection tip</p>
-              <p>Use the Transaction pooler connection string (port `6543`) with `sslmode=require`.</p>
+              <p className="text-muted-foreground">Use the Transaction pooler connection string (port `6543`) with `sslmode=require`.</p>
             </div>
           ) : null}
 
@@ -587,6 +632,51 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             />
             Apply baseline schema check
           </label>
+
+          {dbProvider === "supabase" ? (
+            <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
+              <p className="text-sm font-medium text-foreground">Supabase setup steps</p>
+              <ol className="list-decimal space-y-2 pl-5 text-xs text-muted-foreground">
+                <li>Create a Supabase project and wait until it is fully ready.</li>
+                <li>
+                  Open <strong>Project Settings - Database</strong> and copy the Postgres connection
+                  string.
+                </li>
+                <li>
+                  Use the <strong>Transaction Pooler</strong> URL when available and ensure it includes
+                  <code>sslmode=require</code>.
+                </li>
+                <li>Paste that URL into the Database URL input above.</li>
+                <li>Keep <strong>Apply baseline schema check</strong> enabled.</li>
+                <li>
+                  Click <strong>Validate Database</strong> to save and test connection.
+                </li>
+                <li>
+                  If tables are missing, run the SQL below in Supabase SQL Editor, then validate
+                  again.
+                </li>
+              </ol>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-foreground">Schema SQL (`scripts/schema-postgres.sql`)</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={copySchemaSql}
+                    disabled={!schemaSql.trim()}
+                  >
+                    {schemaCopied ? "Copied" : "Copy SQL"}
+                  </Button>
+                </div>
+                <pre className="max-h-72 overflow-auto rounded-md border border-border bg-background p-3 text-[11px] leading-5 text-foreground">
+                  <code>{schemaLoading ? "Loading schema SQL..." : schemaSql || "Schema SQL unavailable."}</code>
+                </pre>
+              </div>
+            </div>
+          ) : null}
+
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setCurrentStep(5)}>Back</Button>
             <Button onClick={validateDatabase} disabled={busyKey === "database" || !dbUrlInput.trim()}>
