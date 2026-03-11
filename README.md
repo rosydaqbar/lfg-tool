@@ -1,7 +1,7 @@
 # Discord LFG Voice Bot + Dashboard
 
 > [!IMPORTANT]
-> This project is provided under CC0. Please review code, validate permissions, and test in a safe server before production use.
+> I vibe-coded this project and shipped it fast. This project is provided under CC0. Please review code, validate permissions, and test in a safe server before production use.
 
 Join-to-Create Discord voice bot with LFG flow, voice-session logging, global stats, and a Next.js dashboard with setup wizard and guild-scoped management.
 
