@@ -1069,15 +1069,54 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
       `
     );
 
-    const res = await client.query(
-      `
-        SELECT channel_id, owner_id, created_at, lfg_channel_id, lfg_message_id
-        FROM temp_voice_channels
-        WHERE guild_id = $1
-        ORDER BY created_at DESC
-      `,
-      [guildId]
-    );
+    let res;
+    try {
+      res = await client.query(
+        `
+          SELECT
+            tc.channel_id,
+            tc.owner_id,
+            tc.created_at,
+            tc.lfg_channel_id,
+            tc.lfg_message_id,
+            COALESCE(
+              json_agg(
+                json_build_object('userId', ta.user_id, 'joinedAt', ta.joined_at)
+                ORDER BY ta.joined_at DESC
+              ) FILTER (WHERE ta.user_id IS NOT NULL),
+              '[]'::json
+            ) AS active_users
+          FROM temp_voice_channels tc
+          LEFT JOIN temp_voice_activity ta
+            ON ta.channel_id = tc.channel_id
+           AND ta.is_active = TRUE
+          WHERE tc.guild_id = $1
+          GROUP BY tc.channel_id, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
+          ORDER BY tc.created_at DESC
+        `,
+        [guildId]
+      );
+    } catch (error) {
+      const pgError = error as { code?: string };
+      if (pgError.code !== "42P01") {
+        throw error;
+      }
+      res = await client.query(
+        `
+          SELECT
+            channel_id,
+            owner_id,
+            created_at,
+            lfg_channel_id,
+            lfg_message_id,
+            '[]'::json AS active_users
+          FROM temp_voice_channels
+          WHERE guild_id = $1
+          ORDER BY created_at DESC
+        `,
+        [guildId]
+      );
+    }
 
     return res.rows as {
       channel_id: string;
@@ -1085,6 +1124,7 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
       created_at: string;
       lfg_channel_id: string | null;
       lfg_message_id: string | null;
+      active_users: unknown;
     }[];
   } finally {
     client.release();
@@ -1100,31 +1140,93 @@ export async function getTempChannels(guildId: string) {
     }
 
     const db = getSqliteDb();
-    const rows = db
-      .prepare(
-        `
-          SELECT channel_id, owner_id, created_at, lfg_channel_id, lfg_message_id
-          FROM temp_voice_channels
-          WHERE guild_id = ?
-          ORDER BY created_at DESC
-        `
-      )
-      .all(guildId) as {
+    let rows;
+    try {
+      rows = db
+        .prepare(
+          `
+            SELECT
+              tc.channel_id,
+              tc.owner_id,
+              tc.created_at,
+              tc.lfg_channel_id,
+              tc.lfg_message_id,
+              COALESCE(
+                json_group_array(
+                  CASE
+                    WHEN ta.user_id IS NOT NULL THEN json_object('userId', ta.user_id, 'joinedAt', ta.joined_at)
+                    ELSE NULL
+                  END
+                ),
+                '[]'
+              ) AS active_users
+            FROM temp_voice_channels tc
+            LEFT JOIN temp_voice_activity ta
+              ON ta.channel_id = tc.channel_id
+             AND ta.is_active = 1
+            WHERE tc.guild_id = ?
+            GROUP BY tc.channel_id, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
+            ORDER BY tc.created_at DESC
+          `
+        )
+        .all(guildId) as {
         channel_id: string;
         owner_id: string;
         created_at: string;
         lfg_channel_id: string | null;
         lfg_message_id: string | null;
+        active_users: unknown;
       }[];
+    } catch {
+      rows = db
+        .prepare(
+          `
+            SELECT
+              channel_id,
+              owner_id,
+              created_at,
+              lfg_channel_id,
+              lfg_message_id,
+              '[]' AS active_users
+            FROM temp_voice_channels
+            WHERE guild_id = ?
+            ORDER BY created_at DESC
+          `
+        )
+        .all(guildId) as {
+        channel_id: string;
+        owner_id: string;
+        created_at: string;
+        lfg_channel_id: string | null;
+        lfg_message_id: string | null;
+        active_users: unknown;
+      }[];
+    }
     return rows;
   }
 
   const res = await query(
     `
-      SELECT channel_id, owner_id, created_at, lfg_channel_id, lfg_message_id
-      FROM temp_voice_channels
-      WHERE guild_id = $1
-      ORDER BY created_at DESC
+      SELECT
+        tc.channel_id,
+        tc.owner_id,
+        tc.created_at,
+        tc.lfg_channel_id,
+        tc.lfg_message_id,
+        COALESCE(
+          json_agg(
+            json_build_object('userId', ta.user_id, 'joinedAt', ta.joined_at)
+            ORDER BY ta.joined_at DESC
+          ) FILTER (WHERE ta.user_id IS NOT NULL),
+          '[]'::json
+        ) AS active_users
+      FROM temp_voice_channels tc
+      LEFT JOIN temp_voice_activity ta
+        ON ta.channel_id = tc.channel_id
+       AND ta.is_active = TRUE
+      WHERE tc.guild_id = $1
+      GROUP BY tc.channel_id, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
+      ORDER BY tc.created_at DESC
     `,
     [guildId]
   );
@@ -1134,7 +1236,60 @@ export async function getTempChannels(guildId: string) {
     created_at: string;
     lfg_channel_id: string | null;
     lfg_message_id: string | null;
+    active_users: unknown;
   }[];
+}
+
+export async function deleteTempChannelRecord(channelId: string) {
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("DELETE FROM temp_voice_activity WHERE channel_id = $1", [channelId]);
+        await client.query("DELETE FROM temp_voice_channels WHERE channel_id = $1", [channelId]);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+      return;
+    }
+
+    const db = getSqliteDb();
+    const tx = db.transaction((id: string) => {
+      try {
+        db.prepare("DELETE FROM temp_voice_activity WHERE channel_id = ?").run(id);
+      } catch {
+        // temp_voice_activity may not exist in older local setups
+      }
+      db.prepare("DELETE FROM temp_voice_channels WHERE channel_id = ?").run(id);
+    });
+    tx(channelId);
+    return;
+  }
+
+  const db = await getPool();
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM temp_voice_activity WHERE channel_id = $1", [channelId]);
+    await client.query("DELETE FROM temp_voice_channels WHERE channel_id = $1", [channelId]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 type DeleteLogRow = {

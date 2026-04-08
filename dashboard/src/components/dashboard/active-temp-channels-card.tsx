@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import type { TempChannel } from "./types";
 import { useAdaptivePolling } from "./use-adaptive-polling";
 
@@ -29,31 +30,57 @@ function ActiveTempChannelsCardComponent({
   const [loadingTempChannels, setLoadingTempChannels] = useState(false);
   const [tempChannels, setTempChannels] = useState<TempChannel[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [deletingChannelId, setDeletingChannelId] = useState<string | null>(null);
   const tempChannelsLoadedOnce = useRef(false);
 
-  useAdaptivePolling(
-    async (showLoader) => {
-      if (!selectedGuildId) return true;
-      if (showLoader && !tempChannelsLoadedOnce.current) setLoadingTempChannels(true);
-      try {
-        const response = await fetch(`/api/guilds/${selectedGuildId}/temp-channels`, {
-          cache: "no-store",
-        });
-        if (!response.ok) throw new Error("Failed to load temp channels");
-        const data = (await response.json()) as { tempChannels: TempChannel[] };
-        setTempChannels(data.tempChannels ?? []);
-        setLoadError(null);
-        tempChannelsLoadedOnce.current = true;
-        return true;
-      } catch (err) {
-        setLoadError(
-          err instanceof Error ? err.message : "Failed to load temp channels"
-        );
-        return false;
-      } finally {
-        setLoadingTempChannels(false);
+  async function loadTempChannels(showLoader: boolean) {
+    if (!selectedGuildId) return true;
+    if (showLoader && !tempChannelsLoadedOnce.current) setLoadingTempChannels(true);
+    try {
+      const response = await fetch(`/api/guilds/${selectedGuildId}/temp-channels`, {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Failed to load temp channels");
+      const data = (await response.json()) as { tempChannels: TempChannel[] };
+      setTempChannels(data.tempChannels ?? []);
+      setLoadError(null);
+      tempChannelsLoadedOnce.current = true;
+      return true;
+    } catch (err) {
+      setLoadError(
+        err instanceof Error ? err.message : "Failed to load temp channels"
+      );
+      return false;
+    } finally {
+      setLoadingTempChannels(false);
+    }
+  }
+
+  async function deleteDormantChannel(channelId: string) {
+    if (!selectedGuildId) return;
+    setDeletingChannelId(channelId);
+    try {
+      const response = await fetch(`/api/guilds/${selectedGuildId}/temp-channels`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channelId }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || "Failed to delete channel");
       }
-    },
+      await loadTempChannels(false);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Failed to delete channel");
+    } finally {
+      setDeletingChannelId(null);
+    }
+  }
+
+  useAdaptivePolling(
+    loadTempChannels,
     [selectedGuildId]
   );
 
@@ -65,7 +92,7 @@ function ActiveTempChannelsCardComponent({
           Active temp channels
         </CardTitle>
         <CardDescription>
-          Read-only view of Join-to-Create channels currently tracked.
+          Read-only view of Join-to-Create channels currently tracked, validated against Discord state.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -85,9 +112,12 @@ function ActiveTempChannelsCardComponent({
             <TableHeader>
               <TableRow>
                 <TableHead>Channel</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Owner</TableHead>
+                <TableHead>Aktif saat ini</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead>LFG message</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -97,6 +127,15 @@ function ActiveTempChannelsCardComponent({
                   item.lfgChannelId && item.lfgMessageId
                     ? `https://discordapp.com/channels/${selectedGuildId}/${item.lfgChannelId}/${item.lfgMessageId}`
                     : null;
+                const status =
+                  item.existsInDiscord === false
+                    ? "not_found"
+                    : item.existsInDiscord === null
+                      ? "unknown"
+                      : (item.activeCount ?? item.activeUsers?.length ?? 0) === 0
+                        ? "empty"
+                        : "exists";
+                const canDelete = status === "not_found" || status === "empty";
                 return (
                   <TableRow key={item.channelId}>
                     <TableCell>
@@ -111,12 +150,66 @@ function ActiveTempChannelsCardComponent({
                       </a>
                     </TableCell>
                     <TableCell>
+                      {item.existsInDiscord === false ? (
+                        <span className="rounded-full border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                          Not found
+                        </span>
+                      ) : item.existsInDiscord === null ? (
+                        <span className="rounded-full border border-border bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
+                          Unknown
+                        </span>
+                      ) : (item.activeCount ?? item.activeUsers?.length ?? 0) === 0 ? (
+                        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-300">
+                          Empty
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300">
+                          Exists
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <div className="text-sm font-medium">
                         {item.ownerName || item.ownerId}
                       </div>
                       <div className="text-xs font-mono text-muted-foreground">
                         {item.ownerId}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {item.existsInDiscord === false ? (
+                        <span className="text-xs text-muted-foreground">
+                          Channel tidak ada di Discord
+                        </span>
+                      ) : item.activeUsers?.length ? (
+                        <div className="space-y-1 text-xs">
+                          {item.activeUsers.slice(0, 3).map((user) => (
+                            <div key={`active-${item.channelId}-${user.userId}`}>
+                              <span className="font-medium text-foreground">
+                                {user.userName || user.userId}
+                              </span>
+                              {user.joinedAt ? (
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  • masuk {new Date(user.joinedAt).toLocaleTimeString()}
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+                          {item.activeUsers.length > 3 ? (
+                            <div className="text-muted-foreground">
+                              +{item.activeUsers.length - 3} lainnya
+                            </div>
+                          ) : null}
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+                            sumber: {item.activeSource === "discord" ? "Discord" : "DB fallback"}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Tidak ada user aktif
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">
@@ -137,6 +230,20 @@ function ActiveTempChannelsCardComponent({
                         <span className="text-xs text-muted-foreground">
                           Not posted
                         </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {canDelete ? (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void deleteDormantChannel(item.channelId)}
+                          disabled={deletingChannelId === item.channelId}
+                        >
+                          {deletingChannelId === item.channelId ? "Deleting..." : "Delete"}
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
                       )}
                     </TableCell>
                   </TableRow>

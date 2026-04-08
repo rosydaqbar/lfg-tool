@@ -17,12 +17,21 @@ export type JoinToCreateLobby = {
 };
 
 export type TempChannel = {
+  existsInDiscord?: boolean | null;
   channelId: string;
   ownerId: string;
   ownerName?: string | null;
   createdAt: string;
   lfgChannelId: string | null;
   lfgMessageId: string | null;
+  activeSource?: "discord" | "db";
+  availabilitySource?: "discord_api" | "unknown";
+  activeUsers: {
+    userId: string;
+    userName?: string | null;
+    joinedAt?: string | null;
+  }[];
+  activeCount?: number;
 };
 
 export type TempVoiceDeleteLog = {

@@ -1,10 +1,13 @@
 const {
   MessageFlags,
+  PermissionFlagsBits,
   SlashCommandBuilder,
 } = require('discord.js');
 
 const ADMIN_ID = process.env.ADMIN_DISCORD_USER_ID || null;
 const STATS_COMMAND = 'stats';
+const VOICECHECK_COMMAND = 'voicecheck';
+const VOICECHECK_DELETE_PREFIX = 'voicecheck_delete';
 
 function formatDuration(totalMs) {
   const safeMs = Math.max(0, Number(totalMs) || 0);
@@ -41,6 +44,144 @@ function buildStatsCommand() {
         .setDescription('Top 10 total durasi voice')
     )
     .toJSON();
+}
+
+function buildVoicecheckCommand() {
+  return new SlashCommandBuilder()
+    .setName(VOICECHECK_COMMAND)
+    .setDescription('Cek temp voice channel kosong / tidak ditemukan')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .toJSON();
+}
+
+function isVoicecheckAllowed(interaction) {
+  if (ADMIN_ID && interaction.user.id === ADMIN_ID) return true;
+  return Boolean(
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)
+  );
+}
+
+async function getVoicecheckSnapshot(configStore, guild) {
+  const rows = await configStore.getTempChannelsForGuild(guild.id);
+  const fetched = await guild.channels.fetch();
+  const channelsById = new Map();
+  for (const [id, channel] of fetched) {
+    if (!channel) continue;
+    channelsById.set(id, channel);
+  }
+
+  return rows.map((row) => {
+    const channel = channelsById.get(row.channel_id) || null;
+    if (!channel || !channel.isVoiceBased()) {
+      return {
+        channelId: row.channel_id,
+        ownerId: row.owner_id,
+        createdAt: row.created_at,
+        state: 'not_found',
+        activeCount: 0,
+      };
+    }
+
+    const activeCount = channel.members?.size || 0;
+    if (activeCount <= 0) {
+      return {
+        channelId: row.channel_id,
+        ownerId: row.owner_id,
+        createdAt: row.created_at,
+        state: 'empty',
+        activeCount,
+      };
+    }
+
+    return {
+      channelId: row.channel_id,
+      ownerId: row.owner_id,
+      createdAt: row.created_at,
+      state: 'active',
+      activeCount,
+    };
+  });
+}
+
+function buildVoicecheckPayload(rows) {
+  const now = Date.now();
+  const total = rows.length;
+  const notFound = rows.filter((row) => row.state === 'not_found').length;
+  const empty = rows.filter((row) => row.state === 'empty').length;
+  const active = rows.filter((row) => row.state === 'active').length;
+
+  const rowComponents = rows.slice(0, 20).map((row) => {
+    const createdMs = new Date(row.createdAt).getTime();
+    const ageMinutes = Number.isFinite(createdMs)
+      ? Math.max(0, Math.floor((now - createdMs) / 60000))
+      : null;
+    const stateLabel =
+      row.state === 'not_found'
+        ? 'Not found'
+        : row.state === 'empty'
+          ? 'Empty'
+          : `Active (${row.activeCount})`;
+    const canDelete = row.state === 'not_found' || row.state === 'empty';
+
+    return {
+      type: 9,
+      components: [
+        {
+          type: 10,
+          content:
+            `**<#${row.channelId}>**\n` +
+            `- Status: \`${stateLabel}\`\n` +
+            `- Owner: <@${row.ownerId}>\n` +
+            `- Umur: ${ageMinutes === null ? '-' : `\`${ageMinutes}m\``}`,
+        },
+      ],
+      accessory: {
+        type: 2,
+        style: canDelete ? 4 : 2,
+        label: 'Delete',
+        custom_id: `${VOICECHECK_DELETE_PREFIX}:${row.channelId}`,
+        disabled: !canDelete,
+      },
+    };
+  });
+
+  return {
+    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    components: [
+      {
+        type: 17,
+        accent_color: 0x0ea5e9,
+        components: [
+          {
+            type: 10,
+            content:
+              '### Voice Check\n' +
+              `-# Track temp channels dari lfg-tool dan tandai yang \`Not found\` atau \`Empty\` untuk cleanup cepat.\n\n` +
+              `**Ringkasan** • Total: \`${total}\` • Active: \`${active}\` • Empty: \`${empty}\` • Not found: \`${notFound}\``,
+          },
+          { type: 14, divider: true, spacing: 1 },
+          ...(rowComponents.length
+            ? rowComponents
+            : [
+                {
+                  type: 10,
+                  content: 'Tidak ada temp voice channel yang sedang terdaftar.',
+                },
+              ]),
+          ...(rows.length > 20
+            ? [
+                { type: 14, divider: true, spacing: 1 },
+                {
+                  type: 10,
+                  content: `-# Menampilkan 20 dari ${rows.length} channel.`,
+                },
+              ]
+            : []),
+        ],
+      },
+    ],
+    allowedMentions: { parse: [] },
+  };
 }
 
 function buildStatsContainerPayload({
@@ -157,22 +298,113 @@ async function buildUserStatsReplyPayload({
 
 function createStatsManager({ client, configStore }) {
   async function registerCommands() {
-    const command = buildStatsCommand();
+    const statsCommand = buildStatsCommand();
+    const voicecheckCommand = buildVoicecheckCommand();
     const guilds = [...client.guilds.cache.values()];
 
     await Promise.allSettled(
       guilds.map(async (guild) => {
         try {
-          await guild.commands.set([command]);
+          await guild.commands.set([statsCommand, voicecheckCommand]);
         } catch (error) {
           if (error?.code === 50001) {
-            console.warn(`Skipped stats command registration for guild ${guild.id}: missing access.`);
+            console.warn(`Skipped command registration for guild ${guild.id}: missing access.`);
             return;
           }
-          console.error(`Failed to register stats command for guild ${guild.id}:`, error);
+          console.error(`Failed to register commands for guild ${guild.id}:`, error);
         }
       })
     );
+  }
+
+  async function replyVoicecheck(interaction) {
+    if (!interaction.guildId || !interaction.guild) {
+      await interaction.reply({
+        content: 'Perintah ini hanya bisa digunakan di server.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (!isVoicecheckAllowed(interaction)) {
+      await interaction.reply({
+        content: 'Hanya admin/mod dengan Manage Channels yang bisa pakai command ini.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const rows = await getVoicecheckSnapshot(configStore, interaction.guild);
+    await interaction.reply(buildVoicecheckPayload(rows));
+  }
+
+  async function handleVoicecheckDelete(interaction) {
+    if (!interaction.guildId || !interaction.guild) {
+      await interaction.reply({
+        content: 'Aksi ini hanya bisa digunakan di server.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    if (!isVoicecheckAllowed(interaction)) {
+      await interaction.reply({
+        content: 'Hanya admin/mod dengan Manage Channels yang bisa pakai aksi ini.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    const [, channelId] = interaction.customId.split(':');
+    if (!channelId) {
+      await interaction.reply({
+        content: 'Channel ID tidak valid.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    const rows = await getVoicecheckSnapshot(configStore, interaction.guild);
+    const row = rows.find((item) => item.channelId === channelId);
+    if (!row) {
+      await interaction.reply({
+        content: 'Record temp channel tidak ditemukan.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    if (row.state === 'active') {
+      await interaction.reply({
+        content: 'Channel masih aktif. Delete hanya untuk status Not found atau Empty.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+    if (channel && channel.isVoiceBased()) {
+      if ((channel.members?.size || 0) > 0) {
+        await interaction.reply({
+          content: 'Channel masih ada user aktif, delete dibatalkan.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
+      await channel
+        .delete(`Voicecheck cleanup by ${interaction.user.id}`)
+        .catch((error) => {
+          console.error('Failed to delete Discord voice channel from voicecheck:', error);
+          throw error;
+        });
+    }
+
+    await configStore.removeTempChannel(channelId);
+
+    const refreshed = await getVoicecheckSnapshot(configStore, interaction.guild);
+    await interaction.update(buildVoicecheckPayload(refreshed));
+    return true;
   }
 
   async function replyStats(interaction, targetUser, options = {}) {
@@ -261,7 +493,20 @@ function createStatsManager({ client, configStore }) {
   }
 
   async function handleInteraction(interaction) {
+    if (interaction.isButton()) {
+      if (!interaction.customId.startsWith(`${VOICECHECK_DELETE_PREFIX}:`)) {
+        return false;
+      }
+      return handleVoicecheckDelete(interaction);
+    }
+
     if (!interaction.isChatInputCommand()) return false;
+
+    if (interaction.commandName === VOICECHECK_COMMAND) {
+      await replyVoicecheck(interaction);
+      return true;
+    }
+
     if (interaction.commandName !== STATS_COMMAND) return false;
 
     const subcommand = interaction.options.getSubcommand();
@@ -303,4 +548,8 @@ function createStatsManager({ client, configStore }) {
   };
 }
 
-module.exports = { createStatsManager, buildStatsCommand };
+module.exports = {
+  createStatsManager,
+  buildStatsCommand,
+  buildVoicecheckCommand,
+};
