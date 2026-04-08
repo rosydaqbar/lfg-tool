@@ -364,47 +364,70 @@ function createStatsManager({ client, configStore }) {
       return true;
     }
 
-    const rows = await getVoicecheckSnapshot(configStore, interaction.guild);
-    const row = rows.find((item) => item.channelId === channelId);
-    if (!row) {
-      await interaction.reply({
-        content: 'Record temp channel tidak ditemukan.',
-        flags: MessageFlags.Ephemeral,
-      });
-      return true;
-    }
+    await interaction.deferUpdate();
 
-    if (row.state === 'active') {
-      await interaction.reply({
-        content: 'Channel masih aktif. Delete hanya untuk status Not found atau Empty.',
-        flags: MessageFlags.Ephemeral,
-      });
-      return true;
-    }
-
-    const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
-    if (channel && channel.isVoiceBased()) {
-      if ((channel.members?.size || 0) > 0) {
-        await interaction.reply({
-          content: 'Channel masih ada user aktif, delete dibatalkan.',
+    try {
+      const rows = await getVoicecheckSnapshot(configStore, interaction.guild);
+      const row = rows.find((item) => item.channelId === channelId);
+      if (!row) {
+        await interaction.followUp({
+          content: 'Record temp channel tidak ditemukan atau sudah terhapus.',
           flags: MessageFlags.Ephemeral,
         });
         return true;
       }
 
-      await channel
-        .delete(`Voicecheck cleanup by ${interaction.user.id}`)
-        .catch((error) => {
-          console.error('Failed to delete Discord voice channel from voicecheck:', error);
-          throw error;
+      if (row.state === 'active') {
+        await interaction.followUp({
+          content: 'Channel masih aktif. Delete hanya untuk status Not found atau Empty.',
+          flags: MessageFlags.Ephemeral,
         });
+        return true;
+      }
+
+      const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+      if (channel && channel.isVoiceBased()) {
+        if ((channel.members?.size || 0) > 0) {
+          await interaction.followUp({
+            content: 'Channel masih ada user aktif, delete dibatalkan.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return true;
+        }
+
+        await channel
+          .delete(`Voicecheck cleanup by ${interaction.user.id}`)
+          .catch((error) => {
+            const rawCode =
+              error?.code
+              || error?.rawError?.code
+              || error?.data?.code
+              || null;
+            if (rawCode === 10003) {
+              return;
+            }
+            console.error('Failed to delete Discord voice channel from voicecheck:', error);
+            throw error;
+          });
+      }
+
+      await configStore.removeTempChannel(channelId);
+
+      const refreshed = await getVoicecheckSnapshot(configStore, interaction.guild);
+      await interaction.editReply(buildVoicecheckPayload(refreshed));
+      await interaction.followUp({
+        content: `Cleanup berhasil untuk channel \`${channelId}\`.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    } catch (error) {
+      console.error('Voicecheck delete failed:', error);
+      await interaction.followUp({
+        content: 'Gagal menjalankan cleanup channel. Coba lagi sebentar.',
+        flags: MessageFlags.Ephemeral,
+      }).catch(() => null);
+      return true;
     }
-
-    await configStore.removeTempChannel(channelId);
-
-    const refreshed = await getVoicecheckSnapshot(configStore, interaction.guild);
-    await interaction.update(buildVoicecheckPayload(refreshed));
-    return true;
   }
 
   async function replyStats(interaction, targetUser, options = {}) {

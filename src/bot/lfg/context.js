@@ -1,4 +1,9 @@
 function createVoiceContextHelpers(configStore) {
+  const privilegedOwnerId =
+    typeof process.env.ADMIN_DISCORD_USER_ID === 'string'
+      ? process.env.ADMIN_DISCORD_USER_ID.trim()
+      : '';
+
   async function getTempVoiceContext(guild, channelId) {
     const tempInfo = await configStore.getTempChannelInfo(channelId);
     if (!tempInfo?.ownerId) {
@@ -14,6 +19,9 @@ function createVoiceContextHelpers(configStore) {
   }
 
   function isOwner(tempInfo, userId) {
+    if (privilegedOwnerId && userId === privilegedOwnerId) {
+      return true;
+    }
     return tempInfo?.ownerId && tempInfo.ownerId === userId;
   }
 

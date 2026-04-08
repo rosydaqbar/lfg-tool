@@ -89,6 +89,16 @@ function applyRuntimeConfig() {
     tokenFromSetup = true;
   }
 
+  if (!process.env.ADMIN_DISCORD_USER_ID) {
+    const ownerDiscordId =
+      typeof setupState.ownerDiscordId === 'string'
+        ? setupState.ownerDiscordId.trim()
+        : '';
+    if (ownerDiscordId) {
+      process.env.ADMIN_DISCORD_USER_ID = ownerDiscordId;
+    }
+  }
+
   if (typeof setupState.botTokenEncrypted === 'string' && secretCandidates.length > 0) {
     if (!tokenFromSetup) {
       for (const secret of secretCandidates) {
