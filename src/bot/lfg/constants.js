@@ -22,7 +22,7 @@ const MY_STATS_PREFIX = 'jtc_my_stats';
 const LEADERBOARD_PREFIX = 'jtc_leaderboard';
 
 const LFG_COOLDOWN_MS = 10 * 60 * 1000;
-const PERSISTENT_LFG_INTERVAL_MS = 60 * 1000;
+const PERSISTENT_LFG_INTERVAL_MS = 15 * 1000;
 
 module.exports = {
   CHANNEL_LOCK_PREFIX,

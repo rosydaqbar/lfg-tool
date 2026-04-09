@@ -18,6 +18,7 @@ const { createPersistentLfgManager } = require('./persistent');
 
 function createLfgManager({ client, getLogChannel, configStore, env, statsManager }) {
   const tempPromptMessageIds = new Map();
+  const persistentRefreshAtByGuild = new Map();
   const cooldownTracker = createCooldownTracker();
   const voiceContextHelpers = createVoiceContextHelpers(configStore);
   const persistentManager = createPersistentLfgManager({
@@ -25,6 +26,17 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     configStore,
     env,
   });
+
+  async function refreshPersistentLfgForGuild(guildId) {
+    if (!guildId) return;
+    const now = Date.now();
+    const refreshAt = persistentRefreshAtByGuild.get(guildId) || 0;
+    if (refreshAt > now) return;
+    persistentRefreshAtByGuild.set(guildId, now + 10_000);
+    await persistentManager.ensurePersistentLfgMessage(guildId).catch((error) => {
+      console.error('Failed to refresh persistent LFG message:', error);
+    });
+  }
 
   function setPromptMessageId(channelId, messageId) {
     if (!channelId || !messageId) return;
@@ -136,6 +148,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       if (sent?.id) {
         await rememberPromptMessageId(channelId, sent.id);
       }
+      await refreshPersistentLfgForGuild(guild.id);
       return;
     }
 
@@ -154,6 +167,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
 
     if (edited) {
       await rememberPromptMessageId(channelId, message.id);
+      await refreshPersistentLfgForGuild(guild.id);
       return;
     }
 
@@ -167,6 +181,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     if (sent?.id) {
       await rememberPromptMessageId(channelId, sent.id);
     }
+    await refreshPersistentLfgForGuild(guild.id);
   }
 
   const sharedDeps = {
@@ -224,6 +239,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         allowedMentions: { users: [member.id] },
       });
       await rememberPromptMessageId(channel.id, sent.id);
+      await refreshPersistentLfgForGuild(channel.guild?.id);
     } catch (error) {
       console.error('Failed to send Join-to-Create prompt:', error);
     }
