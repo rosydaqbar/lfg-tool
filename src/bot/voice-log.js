@@ -77,6 +77,19 @@ function buildVoiceActivitySummaryBody(activity) {
 }
 
 function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
+  const manualLeaveDedupe = new Map();
+  const MANUAL_LEAVE_DEDUPE_MS = 30_000;
+
+  function pruneManualLeaveDedupe() {
+    if (manualLeaveDedupe.size < 500) return;
+    const cutoff = Date.now() - (MANUAL_LEAVE_DEDUPE_MS * 4);
+    for (const [key, value] of manualLeaveDedupe.entries()) {
+      if (value < cutoff) {
+        manualLeaveDedupe.delete(key);
+      }
+    }
+  }
+
   function buildManualPanelPayload(channelId, activity) {
     const body = buildVoiceActivitySummaryBody(activity);
 
@@ -213,6 +226,16 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
     leftAt,
     totalMs,
   }, config) {
+    const leftAtMs = leftAt instanceof Date ? leftAt.getTime() : new Date(leftAt).getTime();
+    const normalizedLeftAt = Number.isFinite(leftAtMs) ? leftAtMs : Date.now();
+    const dedupeKey = `${guildId}:${channelId}:${userId}:${normalizedLeftAt}`;
+    const recentAt = manualLeaveDedupe.get(dedupeKey) || 0;
+    if (Date.now() - recentAt < MANUAL_LEAVE_DEDUPE_MS) {
+      return;
+    }
+    manualLeaveDedupe.set(dedupeKey, Date.now());
+    pruneManualLeaveDedupe();
+
     if (!guildId) {
       debugLog('Skip: missing guild id');
       return;

@@ -3,7 +3,20 @@ const { ChannelType, MessageFlags, OverwriteType } = require('discord.js');
 function createJoinToCreateManager({ client, configStore, lfgManager, env, debugLog }) {
   const joinToCreatePending = new Set();
   const joinToCreateCooldown = new Map();
+  const cleanupInProgress = new Set();
+  const recentDeletionLog = new Map();
   const JTC_COOLDOWN_MS = 1500;
+  const DELETE_LOG_DEDUPE_MS = 30_000;
+
+  function pruneRecentDeletionLog() {
+    if (recentDeletionLog.size < 500) return;
+    const cutoff = Date.now() - (DELETE_LOG_DEDUPE_MS * 4);
+    for (const [key, value] of recentDeletionLog.entries()) {
+      if (value < cutoff) {
+        recentDeletionLog.delete(key);
+      }
+    }
+  }
 
   function debugTiming(stage, data) {
     if (typeof debugLog === 'function') {
@@ -33,6 +46,14 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
     channelName,
     ownerId,
   }) {
+    const dedupeKey = `${guildId || '-'}:${channelId}`;
+    const recentAt = recentDeletionLog.get(dedupeKey) || 0;
+    if (Date.now() - recentAt < DELETE_LOG_DEDUPE_MS) {
+      return;
+    }
+    recentDeletionLog.set(dedupeKey, Date.now());
+    pruneRecentDeletionLog();
+
     await configStore
       .finalizeVoiceActivity(channelId, new Date())
       .catch((error) => {
@@ -186,6 +207,9 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
       const oldChannelId = oldState.channelId;
       if (!oldChannelId) return;
 
+      if (cleanupInProgress.has(oldChannelId)) return;
+      cleanupInProgress.add(oldChannelId);
+
       const info = await configStore.getTempChannelInfo(oldChannelId);
       if (!info) return;
 
@@ -224,6 +248,11 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
       }
     } catch (error) {
       console.error('Failed to cleanup temp channel:', error);
+    } finally {
+      const oldChannelId = oldState.channelId;
+      if (oldChannelId) {
+        cleanupInProgress.delete(oldChannelId);
+      }
     }
   }
 
