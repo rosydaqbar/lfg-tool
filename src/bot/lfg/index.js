@@ -31,6 +31,16 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     tempPromptMessageIds.set(channelId, messageId);
   }
 
+  async function rememberPromptMessageId(channelId, messageId) {
+    if (!channelId || !messageId) return;
+    setPromptMessageId(channelId, messageId);
+    await configStore
+      .updateTempChannelPromptMessage(channelId, messageId)
+      .catch((error) => {
+        console.error('Failed to persist Join-to-Create prompt message ID:', error);
+      });
+  }
+
   function isVoiceChannelLocked(channel, guild) {
     const everyoneId = guild?.roles?.everyone?.id;
     if (!everyoneId) return false;
@@ -56,15 +66,18 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
     if (!recent) return null;
 
+    function hasJtcCustomId(components) {
+      if (!Array.isArray(components) || components.length === 0) return false;
+      return components.some((component) => {
+        if (component?.customId?.startsWith('jtc_')) return true;
+        return hasJtcCustomId(component?.components);
+      });
+    }
+
     return (
       recent.find((msg) =>
         msg.author?.id === client.user?.id
-        && msg.components.some((component) => {
-          if (!Array.isArray(component.components)) return false;
-          return component.components.some(
-            (child) => child.customId?.startsWith('jtc_')
-          );
-        })
+        && hasJtcCustomId(msg.components)
       ) || null
     );
   }
@@ -101,12 +114,16 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     });
 
     let message = null;
-    const knownMessageId = tempPromptMessageIds.get(channelId);
+    const knownMessageId =
+      tempPromptMessageIds.get(channelId) || tempInfo.promptMessageId || null;
     if (knownMessageId) {
       message = await channel.messages.fetch(knownMessageId).catch(() => null);
     }
     if (!message) {
       message = await findPromptMessage(channel);
+      if (message?.id) {
+        await rememberPromptMessageId(channelId, message.id);
+      }
     }
     if (!message) {
       const sent = await channel.send({
@@ -117,14 +134,16 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         return null;
       });
       if (sent?.id) {
-        setPromptMessageId(channelId, sent.id);
+        await rememberPromptMessageId(channelId, sent.id);
       }
       return;
     }
 
+    const { flags: _ignoredFlags, ...editPayload } = payload;
+
     const edited = await message
       .edit({
-        ...payload,
+        ...editPayload,
         allowedMentions: { parse: [] },
       })
       .then(() => true)
@@ -134,7 +153,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       });
 
     if (edited) {
-      setPromptMessageId(channelId, message.id);
+      await rememberPromptMessageId(channelId, message.id);
       return;
     }
 
@@ -146,7 +165,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       return null;
     });
     if (sent?.id) {
-      setPromptMessageId(channelId, sent.id);
+      await rememberPromptMessageId(channelId, sent.id);
     }
   }
 
@@ -204,7 +223,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         ...payload,
         allowedMentions: { users: [member.id] },
       });
-      setPromptMessageId(channel.id, sent.id);
+      await rememberPromptMessageId(channel.id, sent.id);
     } catch (error) {
       console.error('Failed to send Join-to-Create prompt:', error);
     }

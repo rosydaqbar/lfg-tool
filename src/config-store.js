@@ -28,6 +28,7 @@ async function query(text, params) {
 
 let lfgEnabledColumnEnsured = false;
 let tempVoiceLfgEnabledColumnEnsured = false;
+let tempVoicePromptMessageColumnEnsured = false;
 let tempVoiceOwnerLookupIndexEnsured = false;
 let tempVoiceActivityEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
@@ -119,6 +120,18 @@ async function ensureTempVoiceLfgEnabledColumn() {
     tempVoiceLfgEnabledColumnEnsured = true;
   } catch (error) {
     console.error('Failed to ensure temp_voice_channels.lfg_enabled column:', error);
+  }
+}
+
+async function ensureTempVoicePromptMessageColumn() {
+  if (tempVoicePromptMessageColumnEnsured) return;
+  try {
+    await query(
+      'ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS prompt_message_id TEXT'
+    );
+    tempVoicePromptMessageColumnEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure temp_voice_channels.prompt_message_id column:', error);
   }
 }
 
@@ -398,6 +411,7 @@ async function addTempChannel(
   lfgEnabled = true
 ) {
   await ensureTempVoiceLfgEnabledColumn();
+  await ensureTempVoicePromptMessageColumn();
   await ensureTempVoiceOwnerLookupIndex();
   await query(
     `
@@ -458,10 +472,11 @@ async function getTempChannelOwner(channelId) {
 
 async function getTempChannelInfo(channelId) {
   await ensureTempVoiceLfgEnabledColumn();
+  await ensureTempVoicePromptMessageColumn();
   let res;
   try {
     res = await query(
-      'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id, lfg_enabled FROM temp_voice_channels WHERE channel_id = $1',
+      'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id, lfg_enabled, prompt_message_id FROM temp_voice_channels WHERE channel_id = $1',
       [channelId]
     );
   } catch (error) {
@@ -477,6 +492,7 @@ async function getTempChannelInfo(channelId) {
     ownerId: row.owner_id,
     lfgChannelId: row.lfg_channel_id ?? null,
     lfgMessageId: row.lfg_message_id ?? null,
+    promptMessageId: row.prompt_message_id ?? null,
     roleId: row.role_id ?? null,
     lfgEnabled: row.lfg_enabled ?? true,
   };
@@ -509,6 +525,14 @@ async function updateTempChannelOwner(channelId, ownerId) {
   if (existing?.guild_id) {
     setTempOwnerCache(existing.guild_id, ownerId, channelId);
   }
+}
+
+async function updateTempChannelPromptMessage(channelId, promptMessageId) {
+  await ensureTempVoicePromptMessageColumn();
+  await query(
+    'UPDATE temp_voice_channels SET prompt_message_id = $1 WHERE channel_id = $2',
+    [promptMessageId, channelId]
+  );
 }
 
 async function removeTempChannel(channelId) {
@@ -1004,6 +1028,7 @@ module.exports = {
   upsertVoiceJoin,
   updateTempChannelMessage,
   updateTempChannelOwner,
+  updateTempChannelPromptMessage,
   clearVoiceActivity,
   addTempVoiceDeleteLog,
   finalizeManualVoiceSession,
