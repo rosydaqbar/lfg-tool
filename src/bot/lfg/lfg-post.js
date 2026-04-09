@@ -9,6 +9,7 @@ async function handleLfgPostModal(interaction, deps, channelId) {
     getCooldownRemainingMs,
     setCooldown,
     formatCooldown,
+    isAdminOverride,
     isOwner,
   } = deps;
 
@@ -34,6 +35,10 @@ async function handleLfgPostModal(interaction, deps, channelId) {
     });
     return;
   }
+
+  const overrideNotice = isAdminOverride?.(tempInfo, interaction.user.id)
+    ? '\n\n-# Override: aksi ini dijalankan oleh Discord Admin.'
+    : '';
   if (tempInfo.lfgEnabled === false) {
     await interaction.editReply({
       content: 'Fitur Send LFG Post dinonaktifkan untuk lobby ini.',
@@ -124,7 +129,7 @@ async function handleLfgPostModal(interaction, deps, channelId) {
     );
     setCooldown(guildId, interaction.user.id);
     await interaction.editReply({
-      content: 'LFG post sent.',
+      content: `LFG post sent.${overrideNotice}`,
     });
   } catch (error) {
     console.error('Failed to send LFG post:', error);

@@ -23,9 +23,16 @@ async function handleModalInteraction(interaction, deps) {
   const {
     buildChannelSizeRetryRow,
     getTempVoiceContext,
+    isAdminOverride,
     isOwner,
     refreshJoinToCreatePrompt,
   } = deps;
+
+  function overrideNotice(tempInfo) {
+    return isAdminOverride?.(tempInfo, interaction.user.id)
+      ? '\n\n-# Override: aksi ini dijalankan oleh Discord Admin.'
+      : '';
+  }
 
   if (prefix === CHANNEL_NAME_MODAL_PREFIX) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -51,7 +58,7 @@ async function handleModalInteraction(interaction, deps) {
 
     await context.channel.setName(newName, `Renamed by ${interaction.user.id}`);
     await interaction.editReply({
-      content: `Nama channel berhasil diubah menjadi **${newName}**.`,
+      content: `Nama channel berhasil diubah menjadi **${newName}**.${overrideNotice(context.tempInfo)}`,
     });
     await refreshJoinToCreatePrompt(interaction.guild, channelId);
     return true;
@@ -95,8 +102,8 @@ async function handleModalInteraction(interaction, deps) {
     await interaction.editReply({
       content:
         limit === 0
-          ? 'Batas member diubah ke unlimited.'
-          : `Batas member diubah ke ${limit}.`,
+          ? `Batas member diubah ke unlimited.${overrideNotice(context.tempInfo)}`
+          : `Batas member diubah ke ${limit}.${overrideNotice(context.tempInfo)}`,
       components: [],
     });
     await refreshJoinToCreatePrompt(interaction.guild, channelId);

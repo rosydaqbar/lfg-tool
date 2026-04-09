@@ -32,6 +32,7 @@ async function handleButtonInteraction(interaction, deps) {
     formatCooldown,
     getCooldownRemainingMs,
     getTempVoiceContext,
+    isAdminOverride,
     isOwner,
     transferChannelOwner,
     userIsInVoiceChannel,
@@ -45,6 +46,12 @@ async function handleButtonInteraction(interaction, deps) {
       flags: MessageFlags.Ephemeral,
     });
     return true;
+  }
+
+  function overrideNotice(tempInfo) {
+    return isAdminOverride?.(tempInfo, interaction.user.id)
+      ? '\n\n-# Override: aksi ini dijalankan oleh Discord Admin.'
+      : '';
   }
 
   if (prefix === LFG_SEND_PREFIX) {
@@ -132,10 +139,11 @@ async function handleButtonInteraction(interaction, deps) {
     }
 
     if (prefix === CLAIM_DECLINE_PREFIX) {
+      const notice = overrideNotice(context.tempInfo);
       await interaction.update({
         content:
           `Hi <@${context.tempInfo.ownerId}> user <@${claimerId}> ingin mengambil ownership dari voice channel. ` +
-          'Permintaan ditolak.',
+          `Permintaan ditolak.${notice}`,
         components: [],
         allowedMentions: {
           users: [context.tempInfo.ownerId, claimerId],
@@ -145,10 +153,11 @@ async function handleButtonInteraction(interaction, deps) {
     }
 
     if (!(await userIsInVoiceChannel(context.channel, claimerId))) {
+      const notice = overrideNotice(context.tempInfo);
       await interaction.update({
         content:
           `Hi <@${context.tempInfo.ownerId}> user <@${claimerId}> ingin mengambil ownership dari voice channel. ` +
-          'Transfer dibatalkan karena user tidak ada di voice channel.',
+          `Transfer dibatalkan karena user tidak ada di voice channel.${notice}`,
         components: [],
         allowedMentions: {
           users: [context.tempInfo.ownerId, claimerId],
@@ -158,8 +167,9 @@ async function handleButtonInteraction(interaction, deps) {
     }
 
     await transferChannelOwner(channelId, claimerId);
+    const notice = overrideNotice(context.tempInfo);
     await interaction.update({
-      content: `Ownership voice channel dipindahkan ke <@${claimerId}>.`,
+      content: `Ownership voice channel dipindahkan ke <@${claimerId}>.${notice}`,
       components: [],
       allowedMentions: { users: [claimerId] },
     });
@@ -357,12 +367,12 @@ async function handleButtonInteraction(interaction, deps) {
     }
   );
 
-  await interaction.reply({
-    content:
-      prefix === CHANNEL_LOCK_PREFIX
-        ? 'Voice channel berhasil dikunci.'
-        : 'Voice channel berhasil dibuka.',
-  });
+    await interaction.reply({
+      content:
+        prefix === CHANNEL_LOCK_PREFIX
+          ? `Voice channel berhasil dikunci.${overrideNotice(context.tempInfo)}`
+          : `Voice channel berhasil dibuka.${overrideNotice(context.tempInfo)}`,
+    });
   await refreshJoinToCreatePrompt(interaction.guild, channelId);
   return true;
 }

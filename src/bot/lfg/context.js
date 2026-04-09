@@ -25,6 +25,11 @@ function createVoiceContextHelpers(configStore) {
     return tempInfo?.ownerId && tempInfo.ownerId === userId;
   }
 
+  function isAdminOverride(tempInfo, userId) {
+    if (!privilegedOwnerId || userId !== privilegedOwnerId) return false;
+    return Boolean(tempInfo?.ownerId && tempInfo.ownerId !== userId);
+  }
+
   async function transferChannelOwner(channelId, newOwnerId) {
     await configStore.updateTempChannelOwner(channelId, newOwnerId);
   }
@@ -35,6 +40,7 @@ function createVoiceContextHelpers(configStore) {
 
   return {
     getTempVoiceContext,
+    isAdminOverride,
     isOwner,
     transferChannelOwner,
     userIsInVoiceChannel,

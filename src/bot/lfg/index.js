@@ -108,16 +108,46 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     if (!message) {
       message = await findPromptMessage(channel);
     }
-    if (!message) return;
+    if (!message) {
+      const sent = await channel.send({
+        ...payload,
+        allowedMentions: { users: [tempInfo.ownerId] },
+      }).catch((error) => {
+        console.error('Failed to send fallback Join-to-Create prompt:', error);
+        return null;
+      });
+      if (sent?.id) {
+        setPromptMessageId(channelId, sent.id);
+      }
+      return;
+    }
 
-    await message
+    const edited = await message
       .edit({
         ...payload,
         allowedMentions: { parse: [] },
       })
-      .catch(() => null);
+      .then(() => true)
+      .catch((error) => {
+        console.error('Failed to refresh Join-to-Create prompt:', error);
+        return false;
+      });
 
-    setPromptMessageId(channelId, message.id);
+    if (edited) {
+      setPromptMessageId(channelId, message.id);
+      return;
+    }
+
+    const sent = await channel.send({
+      ...payload,
+      allowedMentions: { users: [tempInfo.ownerId] },
+    }).catch((error) => {
+      console.error('Failed to resend Join-to-Create prompt after edit failure:', error);
+      return null;
+    });
+    if (sent?.id) {
+      setPromptMessageId(channelId, sent.id);
+    }
   }
 
   const sharedDeps = {

@@ -13,6 +13,7 @@ async function handleSelectInteraction(interaction, deps) {
 
   const {
     getTempVoiceContext,
+    isAdminOverride,
     isOwner,
     refreshJoinToCreatePrompt,
     transferChannelOwner,
@@ -25,6 +26,12 @@ async function handleSelectInteraction(interaction, deps) {
       flags: MessageFlags.Ephemeral,
     });
     return true;
+  }
+
+  function overrideNotice(tempInfo) {
+    return isAdminOverride?.(tempInfo, interaction.user.id)
+      ? '\n\n-# Override: aksi ini dijalankan oleh Discord Admin.'
+      : '';
   }
 
   const context = await getTempVoiceContext(interaction.guild, channelId);
@@ -70,7 +77,7 @@ async function handleSelectInteraction(interaction, deps) {
 
     await transferChannelOwner(channelId, newOwnerId);
     await interaction.update({
-      content: `Ownership berhasil dipindahkan ke <@${newOwnerId}>.`,
+      content: `Ownership berhasil dipindahkan ke <@${newOwnerId}>.${overrideNotice(context.tempInfo)}`,
       components: [],
       allowedMentions: { users: [newOwnerId] },
     });
@@ -107,8 +114,8 @@ async function handleSelectInteraction(interaction, deps) {
   await interaction.update({
     content:
       rtcRegion === null
-        ? 'Region voice channel diubah ke Automatic.'
-        : `Region voice channel diubah ke **${rtcRegion}**.`,
+        ? `Region voice channel diubah ke Automatic.${overrideNotice(context.tempInfo)}`
+        : `Region voice channel diubah ke **${rtcRegion}**.${overrideNotice(context.tempInfo)}`,
     components: [],
   });
   await refreshJoinToCreatePrompt(interaction.guild, channelId);
