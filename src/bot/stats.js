@@ -50,14 +50,13 @@ function buildVoicecheckCommand() {
   return new SlashCommandBuilder()
     .setName(VOICECHECK_COMMAND)
     .setDescription('Cek temp voice channel kosong / tidak ditemukan')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .toJSON();
 }
 
 function isVoicecheckAllowed(interaction) {
-  if (ADMIN_ID && interaction.user.id === ADMIN_ID) return true;
   return Boolean(
-    interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
   );
 }
 
@@ -328,7 +327,7 @@ function createStatsManager({ client, configStore }) {
 
     if (!isVoicecheckAllowed(interaction)) {
       await interaction.reply({
-        content: 'Hanya admin/mod dengan Manage Channels yang bisa pakai command ini.',
+        content: 'Hanya user dengan permission Administrator yang bisa pakai command ini.',
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -349,7 +348,7 @@ function createStatsManager({ client, configStore }) {
 
     if (!isVoicecheckAllowed(interaction)) {
       await interaction.reply({
-        content: 'Hanya admin/mod dengan Manage Channels yang bisa pakai aksi ini.',
+        content: 'Hanya user dengan permission Administrator yang bisa pakai aksi ini.',
         flags: MessageFlags.Ephemeral,
       });
       return true;
