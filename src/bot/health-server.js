@@ -3,13 +3,45 @@ const http = require('http');
 function createHealthServer({ port, host = '0.0.0.0' } = {}) {
   let server = null;
   const shouldLogRequests = process.env.HEALTH_LOG_REQUESTS === 'true';
+  const shouldLogKeepaliveRequests = process.env.HEALTH_LOG_KEEPALIVE !== 'false';
+
+  function isGithubKeepalive(req) {
+    const ua = String(req.headers['user-agent'] || '');
+    const accept = String(req.headers.accept || '');
+    const cacheControl = String(req.headers['cache-control'] || '');
+    const pragma = String(req.headers.pragma || '');
+    const method = String(req.method || '').toUpperCase();
+    const url = String(req.url || '');
+
+    return (
+      (method === 'GET' || method === 'HEAD')
+      && (url === '/' || url.startsWith('/?'))
+      && ua.includes('Chrome/121.0.0.0')
+      && accept.includes('application/json')
+      && cacheControl.toLowerCase().includes('no-cache')
+      && pragma.toLowerCase().includes('no-cache')
+    );
+  }
+
+  function getClientIp(req) {
+    const forwardedFor = String(req.headers['x-forwarded-for'] || '');
+    if (forwardedFor) {
+      return forwardedFor.split(',')[0].trim();
+    }
+    return req.socket?.remoteAddress || 'unknown';
+  }
 
   function handleRequest(req, res) {
+    const userAgent = req.headers['user-agent'] || '';
+    const clientIp = getClientIp(req);
     if (shouldLogRequests) {
-      const userAgent = req.headers['user-agent'] || '';
-      const remoteAddress = req.socket?.remoteAddress || 'unknown';
       console.log(
-        `Health check ${req.method} ${req.url} from ${remoteAddress} ${userAgent}`
+        `Health check ${req.method} ${req.url} from ${clientIp} ${userAgent}`
+      );
+    } else if (shouldLogKeepaliveRequests && isGithubKeepalive(req)) {
+      const accept = req.headers.accept || '';
+      console.log(
+        `Keepalive ping detected ${req.method} ${req.url} from ${clientIp} accept=${accept} ua=${userAgent}`
       );
     }
 
