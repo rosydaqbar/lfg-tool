@@ -61,10 +61,47 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     return overwrite.deny.has('Connect');
   }
 
-  async function getVoiceActivitySnapshot(channelId) {
+  async function getVoiceActivitySnapshot(channel) {
+    if (!channel?.id) {
+      return { active: [], history: [], activeCount: 0, historyCount: 0 };
+    }
+
+    const channelId = channel.id;
     const rows = await configStore.getVoiceActivity(channelId).catch(() => []);
-    const active = rows.filter((row) => row.isActive);
-    const history = rows.filter((row) => !row.isActive);
+    const memberIds = new Set(channel.members?.keys?.() || []);
+    const activeRows = rows.filter((row) => row.isActive);
+    const activeByUserId = new Map(activeRows.map((row) => [row.userId, row]));
+
+    const active = [];
+    for (const userId of memberIds) {
+      const row = activeByUserId.get(userId);
+      if (row) {
+        active.push(row);
+        continue;
+      }
+
+      active.push({
+        userId,
+        joinedAt: null,
+        totalMs: 0,
+        isActive: true,
+      });
+
+      configStore.upsertVoiceJoin(channelId, userId, new Date()).catch((error) => {
+        console.error('Failed to repair missing active voice row:', error);
+      });
+    }
+
+    for (const row of activeRows) {
+      if (memberIds.has(row.userId)) continue;
+      configStore.markVoiceLeave(channelId, row.userId, new Date()).catch((error) => {
+        console.error('Failed to repair stale active voice row:', error);
+      });
+    }
+
+    const history = rows.filter(
+      (row) => !row.isActive && !memberIds.has(row.userId)
+    );
     return {
       active,
       history,
@@ -122,7 +159,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       memberCount: channel.members?.size ?? 0,
       ownerId: tempInfo.ownerId,
       userLimit: channel.userLimit ?? 0,
-      voiceActivity: await getVoiceActivitySnapshot(channelId),
+      voiceActivity: await getVoiceActivitySnapshot(channel),
     });
 
     let message = null;
@@ -230,7 +267,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       memberCount: channel.members?.size ?? 0,
       ownerId: member.id,
       userLimit: channel.userLimit ?? 0,
-      voiceActivity: await getVoiceActivitySnapshot(channel.id),
+      voiceActivity: await getVoiceActivitySnapshot(channel),
     });
 
     try {
