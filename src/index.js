@@ -205,6 +205,24 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
   await joinToCreateManager.handleJoinToCreate(oldState, newState, config);
 
+  async function refreshTempPromptWithRetry(guild, channelId) {
+    if (!guild || !channelId) return;
+    await lfgManager
+      .refreshJoinToCreatePrompt(guild, channelId)
+      .catch(() => null);
+
+    const scheduleRetry = (delayMs) => {
+      setTimeout(() => {
+        lfgManager
+          .refreshJoinToCreatePrompt(guild, channelId)
+          .catch(() => null);
+      }, delayMs);
+    };
+
+    scheduleRetry(1500);
+    scheduleRetry(5000);
+  }
+
   const manualSummaryCache = new Map();
 
   async function buildManualActivitySummary(channelId) {
@@ -276,9 +294,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         .catch((error) => {
           console.error('Failed to mark voice leave:', error);
         });
-      await lfgManager
-        .refreshJoinToCreatePrompt(oldState.guild || newState.guild, oldChannelId)
-        .catch(() => null);
+      await refreshTempPromptWithRetry(
+        oldState.guild || newState.guild,
+        oldChannelId
+      );
     }
 
     if (moved && newTempInfo) {
@@ -287,9 +306,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         .catch((error) => {
           console.error('Failed to mark voice join:', error);
         });
-      await lfgManager
-        .refreshJoinToCreatePrompt(newState.guild || oldState.guild, newChannelId)
-        .catch(() => null);
+      await refreshTempPromptWithRetry(
+        newState.guild || oldState.guild,
+        newChannelId
+      );
     }
 
     const manualEnabledIds = new Set(config.enabledVoiceChannelIds || []);
