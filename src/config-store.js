@@ -751,6 +751,19 @@ async function upsertManualVoiceJoin(
   );
 }
 
+async function clearManualVoiceActiveEntry(guildId, channelId, userId) {
+  await ensureManualVoiceActivityTable();
+  await query(
+    `
+      DELETE FROM manual_voice_activity
+      WHERE guild_id = $1
+        AND channel_id = $2
+        AND user_id = $3
+    `,
+    [guildId, channelId, userId]
+  );
+}
+
 async function finalizeManualVoiceSession(
   guildId,
   channelId,
@@ -1035,4 +1048,5 @@ module.exports = {
   getVoiceLeaderboard,
   getVoiceStatsForUser,
   upsertManualVoiceJoin,
+  clearManualVoiceActiveEntry,
 };

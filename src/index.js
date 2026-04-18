@@ -225,8 +225,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
   const manualSummaryCache = new Map();
 
-  async function buildManualActivitySummary(channelId) {
-    if (!channelId) {
+  async function buildManualActivitySummary(voiceChannel) {
+    const channelId = voiceChannel?.id;
+    if (!channelId || !voiceChannel?.guild) {
       return {
         active: [],
         history: [],
@@ -246,21 +247,74 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         return [];
       });
 
-    const active = manualActivityRows
-      .filter((row) => row.isActive)
-      .sort((a, b) => {
-        const aTime = a.joinedAt ? a.joinedAt.getTime() : 0;
-        const bTime = b.joinedAt ? b.joinedAt.getTime() : 0;
-        return bTime - aTime;
+    const activeRows = manualActivityRows.filter((row) => row.isActive);
+    const activeByUserId = new Map(activeRows.map((row) => [row.userId, row]));
+    const cachedMemberIds = new Set(voiceChannel.members?.keys?.() || []);
+    const candidateUserIds = new Set([
+      ...cachedMemberIds,
+      ...activeRows.map((row) => row.userId),
+    ]);
+
+    const checks = await Promise.all(
+      [...candidateUserIds].map(async (userId) => {
+        try {
+          const member = await voiceChannel.guild.members.fetch(userId);
+          return [userId, member?.voice?.channelId === channelId];
+        } catch {
+          return [userId, false];
+        }
+      })
+    );
+
+    const memberIds = new Set(
+      checks.filter(([, isInChannel]) => isInChannel).map(([userId]) => userId)
+    );
+
+    const active = [];
+    for (const userId of memberIds) {
+      const row = activeByUserId.get(userId);
+      if (row) {
+        active.push(row);
+        continue;
+      }
+
+      active.push({
+        userId,
+        isActive: true,
+        joinedAt: null,
+        totalMs: 0,
+        updatedAt: null,
       });
 
+      configStore
+        .upsertManualVoiceJoin(guildId, channelId, userId, new Date())
+        .catch((error) => {
+          console.error('Failed to repair missing manual active row:', error);
+        });
+    }
+
+    for (const row of activeRows) {
+      if (memberIds.has(row.userId)) continue;
+      configStore
+        .clearManualVoiceActiveEntry(guildId, channelId, row.userId)
+        .catch((error) => {
+          console.error('Failed to repair stale manual active row:', error);
+        });
+    }
+
     const history = manualActivityRows
-      .filter((row) => !row.isActive)
+      .filter((row) => !row.isActive && !memberIds.has(row.userId))
       .sort((a, b) => {
         const aTime = a.updatedAt ? a.updatedAt.getTime() : 0;
         const bTime = b.updatedAt ? b.updatedAt.getTime() : 0;
         return bTime - aTime;
       });
+
+    active.sort((a, b) => {
+      const aTime = a.joinedAt ? a.joinedAt.getTime() : 0;
+      const bTime = b.joinedAt ? b.joinedAt.getTime() : 0;
+      return bTime - aTime;
+    });
 
     const summary = {
       active,
@@ -370,7 +424,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             console.error('Failed to clear manual session panel:', error);
           });
       } else if (oldState.channel) {
-        const activity = await buildManualActivitySummary(oldChannelId);
+        const activity = await buildManualActivitySummary(oldState.channel);
         await voiceLogger
           .refreshManualSessionPanel(oldState.channel, { activity })
           .catch((error) => {
@@ -388,7 +442,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         });
 
       if (newState.channel) {
-        const activity = await buildManualActivitySummary(newChannelId);
+        const activity = await buildManualActivitySummary(newState.channel);
         await voiceLogger
           .refreshManualSessionPanel(newState.channel, { activity })
           .catch((error) => {
