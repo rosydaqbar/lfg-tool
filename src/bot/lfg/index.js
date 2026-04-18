@@ -15,6 +15,18 @@ const { handleButtonInteraction } = require('./handlers/button');
 const { handleModalInteraction } = require('./handlers/modal');
 const { handleSelectInteraction } = require('./handlers/select');
 const { createPersistentLfgManager } = require('./persistent');
+const {
+  CHANNEL_NAME_PREFIX,
+  CHANNEL_SIZE_PREFIX,
+  CHANNEL_LOCK_PREFIX,
+  CHANNEL_UNLOCK_PREFIX,
+  CLAIM_PREFIX,
+  REGION_PREFIX,
+  TRANSFER_PREFIX,
+  LFG_SEND_PREFIX,
+  MY_STATS_PREFIX,
+  LEADERBOARD_PREFIX,
+} = require('./constants');
 
 function createLfgManager({ client, getLogChannel, configStore, env, statsManager }) {
   const tempPromptMessageIds = new Map();
@@ -41,6 +53,16 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
   function setPromptMessageId(channelId, messageId) {
     if (!channelId || !messageId) return;
     tempPromptMessageIds.set(channelId, messageId);
+  }
+
+  async function clearPromptMessageId(channelId) {
+    if (!channelId) return;
+    tempPromptMessageIds.delete(channelId);
+    await configStore
+      .updateTempChannelPromptMessage(channelId, null)
+      .catch((error) => {
+        console.error('Failed to clear Join-to-Create prompt message ID:', error);
+      });
   }
 
   async function rememberPromptMessageId(channelId, messageId) {
@@ -131,23 +153,47 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     };
   }
 
-  async function findPromptMessage(channel) {
+  function collectCustomIds(components, ids = []) {
+    if (!Array.isArray(components) || components.length === 0) return ids;
+    for (const component of components) {
+      if (component?.customId) {
+        ids.push(component.customId);
+      }
+      collectCustomIds(component?.components, ids);
+    }
+    return ids;
+  }
+
+  function isPromptMessageForChannel(message, channelId) {
+    if (!message || !channelId) return false;
+    if (message.author?.id !== client.user?.id) return false;
+
+    const expectedPrefixes = [
+      CHANNEL_NAME_PREFIX,
+      CHANNEL_SIZE_PREFIX,
+      CHANNEL_LOCK_PREFIX,
+      CHANNEL_UNLOCK_PREFIX,
+      CLAIM_PREFIX,
+      REGION_PREFIX,
+      TRANSFER_PREFIX,
+      LFG_SEND_PREFIX,
+      MY_STATS_PREFIX,
+      LEADERBOARD_PREFIX,
+    ];
+    const customIds = collectCustomIds(message.components);
+    return expectedPrefixes.some((prefix) =>
+      customIds.some((customId) => customId === `${prefix}:${channelId}`)
+    );
+  }
+
+  async function findPromptMessage(channel, channelId) {
     if (!channel || typeof channel.messages?.fetch !== 'function') return null;
     const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
     if (!recent) return null;
 
-    function hasJtcCustomId(components) {
-      if (!Array.isArray(components) || components.length === 0) return false;
-      return components.some((component) => {
-        if (component?.customId?.startsWith('jtc_')) return true;
-        return hasJtcCustomId(component?.components);
-      });
-    }
-
     return (
       recent.find((msg) =>
-        msg.author?.id === client.user?.id
-        && hasJtcCustomId(msg.components)
+        isPromptMessageForChannel(msg, channelId)
       ) || null
     );
   }
@@ -188,9 +234,13 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       tempPromptMessageIds.get(channelId) || tempInfo.promptMessageId || null;
     if (knownMessageId) {
       message = await channel.messages.fetch(knownMessageId).catch(() => null);
+      if (message && !isPromptMessageForChannel(message, channelId)) {
+        await clearPromptMessageId(channelId);
+        message = null;
+      }
     }
     if (!message) {
-      message = await findPromptMessage(channel);
+      message = await findPromptMessage(channel, channelId);
       if (message?.id) {
         await rememberPromptMessageId(channelId, message.id);
       }
