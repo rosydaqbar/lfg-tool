@@ -67,10 +67,31 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     }
 
     const channelId = channel.id;
+    const guild = channel.guild;
     const rows = await configStore.getVoiceActivity(channelId).catch(() => []);
-    const memberIds = new Set(channel.members?.keys?.() || []);
+    const cachedMemberIds = new Set(channel.members?.keys?.() || []);
     const activeRows = rows.filter((row) => row.isActive);
     const activeByUserId = new Map(activeRows.map((row) => [row.userId, row]));
+
+    const candidateUserIds = new Set([
+      ...cachedMemberIds,
+      ...activeRows.map((row) => row.userId),
+    ]);
+
+    const checks = await Promise.all(
+      [...candidateUserIds].map(async (userId) => {
+        try {
+          const member = await guild.members.fetch(userId);
+          return [userId, member?.voice?.channelId === channelId];
+        } catch {
+          return [userId, false];
+        }
+      })
+    );
+
+    const memberIds = new Set(
+      checks.filter(([, isInChannel]) => isInChannel).map(([userId]) => userId)
+    );
 
     const active = [];
     for (const userId of memberIds) {
