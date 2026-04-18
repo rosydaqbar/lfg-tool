@@ -34,6 +34,28 @@ Join-to-Create Discord voice bot with LFG flow, voice-session logging, global st
 - Setup save paths were hardened to avoid accidental config wiping.
   - Existing guild voice settings are preserved when setup channels are updated.
 
+## Recent Changelog
+
+- Temp channel controls and checks
+  - Added `/voicecheck` with Administrator-only access.
+  - Added in-command cleanup action for temp channels in `Not found` or `Empty` state.
+  - Dashboard `Active Temp Channels` now validates channel existence from live Discord state (not DB only), including `Exists`/`Empty`/`Not found` status.
+- Voice owner/admin behavior
+  - Added setup-owner/admin override support for owner-gated voice actions.
+  - Added explicit override notice text when admin override is used.
+- Join-to-Create prompt reliability
+  - Persisted Join-to-Create prompt message ID to DB so updates edit the same message.
+  - Tightened prompt message targeting to the correct channel panel (avoid editing unrelated `jtc_*` messages).
+  - Added refresh retries after voice state changes to reduce race-condition stale panels.
+- Voice Log data correctness
+  - `Voice Log` panel refresh now validates active users against live Discord voice membership before render.
+  - Added stale/missing activity row repair for temp voice activity during refresh.
+  - Applied the same live-membership real-check and stale-row cleanup to manual Voice Log channel panels.
+- Logging and keepalive improvements
+  - Added dedupe/lock safeguards to reduce duplicate "Temp Voice Channel Deleted" and "Manual Voice Session Leave" logs.
+  - Updated keepalive workflow to request root URL (`/`) and print response body in GitHub Actions logs.
+  - Health server now detects and logs keepalive pings (with forwarded client IP) for easier Koyeb verification.
+
 ## Screenshots
 
 Store all screenshots under root `screenshots/`.
