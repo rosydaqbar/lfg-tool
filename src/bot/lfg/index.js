@@ -31,6 +31,7 @@ const {
 function createLfgManager({ client, getLogChannel, configStore, env, statsManager }) {
   const tempPromptMessageIds = new Map();
   const persistentRefreshAtByGuild = new Map();
+  const promptUpdateInFlight = new Map();
   const cooldownTracker = createCooldownTracker();
   const voiceContextHelpers = createVoiceContextHelpers(configStore);
   const persistentManager = createPersistentLfgManager({
@@ -73,6 +74,26 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       .catch((error) => {
         console.error('Failed to persist Join-to-Create prompt message ID:', error);
       });
+  }
+
+  async function withPromptLock(channelId, operation) {
+    if (!channelId) {
+      return operation();
+    }
+
+    const previous = promptUpdateInFlight.get(channelId) || Promise.resolve();
+    const next = previous
+      .catch(() => null)
+      .then(() => operation());
+
+    promptUpdateInFlight.set(channelId, next);
+    try {
+      return await next;
+    } finally {
+      if (promptUpdateInFlight.get(channelId) === next) {
+        promptUpdateInFlight.delete(channelId);
+      }
+    }
   }
 
   function isVoiceChannelLocked(channel, guild) {
@@ -201,95 +222,98 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
   async function refreshJoinToCreatePrompt(guild, channelId) {
     if (!guild || !channelId) return;
 
-    const tempInfo = await configStore
-      .getTempChannelInfo(channelId)
-      .catch(() => null);
-    if (!tempInfo?.ownerId) return;
+    return withPromptLock(channelId, async () => {
 
-    const channel = await guild.channels.fetch(channelId).catch(() => null);
-    if (!channel || !channel.isTextBased()) return;
+      const tempInfo = await configStore
+        .getTempChannelInfo(channelId)
+        .catch(() => null);
+      if (!tempInfo?.ownerId) return;
 
-    const config = await configStore.getGuildConfig(guild.id).catch(() => null);
-    const lfgEnabled = tempInfo.lfgEnabled ?? true;
-    const lfgChannelId =
-      config?.lfgChannelId || config?.logChannelId || env.LOG_CHANNEL_ID || null;
-    if (lfgEnabled && !lfgChannelId) return;
+      const channel = await guild.channels.fetch(channelId).catch(() => null);
+      if (!channel || !channel.isTextBased()) return;
 
-    const payload = buildJoinToCreatePromptPayload({
-      channelId,
-      createdTimestamp: Math.floor(
-        (channel.createdTimestamp ?? Date.now()) / 1000
-      ),
-      isLocked: isVoiceChannelLocked(channel, guild),
-      lfgEnabled,
-      lfgChannelId,
-      memberCount: channel.members?.size ?? 0,
-      ownerId: tempInfo.ownerId,
-      userLimit: channel.userLimit ?? 0,
-      voiceActivity: await getVoiceActivitySnapshot(channel),
-    });
+      const config = await configStore.getGuildConfig(guild.id).catch(() => null);
+      const lfgEnabled = tempInfo.lfgEnabled ?? true;
+      const lfgChannelId =
+        config?.lfgChannelId || config?.logChannelId || env.LOG_CHANNEL_ID || null;
+      if (lfgEnabled && !lfgChannelId) return;
 
-    let message = null;
-    const knownMessageId =
-      tempPromptMessageIds.get(channelId) || tempInfo.promptMessageId || null;
-    if (knownMessageId) {
-      message = await channel.messages.fetch(knownMessageId).catch(() => null);
-      if (message && !isPromptMessageForChannel(message, channelId)) {
-        await clearPromptMessageId(channelId);
-        message = null;
+      const payload = buildJoinToCreatePromptPayload({
+        channelId,
+        createdTimestamp: Math.floor(
+          (channel.createdTimestamp ?? Date.now()) / 1000
+        ),
+        isLocked: isVoiceChannelLocked(channel, guild),
+        lfgEnabled,
+        lfgChannelId,
+        memberCount: channel.members?.size ?? 0,
+        ownerId: tempInfo.ownerId,
+        userLimit: channel.userLimit ?? 0,
+        voiceActivity: await getVoiceActivitySnapshot(channel),
+      });
+
+      let message = null;
+      const knownMessageId =
+        tempPromptMessageIds.get(channelId) || tempInfo.promptMessageId || null;
+      if (knownMessageId) {
+        message = await channel.messages.fetch(knownMessageId).catch(() => null);
+        if (message && !isPromptMessageForChannel(message, channelId)) {
+          await clearPromptMessageId(channelId);
+          message = null;
+        }
       }
-    }
-    if (!message) {
-      message = await findPromptMessage(channel, channelId);
-      if (message?.id) {
+      if (!message) {
+        message = await findPromptMessage(channel, channelId);
+        if (message?.id) {
+          await rememberPromptMessageId(channelId, message.id);
+        }
+      }
+      if (!message) {
+        const sent = await channel.send({
+          ...payload,
+          allowedMentions: { users: [tempInfo.ownerId] },
+        }).catch((error) => {
+          console.error('Failed to send fallback Join-to-Create prompt:', error);
+          return null;
+        });
+        if (sent?.id) {
+          await rememberPromptMessageId(channelId, sent.id);
+        }
+        await refreshPersistentLfgForGuild(guild.id);
+        return;
+      }
+
+      const { flags: _ignoredFlags, ...editPayload } = payload;
+
+      const edited = await message
+        .edit({
+          ...editPayload,
+          allowedMentions: { parse: [] },
+        })
+        .then(() => true)
+        .catch((error) => {
+          console.error('Failed to refresh Join-to-Create prompt:', error);
+          return false;
+        });
+
+      if (edited) {
         await rememberPromptMessageId(channelId, message.id);
+        await refreshPersistentLfgForGuild(guild.id);
+        return;
       }
-    }
-    if (!message) {
+
       const sent = await channel.send({
         ...payload,
         allowedMentions: { users: [tempInfo.ownerId] },
       }).catch((error) => {
-        console.error('Failed to send fallback Join-to-Create prompt:', error);
+        console.error('Failed to resend Join-to-Create prompt after edit failure:', error);
         return null;
       });
       if (sent?.id) {
         await rememberPromptMessageId(channelId, sent.id);
       }
       await refreshPersistentLfgForGuild(guild.id);
-      return;
-    }
-
-    const { flags: _ignoredFlags, ...editPayload } = payload;
-
-    const edited = await message
-      .edit({
-        ...editPayload,
-        allowedMentions: { parse: [] },
-      })
-      .then(() => true)
-      .catch((error) => {
-        console.error('Failed to refresh Join-to-Create prompt:', error);
-        return false;
-      });
-
-    if (edited) {
-      await rememberPromptMessageId(channelId, message.id);
-      await refreshPersistentLfgForGuild(guild.id);
-      return;
-    }
-
-    const sent = await channel.send({
-      ...payload,
-      allowedMentions: { users: [tempInfo.ownerId] },
-    }).catch((error) => {
-      console.error('Failed to resend Join-to-Create prompt after edit failure:', error);
-      return null;
     });
-    if (sent?.id) {
-      await rememberPromptMessageId(channelId, sent.id);
-    }
-    await refreshPersistentLfgForGuild(guild.id);
   }
 
   const sharedDeps = {
@@ -329,28 +353,44 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       return;
     }
 
-    const payload = buildJoinToCreatePromptPayload({
-      channelId: channel.id,
-      createdTimestamp: Math.floor((channel.createdTimestamp ?? Date.now()) / 1000),
-      isLocked: isVoiceChannelLocked(channel, channel.guild),
-      lfgEnabled,
-      lfgChannelId,
-      memberCount: channel.members?.size ?? 0,
-      ownerId: member.id,
-      userLimit: channel.userLimit ?? 0,
-      voiceActivity: await getVoiceActivitySnapshot(channel),
-    });
-
-    try {
-      const sent = await channel.send({
-        ...payload,
-        allowedMentions: { users: [member.id] },
+    await withPromptLock(channel.id, async () => {
+      const payload = buildJoinToCreatePromptPayload({
+        channelId: channel.id,
+        createdTimestamp: Math.floor((channel.createdTimestamp ?? Date.now()) / 1000),
+        isLocked: isVoiceChannelLocked(channel, channel.guild),
+        lfgEnabled,
+        lfgChannelId,
+        memberCount: channel.members?.size ?? 0,
+        ownerId: member.id,
+        userLimit: channel.userLimit ?? 0,
+        voiceActivity: await getVoiceActivitySnapshot(channel),
       });
-      await rememberPromptMessageId(channel.id, sent.id);
-      await refreshPersistentLfgForGuild(channel.guild?.id);
-    } catch (error) {
-      console.error('Failed to send Join-to-Create prompt:', error);
-    }
+
+      const existingMessageId = tempPromptMessageIds.get(channel.id) || null;
+      if (existingMessageId) {
+        const existingMessage = await channel.messages.fetch(existingMessageId).catch(() => null);
+        if (existingMessage && isPromptMessageForChannel(existingMessage, channel.id)) {
+          const { flags: _ignoredFlags, ...editPayload } = payload;
+          await existingMessage
+            .edit({ ...editPayload, allowedMentions: { parse: [] } })
+            .catch(() => null);
+          await rememberPromptMessageId(channel.id, existingMessage.id);
+          await refreshPersistentLfgForGuild(channel.guild?.id);
+          return;
+        }
+      }
+
+      try {
+        const sent = await channel.send({
+          ...payload,
+          allowedMentions: { users: [member.id] },
+        });
+        await rememberPromptMessageId(channel.id, sent.id);
+        await refreshPersistentLfgForGuild(channel.guild?.id);
+      } catch (error) {
+        console.error('Failed to send Join-to-Create prompt:', error);
+      }
+    });
   }
 
   async function editLfgDisbandedMessage(info) {
