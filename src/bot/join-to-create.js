@@ -458,10 +458,13 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
           const lobbyChannel = await guild.channels.fetch(lobbyId).catch(() => null);
           if (!lobbyChannel || !lobbyChannel.isVoiceBased()) continue;
 
-          for (const member of lobbyChannel.members.values()) {
-            if (!member || member.user?.bot) continue;
-            if (member.voice?.channelId !== lobbyId) continue;
+          const stuckMembers = [...lobbyChannel.members.values()].filter(
+            (member) => member && !member.user?.bot && member.voice?.channelId === lobbyId
+          );
+          if (!stuckMembers.length) continue;
 
+          if (stuckMembers.length === 1) {
+            const member = stuckMembers[0];
             await handleJoinToCreate(
               { channelId: null },
               {
@@ -474,6 +477,55 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
               config
             ).catch((error) => {
               console.error('Failed to recover member stuck in JTC lobby:', error);
+            });
+            continue;
+          }
+
+          const leader = stuckMembers[0];
+          await handleJoinToCreate(
+            { channelId: null },
+            {
+              guild,
+              member: leader,
+              channelId: lobbyId,
+              channel: lobbyChannel,
+              setChannel: (...args) => leader.voice.setChannel(...args),
+            },
+            config
+          ).catch((error) => {
+            console.error('Failed to recover leader stuck in JTC lobby:', error);
+          });
+
+          const leaderTempId = await configStore
+            .getTempChannelByOwner(guild.id, leader.id)
+            .catch(() => null);
+          const groupTargetChannel = leaderTempId
+            ? await guild.channels.fetch(leaderTempId).catch(() => null)
+            : null;
+
+          if (!groupTargetChannel || !groupTargetChannel.isVoiceBased()) {
+            for (const member of stuckMembers.slice(1)) {
+              await handleJoinToCreate(
+                { channelId: null },
+                {
+                  guild,
+                  member,
+                  channelId: lobbyId,
+                  channel: lobbyChannel,
+                  setChannel: (...args) => member.voice.setChannel(...args),
+                },
+                config
+              ).catch((error) => {
+                console.error('Failed to recover member stuck in JTC lobby:', error);
+              });
+            }
+            continue;
+          }
+
+          for (const member of stuckMembers.slice(1)) {
+            if (member.voice?.channelId !== lobbyId) continue;
+            await member.voice.setChannel(groupTargetChannel).catch((error) => {
+              console.error('Failed to move stuck member to grouped temp channel:', error);
             });
           }
         }
