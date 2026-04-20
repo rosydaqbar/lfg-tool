@@ -7,6 +7,9 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
   const recentDeletionLog = new Map();
   const JTC_COOLDOWN_MS = 1500;
   const DELETE_LOG_DEDUPE_MS = 30_000;
+  const STUCK_CHECK_INTERVAL_MS = 60 * 1000;
+  let stuckLobbyWatchdogInterval = null;
+  let stuckLobbyWatchdogRunning = false;
 
   function pruneRecentDeletionLog() {
     if (recentDeletionLog.size < 500) return;
@@ -439,9 +442,70 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
     }
   }
 
+  async function runStuckLobbyWatchdogOnce() {
+    if (stuckLobbyWatchdogRunning) return;
+    stuckLobbyWatchdogRunning = true;
+
+    try {
+      for (const guild of client.guilds.cache.values()) {
+        const config = await configStore.getGuildConfig(guild.id).catch(() => null);
+        if (!config) continue;
+
+        const lobbyIds = config.joinToCreateLobbyIds || [];
+        if (!lobbyIds.length) continue;
+
+        for (const lobbyId of lobbyIds) {
+          const lobbyChannel = await guild.channels.fetch(lobbyId).catch(() => null);
+          if (!lobbyChannel || !lobbyChannel.isVoiceBased()) continue;
+
+          for (const member of lobbyChannel.members.values()) {
+            if (!member || member.user?.bot) continue;
+            if (member.voice?.channelId !== lobbyId) continue;
+
+            await handleJoinToCreate(
+              { channelId: null },
+              {
+                guild,
+                member,
+                channelId: lobbyId,
+                channel: lobbyChannel,
+                setChannel: (...args) => member.voice.setChannel(...args),
+              },
+              config
+            ).catch((error) => {
+              console.error('Failed to recover member stuck in JTC lobby:', error);
+            });
+          }
+        }
+      }
+    } finally {
+      stuckLobbyWatchdogRunning = false;
+    }
+  }
+
+  function startStuckLobbyWatchdog() {
+    if (stuckLobbyWatchdogInterval) return;
+    runStuckLobbyWatchdogOnce().catch((error) => {
+      console.error('Failed to run JTC stuck lobby watchdog:', error);
+    });
+    stuckLobbyWatchdogInterval = setInterval(() => {
+      runStuckLobbyWatchdogOnce().catch((error) => {
+        console.error('Failed to run JTC stuck lobby watchdog:', error);
+      });
+    }, STUCK_CHECK_INTERVAL_MS);
+  }
+
+  function stopStuckLobbyWatchdog() {
+    if (!stuckLobbyWatchdogInterval) return;
+    clearInterval(stuckLobbyWatchdogInterval);
+    stuckLobbyWatchdogInterval = null;
+  }
+
   return {
     cleanupTempChannel,
     handleJoinToCreate,
+    startStuckLobbyWatchdog,
+    stopStuckLobbyWatchdog,
   };
 }
 

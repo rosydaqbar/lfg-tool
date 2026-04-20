@@ -112,6 +112,12 @@ async function shutdown(signal) {
   }
 
   try {
+    joinToCreateManager.stopStuckLobbyWatchdog?.();
+  } catch (error) {
+    logger.error('Failed to stop JTC watchdog loop:', error);
+  }
+
+  try {
     healthServer.stop();
   } catch (error) {
     logger.error('Failed to stop health server:', error);
@@ -145,6 +151,7 @@ process.on('SIGINT', () => {
 client.once(Events.ClientReady, () => {
   logger.info(`Logged in as ${client.user.tag}`);
   lfgManager.startPersistentLoop();
+  joinToCreateManager.startStuckLobbyWatchdog?.();
   statsManager.registerCommands().catch((error) => {
     logger.error('Failed to register slash commands:', error);
   });
