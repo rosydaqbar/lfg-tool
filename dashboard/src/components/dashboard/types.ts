@@ -16,6 +16,24 @@ export type JoinToCreateLobby = {
   lfgEnabled: boolean;
 };
 
+export type AutoRoleCondition = "more_than" | "less_than" | "equal_to";
+
+export type AutoRoleRule = {
+  id: string;
+  condition: AutoRoleCondition;
+  hours: number;
+  roleId: string;
+};
+
+export type AutoRoleConfig = {
+  enabled: boolean;
+  requiredRoleMode: "all_roles" | "selected_roles";
+  requiredRoleIds: string[];
+  rules: AutoRoleRule[];
+  requireAdminApproval: boolean;
+  approvalChannelId: string | null;
+};
+
 export type TempChannel = {
   existsInDiscord?: boolean | null;
   channelId: string;
@@ -60,6 +78,7 @@ export type ConfigResponse = {
   lfgChannelId: string | null;
   enabledVoiceChannelIds: string[];
   joinToCreateLobbies: JoinToCreateLobby[];
+  autoRoleConfig: AutoRoleConfig;
 };
 
 export type ChannelsResponse = {

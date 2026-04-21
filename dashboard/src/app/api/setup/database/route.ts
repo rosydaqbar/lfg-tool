@@ -51,6 +51,13 @@ const BASELINE_SCHEMA = [
       lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
     )
   `,
+  `
+    CREATE TABLE IF NOT EXISTS voice_auto_role_config (
+      guild_id TEXT PRIMARY KEY,
+      config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `,
 ];
 
 export async function POST(request: Request) {
@@ -107,6 +114,11 @@ export async function POST(request: Request) {
             lobby_channel_id TEXT NOT NULL,
             role_id TEXT,
             lfg_enabled INTEGER NOT NULL DEFAULT 1
+          );
+          CREATE TABLE IF NOT EXISTS voice_auto_role_config (
+            guild_id TEXT PRIMARY KEY,
+            config_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
           );
           CREATE TABLE IF NOT EXISTS setup_state (
             id INTEGER PRIMARY KEY,

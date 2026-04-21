@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ChannelConfigCards } from "@/components/dashboard/channel-config-cards";
 import { HeaderSection } from "@/components/dashboard/header-section";
 import { VoiceSettingsSection } from "@/components/dashboard/voice-settings-section";
+import { AutoRoleSection } from "@/components/dashboard/auto-role-section";
 import { ActiveTempChannelsCard } from "@/components/dashboard/active-temp-channels-card";
 import { VoiceLogDeletedCard } from "@/components/dashboard/voice-log-deleted-card";
 import { VoiceLeaderboardCard } from "@/components/dashboard/voice-leaderboard-card";
@@ -17,9 +18,59 @@ import type {
   Channel,
   ConfigResponse,
   JoinToCreateLobby,
+  AutoRoleConfig,
   Role,
   RolesResponse,
 } from "@/components/dashboard/types";
+
+const DEFAULT_AUTO_ROLE_CONFIG: AutoRoleConfig = {
+  enabled: false,
+  requiredRoleMode: "all_roles",
+  requiredRoleIds: [],
+  rules: [],
+  requireAdminApproval: false,
+  approvalChannelId: null,
+};
+
+function normalizeAutoRoleConfig(
+  value: Partial<AutoRoleConfig> | null | undefined
+): AutoRoleConfig {
+  if (!value || typeof value !== "object") return DEFAULT_AUTO_ROLE_CONFIG;
+
+  const rules = Array.isArray(value.rules)
+    ? value.rules
+        .filter((rule) => rule && typeof rule === "object")
+        .map((rule, index) => ({
+          id:
+            typeof rule.id === "string" && rule.id.trim().length > 0
+              ? rule.id
+              : `rule_${index + 1}`,
+          condition:
+            rule.condition === "more_than" ||
+            rule.condition === "less_than" ||
+            rule.condition === "equal_to"
+              ? rule.condition
+              : "more_than",
+          hours: Math.max(0, Number.isFinite(Number(rule.hours)) ? Math.floor(Number(rule.hours)) : 0),
+          roleId: typeof rule.roleId === "string" ? rule.roleId : "",
+        }))
+    : [];
+
+  return {
+    enabled: value.enabled === true,
+    requiredRoleMode:
+      value.requiredRoleMode === "selected_roles" ? "selected_roles" : "all_roles",
+    requiredRoleIds: Array.isArray(value.requiredRoleIds)
+      ? value.requiredRoleIds.filter((id): id is string => typeof id === "string")
+      : [],
+    rules,
+    requireAdminApproval: value.requireAdminApproval === true,
+    approvalChannelId:
+      typeof value.approvalChannelId === "string" && value.approvalChannelId.trim().length > 0
+        ? value.approvalChannelId
+        : null,
+  };
+}
 
 export default function DashboardClient({
   userName,
@@ -41,6 +92,9 @@ export default function DashboardClient({
   const [joinToCreateLobbies, setJoinToCreateLobbies] = useState<
     JoinToCreateLobby[]
   >([]);
+  const [autoRoleConfig, setAutoRoleConfig] = useState<AutoRoleConfig>(
+    DEFAULT_AUTO_ROLE_CONFIG
+  );
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +112,7 @@ export default function DashboardClient({
     setRoles([]);
     setEnabledVoiceIds([]);
     setJoinToCreateLobbies([]);
+    setAutoRoleConfig(DEFAULT_AUTO_ROLE_CONFIG);
     setLogChannelId("");
     setLfgChannelId("");
 
@@ -99,6 +154,7 @@ export default function DashboardClient({
             lfgEnabled: item.lfgEnabled ?? true,
           }))
         );
+        setAutoRoleConfig(normalizeAutoRoleConfig(config.autoRoleConfig));
       })
       .catch((err) => {
         if (!active) return;
@@ -201,6 +257,7 @@ export default function DashboardClient({
           lfgChannelId: trimmedLfgChannelId.length > 0 ? trimmedLfgChannelId : null,
           enabledVoiceChannelIds,
           joinToCreateLobbies: joinToCreateLobbiesPayload,
+          autoRoleConfig,
         }),
       });
 
@@ -227,6 +284,7 @@ export default function DashboardClient({
     joinToCreateLobbies,
     lfgChannelId,
     logChannelId,
+    autoRoleConfig,
     selectedGuildId,
   ]);
 
@@ -305,6 +363,16 @@ export default function DashboardClient({
             onRemoveLobbyChannel={handleRemoveLobbyChannel}
             onAddEnabledVoiceChannel={handleAddEnabledVoiceChannel}
             onRemoveEnabledVoiceChannel={handleRemoveEnabledVoiceChannel}
+            onSave={handleSave}
+          />
+
+          <AutoRoleSection
+            loadingConfig={loadingConfig}
+            saving={saving}
+            roles={memoRoles}
+            textChannels={memoTextChannels}
+            value={autoRoleConfig}
+            onChange={setAutoRoleConfig}
             onSave={handleSave}
           />
 

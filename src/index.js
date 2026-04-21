@@ -20,6 +20,7 @@ const { createLogChannelFetcher } = require('./bot/log-channel');
 const { createVoiceLogger } = require('./bot/voice-log');
 const { createHealthServer } = require('./bot/health-server');
 const { createStatsManager } = require('./bot/stats');
+const { createAutoRoleManager } = require('./bot/auto-role');
 const { createLogger } = require('./lib/logger');
 
 const logger = createLogger('bot');
@@ -62,6 +63,10 @@ const voiceLogger = createVoiceLogger({
   env: { LOG_CHANNEL_ID, VOICE_CHANNEL_ID },
 });
 const healthServer = createHealthServer();
+const autoRoleManager = createAutoRoleManager({
+  client,
+  configStore,
+});
 
 healthServer.start();
 
@@ -124,6 +129,12 @@ async function shutdown(signal) {
   }
 
   try {
+    autoRoleManager.stopLoop?.();
+  } catch (error) {
+    logger.error('Failed to stop auto-role loop:', error);
+  }
+
+  try {
     healthServer.stop();
   } catch (error) {
     logger.error('Failed to stop health server:', error);
@@ -159,6 +170,7 @@ client.once(Events.ClientReady, () => {
   lfgManager.startPersistentLoop();
   lfgManager.startPromptReconcileLoop?.();
   joinToCreateManager.startStuckLobbyWatchdog?.();
+  autoRoleManager.startLoop?.();
   statsManager.registerCommands().catch((error) => {
     logger.error('Failed to register slash commands:', error);
   });
@@ -167,6 +179,9 @@ client.once(Events.ClientReady, () => {
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (await statsManager.handleInteraction(interaction)) {
+      return;
+    }
+    if (await autoRoleManager.handleInteraction(interaction)) {
       return;
     }
     await lfgManager.handleInteraction(interaction);

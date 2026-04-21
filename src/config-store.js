@@ -36,6 +36,8 @@ let manualVoiceActivityEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
 let manualVoicePanelMessageEnsured = false;
 let persistentLfgMessageEnsured = false;
+let voiceAutoRoleConfigEnsured = false;
+let voiceAutoRoleRequestsEnsured = false;
 
 const TEMP_OWNER_CACHE_TTL_MS = 15_000;
 const tempOwnerByOwnerKeyCache = new Map();
@@ -325,6 +327,227 @@ async function getGuildConfig(guildId) {
   };
 }
 
+async function getVoiceAutoRoleConfig(guildId) {
+  await ensureVoiceAutoRoleConfigTable();
+  const res = await query(
+    'SELECT config_json FROM voice_auto_role_config WHERE guild_id = $1',
+    [guildId]
+  );
+  const row = res.rows[0];
+  return normalizeAutoRoleConfig(row?.config_json || null);
+}
+
+async function getGuildVoiceTotals(guildId) {
+  await ensureTempVoiceDeleteLogsTable();
+  await ensureManualVoiceSessionLogsTable();
+  await ensureTempVoiceActivityTable();
+  await ensureManualVoiceActivityTable();
+
+  const res = await query(
+    `
+      WITH temp_expanded AS (
+        SELECT
+          elem->>'userId' AS user_id,
+          CASE
+            WHEN (elem->>'totalMs') ~ '^[0-9]+$'
+              THEN (elem->>'totalMs')::bigint
+            ELSE 0
+          END AS total_ms
+        FROM temp_voice_delete_logs logs
+        CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
+        WHERE logs.guild_id = $1
+          AND elem ? 'userId'
+      ),
+      manual_history AS (
+        SELECT user_id, total_ms
+        FROM manual_voice_session_logs
+        WHERE guild_id = $1
+      ),
+      temp_active AS (
+        SELECT
+          a.user_id,
+          GREATEST(
+            0,
+            a.total_ms + CASE
+              WHEN a.joined_at IS NULL THEN 0
+              ELSE FLOOR(EXTRACT(EPOCH FROM (NOW() - a.joined_at)) * 1000)
+            END
+          )::bigint AS total_ms
+        FROM temp_voice_activity a
+        INNER JOIN temp_voice_channels t ON t.channel_id = a.channel_id
+        WHERE t.guild_id = $1
+          AND a.is_active = TRUE
+      ),
+      manual_active AS (
+        SELECT
+          user_id,
+          GREATEST(
+            0,
+            FLOOR(EXTRACT(EPOCH FROM (NOW() - joined_at)) * 1000)
+          )::bigint AS total_ms
+        FROM manual_voice_activity
+        WHERE guild_id = $1
+      ),
+      all_rows AS (
+        SELECT user_id, total_ms FROM temp_expanded
+        UNION ALL
+        SELECT user_id, total_ms FROM manual_history
+        UNION ALL
+        SELECT user_id, total_ms FROM temp_active
+        UNION ALL
+        SELECT user_id, total_ms FROM manual_active
+      )
+      SELECT
+        user_id,
+        SUM(total_ms)::bigint AS total_ms
+      FROM all_rows
+      GROUP BY user_id
+      HAVING SUM(total_ms) > 0
+      ORDER BY SUM(total_ms) DESC, user_id ASC
+    `,
+    [guildId]
+  );
+
+  return res.rows.map((row) => ({
+    userId: row.user_id,
+    totalMs: Number(row.total_ms || 0),
+  }));
+}
+
+function mapVoiceAutoRoleRequestRow(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    guildId: row.guild_id,
+    userId: row.user_id,
+    roleId: row.role_id,
+    ruleKey: row.rule_key,
+    status: row.status,
+    totalMs: Number(row.total_ms || 0),
+    messageChannelId: row.message_channel_id || null,
+    messageId: row.message_id || null,
+    decidedBy: row.decided_by || null,
+    decidedAt: row.decided_at ? new Date(row.decided_at) : null,
+    createdAt: row.created_at ? new Date(row.created_at) : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at) : null,
+  };
+}
+
+async function getVoiceAutoRoleRequest(guildId, userId, roleId, ruleKey) {
+  await ensureVoiceAutoRoleRequestsTable();
+  const res = await query(
+    `
+      SELECT
+        id,
+        guild_id,
+        user_id,
+        role_id,
+        rule_key,
+        status,
+        total_ms,
+        message_channel_id,
+        message_id,
+        decided_by,
+        decided_at,
+        created_at,
+        updated_at
+      FROM voice_auto_role_requests
+      WHERE guild_id = $1
+        AND user_id = $2
+        AND role_id = $3
+        AND rule_key = $4
+      LIMIT 1
+    `,
+    [guildId, userId, roleId, ruleKey]
+  );
+  return mapVoiceAutoRoleRequestRow(res.rows[0]);
+}
+
+async function getVoiceAutoRoleRequestById(id) {
+  await ensureVoiceAutoRoleRequestsTable();
+  const res = await query(
+    `
+      SELECT
+        id,
+        guild_id,
+        user_id,
+        role_id,
+        rule_key,
+        status,
+        total_ms,
+        message_channel_id,
+        message_id,
+        decided_by,
+        decided_at,
+        created_at,
+        updated_at
+      FROM voice_auto_role_requests
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  );
+  return mapVoiceAutoRoleRequestRow(res.rows[0]);
+}
+
+async function createOrGetVoiceAutoRoleRequest({
+  guildId,
+  userId,
+  roleId,
+  ruleKey,
+  totalMs = 0,
+}) {
+  await ensureVoiceAutoRoleRequestsTable();
+  await query(
+    `
+      INSERT INTO voice_auto_role_requests (
+        guild_id,
+        user_id,
+        role_id,
+        rule_key,
+        status,
+        total_ms,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, 'pending', $5, NOW(), NOW())
+      ON CONFLICT (guild_id, user_id, role_id, rule_key)
+      DO NOTHING
+    `,
+    [guildId, userId, roleId, ruleKey, Math.max(0, Number(totalMs) || 0)]
+  );
+  return getVoiceAutoRoleRequest(guildId, userId, roleId, ruleKey);
+}
+
+async function updateVoiceAutoRoleRequestMessage(id, messageChannelId, messageId) {
+  await ensureVoiceAutoRoleRequestsTable();
+  await query(
+    `
+      UPDATE voice_auto_role_requests
+      SET message_channel_id = $1,
+          message_id = $2,
+          updated_at = NOW()
+      WHERE id = $3
+    `,
+    [messageChannelId, messageId, id]
+  );
+}
+
+async function updateVoiceAutoRoleRequestStatus(id, status, decidedBy = null) {
+  await ensureVoiceAutoRoleRequestsTable();
+  await query(
+    `
+      UPDATE voice_auto_role_requests
+      SET status = $1,
+          decided_by = $2,
+          decided_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $3
+    `,
+    [status, decidedBy, id]
+  );
+}
+
 async function getPersistentLfgMessage(guildId) {
   await ensurePersistentLfgMessageTable();
   const res = await query(
@@ -434,6 +657,112 @@ async function addTempChannel(
     [guildId, channelId, ownerId, roleId, lfgEnabled]
   );
   setTempOwnerCache(guildId, ownerId, channelId);
+}
+
+const DEFAULT_AUTO_ROLE_CONFIG = {
+  enabled: false,
+  requiredRoleMode: 'all_roles',
+  requiredRoleIds: [],
+  rules: [],
+  requireAdminApproval: false,
+  approvalChannelId: null,
+};
+
+function normalizeAutoRoleConfig(value) {
+  if (!value || typeof value !== 'object') {
+    return { ...DEFAULT_AUTO_ROLE_CONFIG };
+  }
+
+  const rules = Array.isArray(value.rules)
+    ? value.rules
+      .filter((rule) => rule && typeof rule === 'object')
+      .map((rule, index) => {
+        const rawHours = Number(rule.hours);
+        return {
+          id:
+            typeof rule.id === 'string' && rule.id.trim().length > 0
+              ? rule.id.trim()
+              : `rule_${index + 1}`,
+          condition:
+            rule.condition === 'more_than'
+            || rule.condition === 'less_than'
+            || rule.condition === 'equal_to'
+              ? rule.condition
+              : 'more_than',
+          hours: Number.isFinite(rawHours)
+            ? Math.max(0, Math.floor(rawHours))
+            : 0,
+          roleId: typeof rule.roleId === 'string' ? rule.roleId.trim() : '',
+        };
+      })
+      .filter((rule) => rule.roleId.length > 0)
+    : [];
+
+  return {
+    enabled: value.enabled === true,
+    requiredRoleMode: value.requiredRoleMode === 'selected_roles'
+      ? 'selected_roles'
+      : 'all_roles',
+    requiredRoleIds: Array.isArray(value.requiredRoleIds)
+      ? [...new Set(value.requiredRoleIds
+        .filter((id) => typeof id === 'string')
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0))]
+      : [],
+    rules,
+    requireAdminApproval: value.requireAdminApproval === true,
+    approvalChannelId:
+      typeof value.approvalChannelId === 'string' && value.approvalChannelId.trim().length > 0
+        ? value.approvalChannelId.trim()
+        : null,
+  };
+}
+
+async function ensureVoiceAutoRoleConfigTable() {
+  if (voiceAutoRoleConfigEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_auto_role_config (
+          guild_id TEXT PRIMARY KEY,
+          config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    voiceAutoRoleConfigEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure voice_auto_role_config table:', error);
+  }
+}
+
+async function ensureVoiceAutoRoleRequestsTable() {
+  if (voiceAutoRoleRequestsEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          role_id TEXT NOT NULL,
+          rule_key TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          total_ms BIGINT NOT NULL DEFAULT 0,
+          message_channel_id TEXT,
+          message_id TEXT,
+          decided_by TEXT,
+          decided_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (guild_id, user_id, role_id, rule_key)
+        )
+      `
+    );
+    voiceAutoRoleRequestsEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure voice_auto_role_requests table:', error);
+  }
 }
 
 async function getTempChannelsForGuild(guildId) {
@@ -1022,6 +1351,13 @@ async function getVoiceLeaderboard(guildId, limit = 10) {
 
 module.exports = {
   getGuildConfig,
+  getVoiceAutoRoleConfig,
+  getGuildVoiceTotals,
+  getVoiceAutoRoleRequest,
+  getVoiceAutoRoleRequestById,
+  createOrGetVoiceAutoRoleRequest,
+  updateVoiceAutoRoleRequestMessage,
+  updateVoiceAutoRoleRequestStatus,
   addTempChannel,
   clearPersistentLfgMessage,
   clearManualVoicePanelMessage,

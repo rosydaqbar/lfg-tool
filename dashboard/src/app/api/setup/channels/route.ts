@@ -91,6 +91,7 @@ export async function POST(request: Request) {
       lfgChannelId,
       enabledVoiceChannelIds: existingConfig.enabledVoiceChannelIds,
       joinToCreateLobbies: existingConfig.joinToCreateLobbies,
+      autoRoleConfig: existingConfig.autoRoleConfig,
     });
   } catch (error) {
     return NextResponse.json(

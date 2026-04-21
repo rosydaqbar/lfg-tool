@@ -13,7 +13,94 @@ type GuildConfig = {
     roleId: string | null;
     lfgEnabled: boolean;
   }[];
+  autoRoleConfig: AutoRoleConfig;
 };
+
+type AutoRoleCondition = "more_than" | "less_than" | "equal_to";
+
+type AutoRoleRule = {
+  id: string;
+  condition: AutoRoleCondition;
+  hours: number;
+  roleId: string;
+};
+
+type AutoRoleConfig = {
+  enabled: boolean;
+  requiredRoleMode: "all_roles" | "selected_roles";
+  requiredRoleIds: string[];
+  rules: AutoRoleRule[];
+  requireAdminApproval: boolean;
+  approvalChannelId: string | null;
+};
+
+const DEFAULT_AUTO_ROLE_CONFIG: AutoRoleConfig = {
+  enabled: false,
+  requiredRoleMode: "all_roles",
+  requiredRoleIds: [],
+  rules: [],
+  requireAdminApproval: false,
+  approvalChannelId: null,
+};
+
+function normalizeAutoRoleConfig(value: unknown): AutoRoleConfig {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_AUTO_ROLE_CONFIG };
+  }
+
+  const source = value as Record<string, unknown>;
+  const rules = Array.isArray(source.rules)
+    ? source.rules
+        .filter((rule) => rule && typeof rule === "object")
+        .map((rule, index) => {
+          const item = rule as Record<string, unknown>;
+          const rawHours = Number(item.hours);
+          const condition: AutoRoleCondition =
+            item.condition === "more_than" ||
+            item.condition === "less_than" ||
+            item.condition === "equal_to"
+              ? item.condition
+              : "more_than";
+          return {
+            id:
+              typeof item.id === "string" && item.id.trim().length > 0
+                ? item.id.trim()
+                : `rule_${index + 1}`,
+            condition,
+            hours: Number.isFinite(rawHours)
+              ? Math.max(0, Math.floor(rawHours))
+              : 0,
+            roleId: typeof item.roleId === "string" ? item.roleId.trim() : "",
+          };
+        })
+        .filter((rule) => rule.roleId.length > 0)
+    : [];
+
+  return {
+    enabled: source.enabled === true,
+    requiredRoleMode:
+      source.requiredRoleMode === "selected_roles"
+        ? "selected_roles"
+        : "all_roles",
+    requiredRoleIds: Array.isArray(source.requiredRoleIds)
+      ? Array.from(
+          new Set(
+            source.requiredRoleIds
+              .filter((id): id is string => typeof id === "string")
+              .map((id) => id.trim())
+              .filter((id) => id.length > 0)
+          )
+        )
+      : [],
+    rules,
+    requireAdminApproval: source.requireAdminApproval === true,
+    approvalChannelId:
+      typeof source.approvalChannelId === "string" &&
+      source.approvalChannelId.trim().length > 0
+        ? source.approvalChannelId.trim()
+        : null,
+  };
+}
 
 export type SetupState = {
   ownerDiscordId: string | null;
@@ -107,6 +194,11 @@ function getSqliteDb() {
       lobby_channel_id TEXT NOT NULL,
       role_id TEXT,
       lfg_enabled INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS voice_auto_role_config (
+      guild_id TEXT PRIMARY KEY,
+      config_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS temp_voice_channels (
       channel_id TEXT PRIMARY KEY,
@@ -218,6 +310,15 @@ async function ensureCoreConfigTables() {
           lobby_channel_id TEXT NOT NULL,
           role_id TEXT,
           lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_auto_role_config (
+          guild_id TEXT PRIMARY KEY,
+          config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `
     );
@@ -623,6 +724,15 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
         )
       `
     );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_auto_role_config (
+          guild_id TEXT PRIMARY KEY,
+          config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
 
     const configRes = await client.query(
       "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1",
@@ -632,6 +742,10 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
 
     const watchlistRes = await client.query(
       "SELECT voice_channel_id FROM voice_watchlist WHERE guild_id = $1 AND enabled = true",
+      [guildId]
+    );
+    const autoRoleRes = await client.query(
+      "SELECT config_json FROM voice_auto_role_config WHERE guild_id = $1",
       [guildId]
     );
 
@@ -661,6 +775,7 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
         roleId: row.role_id ?? null,
         lfgEnabled: row.lfg_enabled ?? true,
       })),
+      autoRoleConfig: normalizeAutoRoleConfig(autoRoleRes.rows[0]?.config_json),
     };
   } finally {
     client.release();
@@ -687,12 +802,26 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
         "SELECT voice_channel_id FROM voice_watchlist WHERE guild_id = ? AND enabled = 1"
       )
       .all(guildId) as { voice_channel_id: string }[];
+    const autoRoleRow = db
+      .prepare(
+        "SELECT config_json FROM voice_auto_role_config WHERE guild_id = ?"
+      )
+      .get(guildId) as { config_json?: string | null } | undefined;
 
     const lobbyRows = db
       .prepare(
         "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = ?"
       )
       .all(guildId) as { lobby_channel_id: string; role_id?: string | null; lfg_enabled?: number }[];
+
+    let parsedAutoRoleConfig: unknown = null;
+    if (autoRoleRow?.config_json) {
+      try {
+        parsedAutoRoleConfig = JSON.parse(autoRoleRow.config_json);
+      } catch {
+        parsedAutoRoleConfig = null;
+      }
+    }
 
     return {
       logChannelId: configRow?.log_channel_id ?? null,
@@ -703,6 +832,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
         roleId: row.role_id ?? null,
         lfgEnabled: row.lfg_enabled !== 0,
       })),
+      autoRoleConfig: normalizeAutoRoleConfig(parsedAutoRoleConfig),
     };
   }
 
@@ -716,6 +846,10 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
 
   const watchlistRes = await query(
     "SELECT voice_channel_id FROM voice_watchlist WHERE guild_id = $1 AND enabled = true",
+    [guildId]
+  );
+  const autoRoleRes = await query(
+    "SELECT config_json FROM voice_auto_role_config WHERE guild_id = $1",
     [guildId]
   );
 
@@ -745,6 +879,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
       roleId: row.role_id ?? null,
       lfgEnabled: row.lfg_enabled ?? true,
     })),
+    autoRoleConfig: normalizeAutoRoleConfig(autoRoleRes.rows[0]?.config_json),
   };
 }
 
@@ -806,6 +941,17 @@ async function saveGuildConfigWithClient(
       );
     }
   }
+
+  await client.query(
+    `
+      INSERT INTO voice_auto_role_config (guild_id, config_json, updated_at)
+      VALUES ($1, $2::jsonb, NOW())
+      ON CONFLICT(guild_id) DO UPDATE SET
+        config_json = EXCLUDED.config_json,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [guildId, JSON.stringify(normalizeAutoRoleConfig(config.autoRoleConfig))]
+  );
 }
 
 async function runDeleteIgnoreMissingTable(
@@ -857,6 +1003,11 @@ async function clearGuildSettingsWithClient(
   );
   await runDeleteIgnoreMissingTable(
     client,
+    "DELETE FROM voice_auto_role_config WHERE guild_id = $1",
+    [guildId]
+  );
+  await runDeleteIgnoreMissingTable(
+    client,
     "DELETE FROM guild_config WHERE guild_id = $1",
     [guildId]
   );
@@ -903,6 +1054,11 @@ export async function clearGuildSettings(guildId: string) {
       runSqliteDeleteIgnoreMissingTable(
         db,
         "DELETE FROM lfg_persistent_message WHERE guild_id = ?",
+        [targetGuildId]
+      );
+      runSqliteDeleteIgnoreMissingTable(
+        db,
+        "DELETE FROM voice_auto_role_config WHERE guild_id = ?",
         [targetGuildId]
       );
       runSqliteDeleteIgnoreMissingTable(
@@ -971,6 +1127,20 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
           "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES (?, ?, ?, ?)"
         ).run(guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ? 1 : 0);
       }
+
+      db.prepare(
+        `
+          INSERT INTO voice_auto_role_config (guild_id, config_json, updated_at)
+          VALUES (?, ?, ?)
+          ON CONFLICT(guild_id) DO UPDATE SET
+            config_json = excluded.config_json,
+            updated_at = excluded.updated_at
+        `
+      ).run(
+        guildId,
+        JSON.stringify(normalizeAutoRoleConfig(config.autoRoleConfig)),
+        now
+      );
     });
 
     tx();
@@ -1032,6 +1202,15 @@ export async function saveGuildConfigWithDatabaseUrl(
           lobby_channel_id TEXT NOT NULL,
           role_id TEXT,
           lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `
+    );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_auto_role_config (
+          guild_id TEXT PRIMARY KEY,
+          config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `
     );
