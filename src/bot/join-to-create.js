@@ -448,6 +448,26 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
 
     try {
       for (const guild of client.guilds.cache.values()) {
+        const trackedTempChannels = await configStore
+          .getTempChannelsForGuild(guild.id)
+          .catch(() => []);
+
+        for (const row of trackedTempChannels) {
+          const trackedChannelId = row?.channel_id;
+          if (!trackedChannelId) continue;
+          const trackedChannel = await guild.channels.fetch(trackedChannelId).catch(() => null);
+
+          if (!trackedChannel || !trackedChannel.isVoiceBased() || trackedChannel.members.size === 0) {
+            await cleanupTempChannel({
+              channelId: trackedChannelId,
+              guild,
+              channel: trackedChannel,
+            }).catch((error) => {
+              console.error('Failed to reconcile stale/empty temp channel:', error);
+            });
+          }
+        }
+
         const config = await configStore.getGuildConfig(guild.id).catch(() => null);
         if (!config) continue;
 
