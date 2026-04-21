@@ -122,7 +122,7 @@ function formatDuration(totalMs) {
   return `${hours}h ${minutes}m`;
 }
 
-function buildVoiceActivityContainer(channelId, activity) {
+function buildVoiceActivityContainer(channelId, activity, refreshedAtTimestamp) {
   const active = (activity?.active || []).slice(0, 10);
   const history = (activity?.history || []).slice(0, 10);
 
@@ -155,6 +155,8 @@ function buildVoiceActivityContainer(channelId, activity) {
     '',
     '**History**',
     ...historyLines,
+    '',
+    `-# Last update: <t:${refreshedAtTimestamp}:R>`,
   ].join('\n');
 
   return new ContainerBuilder()
@@ -186,6 +188,7 @@ function buildJoinToCreatePromptPayload({
   ownerId,
   userLimit = 0,
   voiceActivity = { active: [], history: [], activeCount: 0, historyCount: 0 },
+  refreshedAtTimestamp = Math.floor(Date.now() / 1000),
 }) {
   const introText = lfgEnabled
     ? `Hi <@${ownerId}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?`
@@ -228,7 +231,7 @@ function buildJoinToCreatePromptPayload({
       ...(lfgEnabled ? buildLfgPromptRows(channelId) : []),
       topSeparator,
       container,
-      buildVoiceActivityContainer(channelId, voiceActivity),
+      buildVoiceActivityContainer(channelId, voiceActivity, refreshedAtTimestamp),
     ],
     flags: MessageFlags.IsComponentsV2,
   };

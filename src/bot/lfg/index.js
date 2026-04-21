@@ -26,12 +26,15 @@ const {
   LFG_SEND_PREFIX,
   MY_STATS_PREFIX,
   LEADERBOARD_PREFIX,
+  JTC_PROMPT_RECONCILE_INTERVAL_MS,
 } = require('./constants');
 
 function createLfgManager({ client, getLogChannel, configStore, env, statsManager }) {
   const tempPromptMessageIds = new Map();
   const persistentRefreshAtByGuild = new Map();
   const promptUpdateInFlight = new Map();
+  let promptReconcileInterval = null;
+  let promptReconcileRunning = false;
   const cooldownTracker = createCooldownTracker();
   const voiceContextHelpers = createVoiceContextHelpers(configStore);
   const persistentManager = createPersistentLfgManager({
@@ -250,6 +253,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         ownerId: tempInfo.ownerId,
         userLimit: channel.userLimit ?? 0,
         voiceActivity: await getVoiceActivitySnapshot(channel),
+        refreshedAtTimestamp: Math.floor(Date.now() / 1000),
       });
 
       let message = null;
@@ -364,6 +368,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         ownerId: member.id,
         userLimit: channel.userLimit ?? 0,
         voiceActivity: await getVoiceActivitySnapshot(channel),
+        refreshedAtTimestamp: Math.floor(Date.now() / 1000),
       });
 
       const existingMessageId = tempPromptMessageIds.get(channel.id) || null;
@@ -435,6 +440,44 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     }
   }
 
+  async function runPromptReconcileOnce() {
+    if (promptReconcileRunning) return;
+    promptReconcileRunning = true;
+
+    try {
+      for (const guild of client.guilds.cache.values()) {
+        const rows = await configStore.getTempChannelsForGuild(guild.id).catch(() => []);
+        for (const row of rows) {
+          await refreshJoinToCreatePrompt(guild, row.channel_id).catch((error) => {
+            console.error('Failed JTC prompt reconcile for channel:', row.channel_id, error);
+          });
+        }
+      }
+    } finally {
+      promptReconcileRunning = false;
+    }
+  }
+
+  function startPromptReconcileLoop() {
+    if (promptReconcileInterval) return;
+
+    runPromptReconcileOnce().catch((error) => {
+      console.error('Failed to run initial JTC prompt reconcile:', error);
+    });
+
+    promptReconcileInterval = setInterval(() => {
+      runPromptReconcileOnce().catch((error) => {
+        console.error('Failed to run scheduled JTC prompt reconcile:', error);
+      });
+    }, JTC_PROMPT_RECONCILE_INTERVAL_MS);
+  }
+
+  function stopPromptReconcileLoop() {
+    if (!promptReconcileInterval) return;
+    clearInterval(promptReconcileInterval);
+    promptReconcileInterval = null;
+  }
+
   async function handleInteraction(interaction) {
     if (interaction.isButton()) {
       await handleButtonInteraction(interaction, sharedDeps);
@@ -458,7 +501,9 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     refreshJoinToCreatePrompt,
     sendJoinToCreatePrompt,
     startPersistentLoop: persistentManager.startPersistentLoop,
+    startPromptReconcileLoop,
     stopPersistentLoop: persistentManager.stopPersistentLoop,
+    stopPromptReconcileLoop,
   };
 }
 

@@ -112,6 +112,12 @@ async function shutdown(signal) {
   }
 
   try {
+    lfgManager.stopPromptReconcileLoop?.();
+  } catch (error) {
+    logger.error('Failed to stop JTC prompt reconcile loop:', error);
+  }
+
+  try {
     joinToCreateManager.stopStuckLobbyWatchdog?.();
   } catch (error) {
     logger.error('Failed to stop JTC watchdog loop:', error);
@@ -151,6 +157,7 @@ process.on('SIGINT', () => {
 client.once(Events.ClientReady, () => {
   logger.info(`Logged in as ${client.user.tag}`);
   lfgManager.startPersistentLoop();
+  lfgManager.startPromptReconcileLoop?.();
   joinToCreateManager.startStuckLobbyWatchdog?.();
   statsManager.registerCommands().catch((error) => {
     logger.error('Failed to register slash commands:', error);
