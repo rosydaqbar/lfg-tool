@@ -155,8 +155,6 @@ function buildVoiceActivityContainer(channelId, activity, refreshedAtTimestamp) 
     '',
     '**History**',
     ...historyLines,
-    '',
-    `-# Last update: <t:${refreshedAtTimestamp}:R>`,
   ].join('\n');
 
   return new ContainerBuilder()
@@ -174,6 +172,11 @@ function buildVoiceActivityContainer(channelId, activity, refreshedAtTimestamp) 
           .setEmoji('🏆')
           .setLabel('Leaderboard')
           .setStyle(ButtonStyle.Secondary)
+        )
+    )
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `-# Last update: <t:${refreshedAtTimestamp}:F>`
       )
     );
 }
