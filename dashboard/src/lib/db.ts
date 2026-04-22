@@ -488,9 +488,37 @@ async function ensureSetupStateTable() {
 function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupState {
   const value = (snake: string, camel: string) => row?.[snake] ?? row?.[camel];
 
+  const steps = {
+    ownerClaimed: Boolean(value("owner_discord_id", "ownerDiscordId")),
+    discordAppConfigured: Boolean(
+      value("discord_client_id", "discordClientId")
+        && (
+          value("discord_client_secret_encrypted", "discordClientSecretEncrypted")
+          || value("discord_client_secret", "discordClientSecret")
+        )
+    ),
+    botTokenValidated: Boolean(
+      value("bot_token_encrypted", "botTokenEncrypted")
+      || value("bot_token", "botToken")
+    ),
+    guildValidated: Boolean(value("selected_guild_id", "selectedGuildId")),
+    inviteChecked: Boolean(value("selected_guild_id", "selectedGuildId")),
+    databaseValidated: Boolean(value("database_validated_at", "databaseValidatedAt")),
+    channelsSaved: Boolean(value("log_channel_id", "logChannelId")),
+  };
+
+  const setupCompleteFlag = Boolean(value("setup_complete", "setupComplete"));
+  const setupComplete = setupCompleteFlag
+    && steps.ownerClaimed
+    && steps.discordAppConfigured
+    && steps.botTokenValidated
+    && steps.guildValidated
+    && steps.databaseValidated
+    && steps.channelsSaved;
+
   return {
     ownerDiscordId: (value("owner_discord_id", "ownerDiscordId") as string | null) ?? null,
-    setupComplete: Boolean(value("setup_complete", "setupComplete")),
+    setupComplete,
     selectedGuildId: (value("selected_guild_id", "selectedGuildId") as string | null) ?? null,
     logChannelId: (value("log_channel_id", "logChannelId") as string | null) ?? null,
     lfgChannelId: (value("lfg_channel_id", "lfgChannelId") as string | null) ?? null,
@@ -518,24 +546,7 @@ function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupStat
       value("database_url_encrypted", "databaseUrlEncrypted")
       || value("database_url", "databaseUrl")
     ),
-    steps: {
-      ownerClaimed: Boolean(value("owner_discord_id", "ownerDiscordId")),
-      discordAppConfigured: Boolean(
-        value("discord_client_id", "discordClientId")
-          && (
-            value("discord_client_secret_encrypted", "discordClientSecretEncrypted")
-            || value("discord_client_secret", "discordClientSecret")
-          )
-      ),
-      botTokenValidated: Boolean(
-        value("bot_token_encrypted", "botTokenEncrypted")
-        || value("bot_token", "botToken")
-      ),
-      guildValidated: Boolean(value("selected_guild_id", "selectedGuildId")),
-      inviteChecked: Boolean(value("selected_guild_id", "selectedGuildId")),
-      databaseValidated: Boolean(value("database_validated_at", "databaseValidatedAt")),
-      channelsSaved: Boolean(value("log_channel_id", "logChannelId")),
-    },
+    steps,
   };
 }
 
@@ -574,7 +585,7 @@ export async function getSetupState(): Promise<SetupState> {
   const res = await query(`SELECT * FROM setup_state WHERE id = 1`);
   let state = parseSetupStateRow(res.rows[0]);
 
-  if (!state.setupComplete) {
+  if (!state.setupComplete && !state.steps.guildValidated) {
     let existing: { guild_id?: string; log_channel_id?: string; lfg_channel_id?: string } | undefined;
     try {
       const configRes = await query(
