@@ -213,10 +213,13 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         }),
       });
       const savePayload = (await saveResponse.json().catch(() => null)) as
-        | { error?: string }
+        | { error?: string; setup?: SetupState }
         | null;
       if (!saveResponse.ok) {
         throw new Error(savePayload?.error || "Failed to save Discord app credentials");
+      }
+      if (savePayload?.setup) {
+        setSetup(savePayload.setup);
       }
 
       const tokenResponse = await fetch("/api/setup/token", {
@@ -225,15 +228,28 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         body: JSON.stringify({ token: tokenInput }),
       });
       const tokenPayload = (await tokenResponse.json().catch(() => null)) as
-        | { error?: string }
+        | { error?: string; setup?: SetupState; botName?: string; botTag?: string }
         | null;
       if (!tokenResponse.ok) {
         throw new Error(tokenPayload?.error || "Failed to validate bot token");
       }
 
+      if (tokenPayload?.setup) {
+        setSetup(tokenPayload.setup);
+      } else {
+        setSetup((previous) =>
+          previous
+            ? {
+                ...previous,
+                botTokenSet: true,
+              }
+            : previous
+        );
+      }
+
       setDiscordClientSecretInput("");
       setTokenInput("");
-      await reloadState();
+      await reloadState().catch(() => null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to validate and save token");
     } finally {
