@@ -20,6 +20,7 @@ export default async function Home() {
 
   const hasDiscordOAuthBootstrap =
     Boolean(setup.discordClientId) && Boolean(setup.discordClientSecretSet);
+  const requiresSetup = !setup.setupComplete;
 
   const shouldShowSetupCta = !setup.setupComplete && !hasDiscordOAuthBootstrap;
   const dashboardAccess =
@@ -70,26 +71,38 @@ export default async function Home() {
 
             <Card className="border-border/70 bg-card/80 shadow-xl shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-150">
               <CardHeader>
-                <CardTitle className="text-2xl">Sign in to continue</CardTitle>
+                <CardTitle className="text-2xl">
+                  {requiresSetup ? "Setup required" : "Sign in to continue"}
+                </CardTitle>
                 <CardDescription>
-                  {setup.setupComplete || hasDiscordOAuthBootstrap
+                  {requiresSetup
+                    ? "Finish setup first to configure Discord app credentials, bot token, guild, database, and channels."
+                    : setup.setupComplete || hasDiscordOAuthBootstrap
                     ? "Authenticate with Discord to load your guilds and configure logging."
                     : "Start the setup wizard to configure Discord app credentials, bot token, guild, database, and channels."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-2">
-                  <Button asChild className="w-full">
-                    <Link href={setup.setupComplete || hasDiscordOAuthBootstrap ? "/api/auth/signin/discord" : "/setup"}>
-                      {setup.setupComplete || hasDiscordOAuthBootstrap ? "Sign in with Discord" : "Setup Discord bot"}
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" className="w-full">
-                    <Link href="/setup">Open Setup</Link>
-                  </Button>
+                  {requiresSetup ? (
+                    <Button asChild className="w-full">
+                      <Link href="/setup">Open setup wizard</Link>
+                    </Button>
+                  ) : (
+                    <>
+                      <Button asChild className="w-full">
+                        <Link href="/api/auth/signin/discord">Sign in with Discord</Link>
+                      </Button>
+                      <Button asChild variant="outline" className="w-full">
+                        <Link href="/setup">Open Setup</Link>
+                      </Button>
+                    </>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {setup.setupComplete || hasDiscordOAuthBootstrap
+                  {requiresSetup
+                    ? "First-run setup required before dashboard access."
+                    : setup.setupComplete || hasDiscordOAuthBootstrap
                     ? "Only the admin Discord user is allowed to access the dashboard."
                     : "First-run setup required before dashboard access."}
                 </p>
