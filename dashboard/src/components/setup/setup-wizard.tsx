@@ -51,6 +51,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [phase, setPhase] = useState<SetupPhase>("A");
   const [discordSubstep, setDiscordSubstep] = useState<1 | 2 | 3 | 4>(1);
+  const [guildSubstep, setGuildSubstep] = useState<1 | 2 | 3>(1);
 
   async function reloadState() {
     setLoading(true);
@@ -391,6 +392,9 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const discordStep2Done = true;
   const discordStep3Done = ownerClaimedByCurrentUser;
   const discordStep4Done = Boolean(setup?.botTokenSet);
+  const guildStep1Done = Boolean(setup?.selectedGuildId);
+  const guildStep2Done = true;
+  const guildStep3Done = Boolean(setup?.logChannelId);
 
   const canOpenDiscordSubstep = (step: 1 | 2 | 3 | 4) => {
     if (step === 1) return true;
@@ -414,6 +418,23 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       return;
     }
   }, [phase, discordStep1Done, discordStep3Done, discordStep4Done]);
+
+  const canOpenGuildSubstep = (step: 1 | 2 | 3) => {
+    if (step === 1) return true;
+    return guildStep1Done;
+  };
+
+  useEffect(() => {
+    if (phase !== "C") return;
+    if (!guildStep1Done) {
+      setGuildSubstep(1);
+      return;
+    }
+    if (!guildStep3Done) {
+      setGuildSubstep(3);
+      return;
+    }
+  }, [phase, guildStep1Done, guildStep3Done]);
 
   if (loading && !setup) {
     return <div className="text-sm text-muted-foreground">Loading setup wizard...</div>;
@@ -439,6 +460,47 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           type="button"
           disabled={!enabled}
           onClick={() => enabled && setDiscordSubstep(step)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className={`inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs ${
+                done ? "border-emerald-500/40 text-emerald-400" : "border-border text-muted-foreground"
+              }`}
+            >
+              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : step}
+            </span>
+            <span className={`text-sm font-medium ${enabled ? "text-foreground" : "text-muted-foreground"}`}>
+              {title}
+            </span>
+          </div>
+          {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        </button>
+        {open ? <div className="space-y-4 border-t border-border px-4 py-4">{children}</div> : null}
+      </div>
+    );
+  }
+
+  function GuildSubstepCard({
+    step,
+    title,
+    done,
+    children,
+  }: {
+    step: 1 | 2 | 3;
+    title: string;
+    done: boolean;
+    children: React.ReactNode;
+  }) {
+    const open = guildSubstep === step;
+    const enabled = canOpenGuildSubstep(step);
+
+    return (
+      <div className="rounded-lg border border-border bg-background">
+        <button
+          type="button"
+          disabled={!enabled}
+          onClick={() => enabled && setGuildSubstep(step)}
           className="flex w-full items-center justify-between px-4 py-3 text-left"
         >
           <div className="flex items-center gap-3">
@@ -720,9 +782,12 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           ) : null}
 
           {phase === "C" ? (
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-3 rounded-lg border border-border bg-background p-4">
-                <p className="text-sm font-medium">C1. Add Guild ID</p>
+            <div className="space-y-3">
+              <GuildSubstepCard
+                step={1}
+                title="Add Guild ID"
+                done={guildStep1Done}
+              >
                 <label htmlFor="guild-id" className="text-sm font-medium">Guild ID</label>
                 <Input
                   id="guild-id"
@@ -733,10 +798,13 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>
                   Validate Guild
                 </Button>
-              </div>
+              </GuildSubstepCard>
 
-              <div className="space-y-3 rounded-lg border border-border bg-background p-4">
-                <p className="text-sm font-medium">C2. Invite Bot</p>
+              <GuildSubstepCard
+                step={2}
+                title="Invite Bot"
+                done={guildStep2Done}
+              >
                 <p className="text-xs text-muted-foreground">Skippable step.</p>
                 <Button onClick={checkInvite} disabled={busyKey === "invite" || !setup?.selectedGuildId}>
                   Check Invite Status
@@ -756,10 +824,13 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                     Open Invite Link
                   </a>
                 ) : null}
-              </div>
+              </GuildSubstepCard>
 
-              <div className="space-y-3 rounded-lg border border-border bg-background p-4 md:col-span-1">
-                <p className="text-sm font-medium">C3. Set Up Channels</p>
+              <GuildSubstepCard
+                step={3}
+                title="Set Up Channels"
+                done={guildStep3Done}
+              >
                 <Button onClick={loadChannels} disabled={busyKey === "channels-load" || !setup?.selectedGuildId}>
                   Load Text Channels
                 </Button>
@@ -796,7 +867,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 <Button onClick={saveChannels} disabled={busyKey === "channels-save" || !logChannelId}>
                   Save Channel Setup
                 </Button>
-              </div>
+              </GuildSubstepCard>
             </div>
           ) : null}
 
