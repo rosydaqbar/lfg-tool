@@ -373,368 +373,389 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   }
 
   const ownerClaimedByCurrentUser = setup?.ownerDiscordId === currentUserId;
+  const phaseOrder: SetupPhase[] = ["A", "B", "C", "FINAL"];
+  const phaseIndex = phaseOrder.indexOf(phase);
+  const previousPhase = phaseIndex > 0 ? phaseOrder[phaseIndex - 1] : null;
+  const nextPhase = phaseIndex >= 0 && phaseIndex < phaseOrder.length - 1 ? phaseOrder[phaseIndex + 1] : null;
+
+  const phaseTitles: Record<SetupPhase, string> = {
+    A: "Set Up Database",
+    B: "Set Up Discord",
+    C: "Set Up Guild",
+    FINAL: "Finalize",
+  };
+
+  function canOpenPhase(target: SetupPhase) {
+    if (target === "A") return true;
+    if (target === "B") return isDatabaseReady;
+    if (target === "C") return isDatabaseReady && isDiscordReady;
+    return canFinalize;
+  }
+
+  const nextDisabled =
+    phase === "A"
+      ? !isDatabaseReady
+      : phase === "B"
+        ? !isDiscordReady
+        : phase === "C"
+          ? !isGuildReady
+          : !canFinalize;
+
+  const nextButtonLabel =
+    phase === "A"
+      ? "Next: Set Up Discord"
+      : phase === "B"
+        ? "Next: Set Up Guild"
+        : phase === "C"
+          ? "Next: Finalize"
+          : "Complete Setup";
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 text-sm font-medium">Setup Flow</div>
-        <div className="grid gap-2 md:grid-cols-4">
-          <Button
-            type="button"
-            variant={phase === "A" ? "default" : "outline"}
-            onClick={() => setPhase("A")}
-          >
-            A. Database
-          </Button>
-          <Button
-            type="button"
-            variant={phase === "B" ? "default" : "outline"}
-            disabled={!isDatabaseReady}
-            onClick={() => setPhase("B")}
-          >
-            B. Discord
-          </Button>
-          <Button
-            type="button"
-            variant={phase === "C" ? "default" : "outline"}
-            disabled={!isDatabaseReady || !isDiscordReady}
-            onClick={() => setPhase("C")}
-          >
-            C. Guild
-          </Button>
-          <Button
-            type="button"
-            variant={phase === "FINAL" ? "default" : "outline"}
-            disabled={!canFinalize}
-            onClick={() => setPhase("FINAL")}
-          >
-            Finalize
-          </Button>
+    <div className="rounded-2xl border border-border bg-card shadow-lg shadow-black/5 overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-5">
+        <div>
+          <h2 className="text-xl font-semibold">Setup Wizard</h2>
+          <p className="text-sm text-muted-foreground">{phaseTitles[phase]}</p>
+        </div>
+        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground">
+          Need help?
+        </Button>
+      </div>
+
+      <div className="border-t border-border px-6 py-6">
+        {error ? (
+          <div className="mb-5 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive whitespace-pre-wrap">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="rounded-xl border border-border bg-muted/10 p-5 space-y-6">
+          <div className="grid gap-3 md:grid-cols-4">
+            {phaseOrder.map((item, index) => {
+              const enabled = canOpenPhase(item);
+              const active = item === phase;
+              const done = phaseOrder.indexOf(item) < phaseIndex;
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  className="text-left"
+                  disabled={!enabled}
+                  onClick={() => setPhase(item)}
+                >
+                  <div className={`h-1 rounded-full ${active ? "bg-primary" : done ? "bg-primary/50" : "bg-muted"}`} />
+                  <p className={`mt-2 text-xs font-medium ${active ? "text-foreground" : "text-muted-foreground"}`}>
+                    Step {index + 1}
+                  </p>
+                  <p className={`text-sm ${active ? "text-foreground" : "text-muted-foreground"}`}>
+                    {item === "A" ? "Database" : item === "B" ? "Discord" : item === "C" ? "Guild" : "Finalize"}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          {phase === "A" ? (
+            <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+              <p className="text-sm font-medium">A1. Configure Supabase Database</p>
+              <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-foreground">
+                Use Supabase Transaction Pooler URL (port <code>6543</code>) and include <code>sslmode=require</code>.
+              </div>
+              <label htmlFor="db-url" className="text-sm font-medium">Database URL</label>
+              <Input
+                id="db-url"
+                type="password"
+                value={dbUrlInput}
+                onChange={(event) => setDbUrlInput(event.target.value)}
+                placeholder="postgresql://...:6543/postgres?sslmode=require"
+              />
+
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={applySchema}
+                  onChange={(event) => setApplySchema(event.target.checked)}
+                />
+                Apply baseline schema check
+              </label>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-foreground">Schema SQL (`scripts/schema-postgres.sql`)</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={copySchemaSql}
+                    disabled={!schemaSql.trim()}
+                  >
+                    {schemaCopied ? "Copied" : "Copy SQL"}
+                  </Button>
+                </div>
+                <pre className="max-h-56 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-5 text-foreground">
+                  <code>{schemaLoading ? "Loading schema SQL..." : schemaSql || "Schema SQL unavailable."}</code>
+                </pre>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button onClick={validateDatabase} disabled={busyKey === "database" || !dbUrlInput.trim()}>
+                  Validate Database
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {setup?.databaseValidatedAt ? `Validated at ${new Date(setup.databaseValidatedAt).toLocaleString()}` : "Not validated yet"}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          {phase === "B" ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+                <p className="text-sm font-medium">B1. Configure Discord App Basics</p>
+                <label htmlFor="discord-client-id-basic" className="text-sm font-medium">Discord Client ID</label>
+                <Input
+                  id="discord-client-id-basic"
+                  value={discordClientIdInput}
+                  onChange={(event) => setDiscordClientIdInput(event.target.value)}
+                  placeholder="1234567890"
+                />
+                <label htmlFor="discord-client-secret-basic" className="text-sm font-medium">Discord Client Secret</label>
+                <Input
+                  id="discord-client-secret-basic"
+                  type="password"
+                  value={discordClientSecretInput}
+                  onChange={(event) => setDiscordClientSecretInput(event.target.value)}
+                  placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
+                />
+                <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+                  <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+                  <code className="block rounded bg-background px-2 py-1 break-all">
+                    http://localhost:3000/api/auth/callback/discord
+                  </code>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={saveDiscordApp}
+                    disabled={
+                      busyKey === "discord-app" ||
+                      !discordClientIdInput.trim() ||
+                      (!discordClientSecretInput.trim() && !setup?.discordClientSecretSet)
+                    }
+                  >
+                    Save and Enable Login
+                  </Button>
+                  {setup?.discordClientId && setup?.discordClientSecretSet ? (
+                    <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+                  <p className="text-sm font-medium">B2. Login with Discord</p>
+                  <p className="text-sm text-muted-foreground">You are signed in as <strong>{currentUserId}</strong>.</p>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/api/auth/signout">Switch account</Link>
+                  </Button>
+                </div>
+
+                <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+                  <p className="text-sm font-medium">B3. Claim Setup Owner</p>
+                  <p className="text-sm text-muted-foreground">
+                    Current owner: <code>{setup?.ownerDiscordId || "(not claimed)"}</code>
+                  </p>
+                  <Button
+                    onClick={claimOwner}
+                    disabled={busyKey === "claim" || ownerClaimedByCurrentUser}
+                  >
+                    {ownerClaimedByCurrentUser ? "Owner Claimed" : "Claim Setup Owner"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-border bg-background p-4 md:col-span-2">
+                <p className="text-sm font-medium">B4. Confirm Discord App and Save Bot Token</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label htmlFor="discord-client-id-confirm" className="text-sm font-medium">Discord Client ID</label>
+                    <Input
+                      id="discord-client-id-confirm"
+                      value={discordClientIdInput}
+                      onChange={(event) => setDiscordClientIdInput(event.target.value)}
+                      placeholder="1234567890"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="discord-client-secret-confirm" className="text-sm font-medium">Discord Client Secret</label>
+                    <Input
+                      id="discord-client-secret-confirm"
+                      type="password"
+                      value={discordClientSecretInput}
+                      onChange={(event) => setDiscordClientSecretInput(event.target.value)}
+                      placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
+                    />
+                  </div>
+                </div>
+                <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+                  <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+                  <code className="block rounded bg-background px-2 py-1 break-all">
+                    http://localhost:3000/api/auth/callback/discord
+                  </code>
+                </div>
+                <label htmlFor="bot-token" className="text-sm font-medium">Discord Bot Token</label>
+                <Input
+                  id="bot-token"
+                  type="password"
+                  value={tokenInput}
+                  onChange={(event) => setTokenInput(event.target.value)}
+                  placeholder={setup?.botTokenSet ? "Token already saved" : "Paste token"}
+                />
+                {setup?.botDisplayName ? (
+                  <p className="text-sm text-muted-foreground">Bot detected: <strong>{setup.botDisplayName}</strong></p>
+                ) : null}
+                <Button
+                  onClick={validateAndSaveToken}
+                  disabled={busyKey === "discord-token-combined" || !tokenInput.trim()}
+                >
+                  Validate and Save Token
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {phase === "C" ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+                <p className="text-sm font-medium">C1. Add Guild ID</p>
+                <label htmlFor="guild-id" className="text-sm font-medium">Guild ID</label>
+                <Input
+                  id="guild-id"
+                  value={guildIdInput}
+                  onChange={(event) => setGuildIdInput(event.target.value)}
+                  placeholder="670147766839803924"
+                />
+                <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>
+                  Validate Guild
+                </Button>
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+                <p className="text-sm font-medium">C2. Invite Bot</p>
+                <p className="text-xs text-muted-foreground">Skippable step.</p>
+                <Button onClick={checkInvite} disabled={busyKey === "invite" || !setup?.selectedGuildId}>
+                  Check Invite Status
+                </Button>
+                {alreadyInvited !== null ? (
+                  <p className="text-sm text-muted-foreground">
+                    {alreadyInvited ? "Bot is already invited to this guild." : "Bot is not in the guild yet."}
+                  </p>
+                ) : null}
+                {!alreadyInvited && inviteUrl ? (
+                  <a
+                    href={inviteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                  >
+                    Open Invite Link
+                  </a>
+                ) : null}
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-border bg-background p-4 md:col-span-1">
+                <p className="text-sm font-medium">C3. Set Up Channels</p>
+                <Button onClick={loadChannels} disabled={busyKey === "channels-load" || !setup?.selectedGuildId}>
+                  Load Text Channels
+                </Button>
+
+                <div className="space-y-2">
+                  <label htmlFor="log-channel" className="text-sm font-medium">Log Channel (required)</label>
+                  <select
+                    id="log-channel"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    value={logChannelId}
+                    onChange={(event) => setLogChannelId(event.target.value)}
+                  >
+                    <option value="">Select channel</option>
+                    {textChannels.map((channel) => (
+                      <option key={channel.id} value={channel.id}>{channel.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="lfg-channel" className="text-sm font-medium">LFG Channel (optional)</label>
+                  <select
+                    id="lfg-channel"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    value={lfgChannelId}
+                    onChange={(event) => setLfgChannelId(event.target.value)}
+                  >
+                    <option value="">Use fallback behavior</option>
+                    {textChannels.map((channel) => (
+                      <option key={channel.id} value={channel.id}>{channel.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <Button onClick={saveChannels} disabled={busyKey === "channels-save" || !logChannelId}>
+                  Save Channel Setup
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {phase === "FINAL" ? (
+            <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+              <h3 className="text-lg font-semibold">Ready to finalize</h3>
+              <p className="text-sm text-muted-foreground">Review completion checks before continuing.</p>
+              <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                <li>Database validated: {setup?.databaseValidatedAt ? "Yes" : "No"}</li>
+                <li>Discord app configured: {setup?.discordClientId && setup?.discordClientSecretSet ? "Yes" : "No"}</li>
+                <li>Bot token saved: {setup?.botTokenSet ? "Yes" : "No"}</li>
+                <li>Owner claimed: {setup?.ownerDiscordId ? "Yes" : "No"}</li>
+                <li>Guild selected: {setup?.selectedGuildId ? "Yes" : "No"}</li>
+                <li>Channels saved: {setup?.logChannelId ? "Yes" : "No"}</li>
+              </ul>
+            </div>
+          ) : null}
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive whitespace-pre-wrap">
-          {error}
-        </div>
-      ) : null}
-
-      {phase === "A" ? (
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold">A. Set Up Database</h2>
-          <p className="text-sm text-muted-foreground">
-            One step only. We support Supabase integration in setup.
-          </p>
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium">Step A1 - Configure Supabase Database</p>
-          <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-foreground">
-            Use Supabase Transaction Pooler URL (port <code>6543</code>) and include <code>sslmode=require</code>.
-          </div>
-          <label htmlFor="db-url" className="text-sm font-medium">Database URL</label>
-          <Input
-            id="db-url"
-            type="password"
-            value={dbUrlInput}
-            onChange={(event) => setDbUrlInput(event.target.value)}
-            placeholder="postgresql://...:6543/postgres?sslmode=require"
-          />
-
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={applySchema}
-              onChange={(event) => setApplySchema(event.target.checked)}
-            />
-            Apply baseline schema check
-          </label>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-foreground">Schema SQL (`scripts/schema-postgres.sql`)</p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={copySchemaSql}
-                disabled={!schemaSql.trim()}
-              >
-                {schemaCopied ? "Copied" : "Copy SQL"}
-              </Button>
-            </div>
-            <pre className="max-h-56 overflow-auto rounded-md border border-border bg-background p-3 text-[11px] leading-5 text-foreground">
-              <code>{schemaLoading ? "Loading schema SQL..." : schemaSql || "Schema SQL unavailable."}</code>
-            </pre>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button onClick={validateDatabase} disabled={busyKey === "database" || !dbUrlInput.trim()}>
-              Validate Database
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              {setup?.databaseValidatedAt ? `Validated at ${new Date(setup.databaseValidatedAt).toLocaleString()}` : "Not validated yet"}
-            </span>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              onClick={() => setPhase("B")}
-              disabled={!isDatabaseReady}
-            >
-              Continue to Set Up Discord
-            </Button>
-          </div>
-        </div>
-      </section>
-      ) : null}
-
-      {phase === "B" ? (
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold">B. Set Up Discord</h2>
-          <p className="text-sm text-muted-foreground">
-            Configure app, authenticate, claim owner, then validate and save token.
-          </p>
+      <div className="border-t border-border px-6 py-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-sm">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!previousPhase}
+            onClick={() => {
+              if (previousPhase) setPhase(previousPhase);
+            }}
+          >
+            Back
+          </Button>
+          <Button asChild type="button" variant="ghost" size="sm">
+            <Link href="/">Cancel</Link>
+          </Button>
+          <span className="text-xs text-muted-foreground">Draft setup saved automatically</span>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium">Step B1 - Configure Discord App Basics</p>
-          <label htmlFor="discord-client-id-basic" className="text-sm font-medium">Discord Client ID</label>
-          <Input
-            id="discord-client-id-basic"
-            value={discordClientIdInput}
-            onChange={(event) => setDiscordClientIdInput(event.target.value)}
-            placeholder="1234567890"
-          />
-          <label htmlFor="discord-client-secret-basic" className="text-sm font-medium">Discord Client Secret</label>
-          <Input
-            id="discord-client-secret-basic"
-            type="password"
-            value={discordClientSecretInput}
-            onChange={(event) => setDiscordClientSecretInput(event.target.value)}
-            placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
-          />
-          <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
-            <code className="block rounded bg-background px-2 py-1 break-all">
-              http://localhost:3000/api/auth/callback/discord
-            </code>
-            <p>Add this exact URI in Discord Developer Portal - OAuth2 - Redirects.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={saveDiscordApp}
-              disabled={
-                busyKey === "discord-app" ||
-                !discordClientIdInput.trim() ||
-                (!discordClientSecretInput.trim() && !setup?.discordClientSecretSet)
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={() => {
+              if (phase === "FINAL") {
+                completeSetup().catch(() => null);
+                return;
               }
-            >
-              Save and Enable Login
-            </Button>
-            {setup?.discordClientId && setup?.discordClientSecretSet ? (
-              <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
-            ) : null}
-          </div>
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium">Step B2 - Login with Discord</p>
-          <p className="text-sm text-muted-foreground">You are signed in as <strong>{currentUserId}</strong>.</p>
-          <div className="flex gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/api/auth/signout">Switch account</Link>
-            </Button>
-          </div>
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium">Step B3 - Claim Setup Owner</p>
-          <p className="text-sm text-muted-foreground">
-            Current owner: <code>{setup?.ownerDiscordId || "(not claimed)"}</code>
-          </p>
-          <Button
-            onClick={claimOwner}
-            disabled={busyKey === "claim" || ownerClaimedByCurrentUser}
+              if (nextPhase) setPhase(nextPhase);
+            }}
+            disabled={nextDisabled || busyKey === "complete"}
           >
-            {ownerClaimedByCurrentUser ? "Owner Claimed" : "Claim Setup Owner"}
+            {nextButtonLabel}
           </Button>
         </div>
-
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium">Step B4 - Confirm Discord App and Save Bot Token</p>
-          <label htmlFor="discord-client-id-confirm" className="text-sm font-medium">Discord Client ID</label>
-          <Input
-            id="discord-client-id-confirm"
-            value={discordClientIdInput}
-            onChange={(event) => setDiscordClientIdInput(event.target.value)}
-            placeholder="1234567890"
-          />
-          <label htmlFor="discord-client-secret-confirm" className="text-sm font-medium">Discord Client Secret</label>
-          <Input
-            id="discord-client-secret-confirm"
-            type="password"
-            value={discordClientSecretInput}
-            onChange={(event) => setDiscordClientSecretInput(event.target.value)}
-            placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
-          />
-          <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
-            <code className="block rounded bg-background px-2 py-1 break-all">
-              http://localhost:3000/api/auth/callback/discord
-            </code>
-          </div>
-          <label htmlFor="bot-token" className="text-sm font-medium">Discord Bot Token</label>
-          <Input
-            id="bot-token"
-            type="password"
-            value={tokenInput}
-            onChange={(event) => setTokenInput(event.target.value)}
-            placeholder={setup?.botTokenSet ? "Token already saved" : "Paste token"}
-          />
-          {setup?.botDisplayName ? (
-            <p className="text-sm text-muted-foreground">Bot detected: <strong>{setup.botDisplayName}</strong></p>
-          ) : null}
-          <Button
-            onClick={validateAndSaveToken}
-            disabled={busyKey === "discord-token-combined" || !tokenInput.trim()}
-          >
-            Validate and Save Token
-          </Button>
-        </div>
-        <div className="flex items-center justify-between">
-          <Button type="button" variant="outline" onClick={() => setPhase("A")}>Back to Database</Button>
-          <Button
-            type="button"
-            onClick={() => setPhase("C")}
-            disabled={!isDatabaseReady || !isDiscordReady}
-          >
-            Continue to Set Up Guild
-          </Button>
-        </div>
-      </section>
-      ) : null}
-
-      {phase === "C" ? (
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold">C. Set Up Guild</h2>
-          <p className="text-sm text-muted-foreground">
-            Select guild, ensure bot invite, then map channels.
-          </p>
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium">Step C1 - Add Guild ID</p>
-          <label htmlFor="guild-id" className="text-sm font-medium">Guild ID</label>
-          <Input
-            id="guild-id"
-            value={guildIdInput}
-            onChange={(event) => setGuildIdInput(event.target.value)}
-            placeholder="670147766839803924"
-          />
-          <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>
-            Validate Guild
-          </Button>
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium">Step C2 - Invite Bot</p>
-          <p className="text-xs text-muted-foreground">Skippable (same behavior as previous flow).</p>
-          <Button onClick={checkInvite} disabled={busyKey === "invite" || !setup?.selectedGuildId}>
-            Check Invite Status
-          </Button>
-          {alreadyInvited !== null ? (
-            <p className="text-sm text-muted-foreground">
-              {alreadyInvited ? "Bot is already invited to this guild." : "Bot is not in the guild yet."}
-            </p>
-          ) : null}
-          {!alreadyInvited && inviteUrl ? (
-            <a
-              href={inviteUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-            >
-              Open Invite Link
-            </a>
-          ) : null}
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium">Step C3 - Set Up Channels</p>
-          <div className="flex gap-2">
-            <Button onClick={loadChannels} disabled={busyKey === "channels-load" || !setup?.selectedGuildId}>
-              Load Text Channels
-            </Button>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2">
-              <label htmlFor="log-channel" className="text-sm font-medium">Log Channel (required)</label>
-              <select
-                id="log-channel"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                value={logChannelId}
-                onChange={(event) => setLogChannelId(event.target.value)}
-              >
-                <option value="">Select channel</option>
-                {textChannels.map((channel) => (
-                  <option key={channel.id} value={channel.id}>{channel.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="lfg-channel" className="text-sm font-medium">LFG Channel (optional)</label>
-              <select
-                id="lfg-channel"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                value={lfgChannelId}
-                onChange={(event) => setLfgChannelId(event.target.value)}
-              >
-                <option value="">Use fallback behavior</option>
-                {textChannels.map((channel) => (
-                  <option key={channel.id} value={channel.id}>{channel.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <Button onClick={saveChannels} disabled={busyKey === "channels-save" || !logChannelId}>
-            Save Channel Setup
-          </Button>
-        </div>
-        <div className="flex items-center justify-between">
-          <Button type="button" variant="outline" onClick={() => setPhase("B")}>Back to Discord</Button>
-          <Button
-            type="button"
-            onClick={() => setPhase("FINAL")}
-            disabled={!isGuildReady}
-          >
-            Continue to Finalize
-          </Button>
-        </div>
-      </section>
-      ) : null}
-
-      {phase === "FINAL" ? (
-      <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Finalize</h2>
-        <p className="text-sm text-muted-foreground">Complete setup after all sections above are done.</p>
-        <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
-          <li>Database validated: {setup?.databaseValidatedAt ? "Yes" : "No"}</li>
-          <li>Discord app configured: {setup?.discordClientId && setup?.discordClientSecretSet ? "Yes" : "No"}</li>
-          <li>Bot token saved: {setup?.botTokenSet ? "Yes" : "No"}</li>
-          <li>Owner claimed: {setup?.ownerDiscordId ? "Yes" : "No"}</li>
-          <li>Guild selected: {setup?.selectedGuildId ? "Yes" : "No"}</li>
-          <li>Channels saved: {setup?.logChannelId ? "Yes" : "No"}</li>
-        </ul>
-        <Button onClick={completeSetup} disabled={!canFinalize || busyKey === "complete"}>
-          Complete Setup
-        </Button>
-      </section>
-      ) : null}
+      </div>
     </div>
   );
 }
