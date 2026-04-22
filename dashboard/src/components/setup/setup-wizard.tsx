@@ -439,7 +439,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           </div>
           {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
         </button>
-        {open ? <div className="border-t border-border px-4 py-4">{children}</div> : null}
+        {open ? <div className="space-y-4 border-t border-border px-4 py-4">{children}</div> : null}
       </div>
     );
   }
