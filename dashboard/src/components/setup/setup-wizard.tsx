@@ -22,6 +22,7 @@ type SetupState = {
 };
 
 type TextChannel = { id: string; name: string };
+type SetupPhase = "A" | "B" | "C" | "FINAL";
 
 export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [setup, setSetup] = useState<SetupState | null>(null);
@@ -47,6 +48,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [lfgChannelId, setLfgChannelId] = useState("");
 
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [phase, setPhase] = useState<SetupPhase>("A");
 
   async function reloadState() {
     setLoading(true);
@@ -103,6 +105,31 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         setup.logChannelId
     );
   }, [setup]);
+
+  const isDatabaseReady = Boolean(setup?.databaseValidatedAt);
+  const isDiscordReady = Boolean(
+    setup?.ownerDiscordId &&
+      setup.discordClientId &&
+      setup.discordClientSecretSet &&
+      setup.botTokenSet
+  );
+  const isGuildReady = Boolean(setup?.selectedGuildId && setup?.logChannelId);
+
+  useEffect(() => {
+    if (!setup) return;
+    if (!isDatabaseReady) {
+      setPhase("A");
+      return;
+    }
+    if (!isDiscordReady) {
+      setPhase((current) => (current === "A" ? "A" : "B"));
+      return;
+    }
+    if (!isGuildReady) {
+      setPhase((current) => (current === "A" || current === "B" ? current : "C"));
+      return;
+    }
+  }, [setup, isDatabaseReady, isDiscordReady, isGuildReady]);
 
   async function claimOwner() {
     setBusyKey("claim");
@@ -349,12 +376,50 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="mb-3 text-sm font-medium">Setup Flow</div>
+        <div className="grid gap-2 md:grid-cols-4">
+          <Button
+            type="button"
+            variant={phase === "A" ? "default" : "outline"}
+            onClick={() => setPhase("A")}
+          >
+            A. Database
+          </Button>
+          <Button
+            type="button"
+            variant={phase === "B" ? "default" : "outline"}
+            disabled={!isDatabaseReady}
+            onClick={() => setPhase("B")}
+          >
+            B. Discord
+          </Button>
+          <Button
+            type="button"
+            variant={phase === "C" ? "default" : "outline"}
+            disabled={!isDatabaseReady || !isDiscordReady}
+            onClick={() => setPhase("C")}
+          >
+            C. Guild
+          </Button>
+          <Button
+            type="button"
+            variant={phase === "FINAL" ? "default" : "outline"}
+            disabled={!canFinalize}
+            onClick={() => setPhase("FINAL")}
+          >
+            Finalize
+          </Button>
+        </div>
+      </div>
+
       {error ? (
         <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive whitespace-pre-wrap">
           {error}
         </div>
       ) : null}
 
+      {phase === "A" ? (
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div>
           <h2 className="text-xl font-semibold">A. Set Up Database</h2>
@@ -412,9 +477,20 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
               {setup?.databaseValidatedAt ? `Validated at ${new Date(setup.databaseValidatedAt).toLocaleString()}` : "Not validated yet"}
             </span>
           </div>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={() => setPhase("B")}
+              disabled={!isDatabaseReady}
+            >
+              Continue to Set Up Discord
+            </Button>
+          </div>
         </div>
       </section>
+      ) : null}
 
+      {phase === "B" ? (
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div>
           <h2 className="text-xl font-semibold">B. Set Up Discord</h2>
@@ -528,8 +604,20 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             Validate and Save Token
           </Button>
         </div>
+        <div className="flex items-center justify-between">
+          <Button type="button" variant="outline" onClick={() => setPhase("A")}>Back to Database</Button>
+          <Button
+            type="button"
+            onClick={() => setPhase("C")}
+            disabled={!isDatabaseReady || !isDiscordReady}
+          >
+            Continue to Set Up Guild
+          </Button>
+        </div>
       </section>
+      ) : null}
 
+      {phase === "C" ? (
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div>
           <h2 className="text-xl font-semibold">C. Set Up Guild</h2>
@@ -617,8 +705,20 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             Save Channel Setup
           </Button>
         </div>
+        <div className="flex items-center justify-between">
+          <Button type="button" variant="outline" onClick={() => setPhase("B")}>Back to Discord</Button>
+          <Button
+            type="button"
+            onClick={() => setPhase("FINAL")}
+            disabled={!isGuildReady}
+          >
+            Continue to Finalize
+          </Button>
+        </div>
       </section>
+      ) : null}
 
+      {phase === "FINAL" ? (
       <section className="rounded-xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-lg font-semibold">Finalize</h2>
         <p className="text-sm text-muted-foreground">Complete setup after all sections above are done.</p>
@@ -634,6 +734,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           Complete Setup
         </Button>
       </section>
+      ) : null}
     </div>
   );
 }
