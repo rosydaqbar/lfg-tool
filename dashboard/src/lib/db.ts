@@ -200,6 +200,22 @@ function getSqliteDb() {
       config_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role_id TEXT NOT NULL,
+      rule_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      total_ms INTEGER NOT NULL DEFAULT 0,
+      message_channel_id TEXT,
+      message_id TEXT,
+      decided_by TEXT,
+      decided_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (guild_id, user_id, role_id, rule_key)
+    );
     CREATE TABLE IF NOT EXISTS temp_voice_channels (
       channel_id TEXT PRIMARY KEY,
       guild_id TEXT NOT NULL,
@@ -276,6 +292,7 @@ function writeSetupStateFallback(nextState: Record<string, unknown>) {
 let lfgEnabledColumnEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
+let voiceAutoRoleRequestsEnsured = false;
 let setupStateEnsured = false;
 let coreConfigTablesEnsured = false;
 
@@ -881,6 +898,35 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
     })),
     autoRoleConfig: normalizeAutoRoleConfig(autoRoleRes.rows[0]?.config_json),
   };
+}
+
+async function ensureVoiceAutoRoleRequestsTable() {
+  if (voiceAutoRoleRequestsEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          role_id TEXT NOT NULL,
+          rule_key TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          total_ms BIGINT NOT NULL DEFAULT 0,
+          message_channel_id TEXT,
+          message_id TEXT,
+          decided_by TEXT,
+          decided_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (guild_id, user_id, role_id, rule_key)
+        )
+      `
+    );
+    voiceAutoRoleRequestsEnsured = true;
+  } catch (error) {
+    console.error("Failed to ensure voice_auto_role_requests table:", error);
+  }
 }
 
 async function saveGuildConfigWithClient(
@@ -2051,4 +2097,240 @@ export async function getTempVoiceDeleteLeaderboard(
     totalMs: Number(row.total_ms ?? 0),
     sessions: Number(row.sessions ?? 0),
   }));
+}
+
+type AutoRoleRequestRow = {
+  id: string | number;
+  guild_id: string;
+  user_id: string;
+  role_id: string;
+  rule_key: string;
+  status: "pending" | "approved" | "denied";
+  total_ms: string | number;
+  message_channel_id: string | null;
+  message_id: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapAutoRoleRequestRow(row: AutoRoleRequestRow) {
+  return {
+    id: Number(row.id),
+    guildId: row.guild_id,
+    userId: row.user_id,
+    roleId: row.role_id,
+    ruleKey: row.rule_key,
+    status: row.status,
+    totalMs: Number(row.total_ms ?? 0),
+    messageChannelId: row.message_channel_id,
+    messageId: row.message_id,
+    decidedBy: row.decided_by,
+    decidedAt: row.decided_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function getVoiceAutoRoleRequests(
+  guildId: string,
+  limit = 100,
+  offset = 0,
+  status?: "pending" | "approved" | "denied"
+) {
+  const safeLimit = Number.isFinite(limit)
+    ? Math.min(200, Math.max(1, Math.floor(limit)))
+    : 100;
+  const safeOffset = Number.isFinite(offset)
+    ? Math.max(0, Math.floor(offset))
+    : 0;
+  const statusFilter =
+    status === "pending" || status === "approved" || status === "denied"
+      ? status
+      : null;
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              role_id TEXT NOT NULL,
+              rule_key TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              total_ms BIGINT NOT NULL DEFAULT 0,
+              message_channel_id TEXT,
+              message_id TEXT,
+              decided_by TEXT,
+              decided_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              UNIQUE (guild_id, user_id, role_id, rule_key)
+            )
+          `
+        );
+
+        const res = await client.query(
+          `
+            SELECT
+              id,
+              guild_id,
+              user_id,
+              role_id,
+              rule_key,
+              status,
+              total_ms,
+              message_channel_id,
+              message_id,
+              decided_by,
+              decided_at,
+              created_at,
+              updated_at
+            FROM voice_auto_role_requests
+            WHERE guild_id = $1
+              AND ($2::text IS NULL OR status = $2::text)
+            ORDER BY created_at DESC
+            LIMIT $3
+            OFFSET $4
+          `,
+          [guildId, statusFilter, safeLimit, safeOffset]
+        );
+
+        return (res.rows as AutoRoleRequestRow[]).map(mapAutoRoleRequestRow);
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    const rows = db
+      .prepare(
+        `
+          SELECT
+            id,
+            guild_id,
+            user_id,
+            role_id,
+            rule_key,
+            status,
+            total_ms,
+            message_channel_id,
+            message_id,
+            decided_by,
+            decided_at,
+            created_at,
+            updated_at
+          FROM voice_auto_role_requests
+          WHERE guild_id = ?
+            AND (? IS NULL OR status = ?)
+          ORDER BY datetime(created_at) DESC
+          LIMIT ?
+          OFFSET ?
+        `
+      )
+      .all(guildId, statusFilter, statusFilter, safeLimit, safeOffset) as AutoRoleRequestRow[];
+
+    return rows.map(mapAutoRoleRequestRow);
+  }
+
+  await ensureVoiceAutoRoleRequestsTable();
+  const res = await query(
+    `
+      SELECT
+        id,
+        guild_id,
+        user_id,
+        role_id,
+        rule_key,
+        status,
+        total_ms,
+        message_channel_id,
+        message_id,
+        decided_by,
+        decided_at,
+        created_at,
+        updated_at
+      FROM voice_auto_role_requests
+      WHERE guild_id = $1
+        AND ($2::text IS NULL OR status = $2::text)
+      ORDER BY created_at DESC
+      LIMIT $3
+      OFFSET $4
+    `,
+    [guildId, statusFilter, safeLimit, safeOffset]
+  );
+
+  return (res.rows as AutoRoleRequestRow[]).map(mapAutoRoleRequestRow);
+}
+
+export async function deleteVoiceAutoRoleRequest(guildId: string, id: number) {
+  const safeId = Math.floor(id);
+  if (!Number.isFinite(safeId) || safeId <= 0) {
+    return false;
+  }
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              role_id TEXT NOT NULL,
+              rule_key TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              total_ms BIGINT NOT NULL DEFAULT 0,
+              message_channel_id TEXT,
+              message_id TEXT,
+              decided_by TEXT,
+              decided_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              UNIQUE (guild_id, user_id, role_id, rule_key)
+            )
+          `
+        );
+        const res = await client.query(
+          "DELETE FROM voice_auto_role_requests WHERE guild_id = $1 AND id = $2",
+          [guildId, safeId]
+        );
+        return (res.rowCount || 0) > 0;
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    const result = db
+      .prepare("DELETE FROM voice_auto_role_requests WHERE guild_id = ? AND id = ?")
+      .run(guildId, safeId) as { changes?: number };
+    return Number(result?.changes || 0) > 0;
+  }
+
+  await ensureVoiceAutoRoleRequestsTable();
+  const res = await query(
+    "DELETE FROM voice_auto_role_requests WHERE guild_id = $1 AND id = $2",
+    [guildId, safeId]
+  );
+  return (res.rowCount || 0) > 0;
 }

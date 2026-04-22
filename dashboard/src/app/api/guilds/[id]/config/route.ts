@@ -184,8 +184,11 @@ async function sendAutoRoleConfigLog({
   const botToken = await getDashboardBotToken();
   if (!botToken) return;
 
-  const content = [
+  const now = Math.floor(Date.now() / 1000);
+  const detailText = [
     "### Auto Role Config Updated",
+    "-# Perubahan konfigurasi auto role terdeteksi dari dashboard.",
+    "",
     `- Guild: \`${guildId}\``,
     actorId ? `- Updated by: <@${actorId}>` : "- Updated by: dashboard",
     ...lines,
@@ -198,7 +201,27 @@ async function sendAutoRoleConfigLog({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      content,
+      flags: 32768,
+      components: [
+        {
+          type: 17,
+          accent_color: 0x3b82f6,
+          components: [
+            {
+              type: 10,
+              content: detailText,
+            },
+            {
+              type: 14,
+              divider: true,
+            },
+            {
+              type: 10,
+              content: `-# Updated at: <t:${now}:F>`,
+            },
+          ],
+        },
+      ],
       allowed_mentions: {
         parse: [],
         users: actorId ? [actorId] : [],

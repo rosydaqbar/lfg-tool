@@ -5,6 +5,11 @@ const {
   MessageFlags,
   PermissionFlagsBits,
 } = require('discord.js');
+const {
+  ContainerBuilder,
+  SeparatorBuilder,
+  TextDisplayBuilder,
+} = require('@discordjs/builders');
 
 const APPROVE_PREFIX = 'autorole_approve';
 const DENY_PREFIX = 'autorole_deny';
@@ -51,29 +56,43 @@ function createAutoRoleManager({ client, configStore }) {
           ? 'less than'
           : 'equal to';
 
-    const lines = [
-      '### Auto Role Approval Request',
-      `- User: <@${memberId}>`,
-      `- Role to give: <@&${roleId}> (\`${roleId}\`)`,
-      `- Current total voice: \`${formatDuration(totalMs)}\``,
-      `- Matched rule: \`${conditionLabel} ${rule.hours}h\``,
-      '- Action required: Administrator approval',
-    ];
-
     return {
-      content: lines.join('\n'),
       components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${APPROVE_PREFIX}:${requestId}`)
-            .setLabel('Approve')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`${DENY_PREFIX}:${requestId}`)
-            .setLabel('Deny')
-            .setStyle(ButtonStyle.Danger)
-        ),
+        new ContainerBuilder()
+          .setAccentColor(0xf59e0b)
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+              [
+                '### Auto Role Approval Request',
+                '-# Permintaan ini perlu tindakan dari Administrator server.',
+                '',
+                `- User: <@${memberId}>`,
+                `- Role to give: <@&${roleId}> (\`${roleId}\`)`,
+                `- Current total voice: \`${formatDuration(totalMs)}\``,
+                `- Matched rule: \`${conditionLabel} ${rule.hours}h\``,
+              ].join('\n')
+            )
+          )
+          .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+          .addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`${APPROVE_PREFIX}:${requestId}`)
+                .setLabel('Approve')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`${DENY_PREFIX}:${requestId}`)
+                .setLabel('Deny')
+                .setStyle(ButtonStyle.Danger)
+            )
+          )
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+              `-# Request ID: \`${requestId}\` • Created <t:${Math.floor(Date.now() / 1000)}:R>`
+            )
+          ),
       ],
+      flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [], users: [memberId], roles: [roleId] },
     };
   }
@@ -85,14 +104,27 @@ function createAutoRoleManager({ client, configStore }) {
   }) {
     const statusLabel = status === 'approved' ? 'Approved' : 'Denied';
     const emoji = status === 'approved' ? '✅' : '❌';
-    const lines = [
-      '### Auto Role Approval Request',
-      `- User: <@${request.userId}>`,
-      `- Role to give: <@&${request.roleId}> (\`${request.roleId}\`)`,
-      `- Current total voice: \`${formatDuration(request.totalMs)}\``,
-      `${emoji} Status: **${statusLabel}** by <@${adminId}> at <t:${Math.floor(Date.now() / 1000)}:F>`,
+    const accentColor = status === 'approved' ? 0x22c55e : 0xef4444;
+    return [
+      new ContainerBuilder()
+        .setAccentColor(accentColor)
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            [
+              '### Auto Role Approval Request',
+              `- User: <@${request.userId}>`,
+              `- Role to give: <@&${request.roleId}> (\`${request.roleId}\`)`,
+              `- Current total voice: \`${formatDuration(request.totalMs)}\``,
+              `${emoji} Status: **${statusLabel}** by <@${adminId}> at <t:${Math.floor(Date.now() / 1000)}:F>`,
+            ].join('\n')
+          )
+        )
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            `-# Request ID: \`${request.id}\``
+          )
+        ),
     ];
-    return lines.join('\n');
   }
 
   async function maybeCreateApprovalRequest({
@@ -272,21 +304,41 @@ function createAutoRoleManager({ client, configStore }) {
       return true;
     }
 
-    let status = isApprove ? 'approved' : 'denied';
+    let status = isDeny ? 'denied' : null;
     if (isApprove) {
       const guild = interaction.guild;
       const member = guild
         ? await guild.members.fetch(request.userId).catch(() => null)
         : null;
       if (!member) {
-        status = 'denied';
-      } else {
-        await member.roles.add(request.roleId, `Auto role approved by ${interaction.user.id}`).catch((error) => {
-          console.error('Failed to approve auto role request:', error);
-          status = 'denied';
+        await interaction.reply({
+          content: 'User tidak ditemukan di server. Request tetap pending.',
+          flags: MessageFlags.Ephemeral,
         });
+        return true;
       }
+
+      let addError = null;
+      await member.roles
+        .add(request.roleId, `Auto role approved by ${interaction.user.id}`)
+        .catch((error) => {
+          addError = error;
+        });
+
+      if (addError) {
+        console.error('Failed to approve auto role request:', addError);
+        await interaction.reply({
+          content:
+            'Bot gagal memberikan role (missing permission / role hierarchy). Request tetap pending, silakan perbaiki permission lalu Approve lagi.',
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => null);
+        return true;
+      }
+
+      status = 'approved';
     }
+
+    if (!status) return true;
 
     await configStore
       .updateVoiceAutoRoleRequestStatus(request.id, status, interaction.user.id)
@@ -295,12 +347,13 @@ function createAutoRoleManager({ client, configStore }) {
       });
 
     const updated = await interaction.update({
-      content: buildResolvedMessageContent({
+      content: '',
+      components: buildResolvedMessageContent({
         status,
         request,
         adminId: interaction.user.id,
       }),
-      components: [],
+      flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
     }).then(() => true).catch(() => false);
 

@@ -58,6 +58,24 @@ const BASELINE_SCHEMA = [
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `,
+  `
+    CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+      id BIGSERIAL PRIMARY KEY,
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role_id TEXT NOT NULL,
+      rule_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      total_ms BIGINT NOT NULL DEFAULT 0,
+      message_channel_id TEXT,
+      message_id TEXT,
+      decided_by TEXT,
+      decided_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (guild_id, user_id, role_id, rule_key)
+    )
+  `,
 ];
 
 export async function POST(request: Request) {
@@ -119,6 +137,22 @@ export async function POST(request: Request) {
             guild_id TEXT PRIMARY KEY,
             config_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            role_id TEXT NOT NULL,
+            rule_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            total_ms INTEGER NOT NULL DEFAULT 0,
+            message_channel_id TEXT,
+            message_id TEXT,
+            decided_by TEXT,
+            decided_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (guild_id, user_id, role_id, rule_key)
           );
           CREATE TABLE IF NOT EXISTS setup_state (
             id INTEGER PRIMARY KEY,

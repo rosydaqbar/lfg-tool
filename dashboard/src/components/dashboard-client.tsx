@@ -9,6 +9,7 @@ import { ChannelConfigCards } from "@/components/dashboard/channel-config-cards"
 import { HeaderSection } from "@/components/dashboard/header-section";
 import { VoiceSettingsSection } from "@/components/dashboard/voice-settings-section";
 import { AutoRoleSection } from "@/components/dashboard/auto-role-section";
+import { AutoRoleRequestsCard } from "@/components/dashboard/auto-role-requests-card";
 import { ActiveTempChannelsCard } from "@/components/dashboard/active-temp-channels-card";
 import { VoiceLogDeletedCard } from "@/components/dashboard/voice-log-deleted-card";
 import { VoiceLeaderboardCard } from "@/components/dashboard/voice-leaderboard-card";
@@ -81,7 +82,7 @@ export default function DashboardClient({
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
-    "settings" | "active-temp" | "voice-log"
+    "settings" | "active-temp" | "voice-log" | "auto-role-log"
   >("settings");
   const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
   const [textChannels, setTextChannels] = useState<Channel[]>([]);
@@ -336,6 +337,14 @@ export default function DashboardClient({
         >
           Voice Log
         </Button>
+        <Button
+          type="button"
+          variant={activeTab === "auto-role-log" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setActiveTab("auto-role-log")}
+        >
+          Auto Role Log
+        </Button>
       </div>
 
       {activeTab === "settings" ? (
@@ -392,6 +401,10 @@ export default function DashboardClient({
           <VoiceLogDeletedCard selectedGuildId={selectedGuildId} />
           <VoiceLeaderboardCard selectedGuildId={selectedGuildId} />
         </>
+      ) : null}
+
+      {activeTab === "auto-role-log" ? (
+        <AutoRoleRequestsCard selectedGuildId={selectedGuildId} />
       ) : null}
     </div>
   );

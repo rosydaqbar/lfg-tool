@@ -34,6 +34,26 @@ export type AutoRoleConfig = {
   approvalChannelId: string | null;
 };
 
+export type AutoRoleRequestStatus = "pending" | "approved" | "denied";
+
+export type AutoRoleRequest = {
+  id: number;
+  guildId: string;
+  userId: string;
+  userName?: string | null;
+  roleId: string;
+  ruleKey: string;
+  status: AutoRoleRequestStatus;
+  totalMs: number;
+  messageChannelId: string | null;
+  messageId: string | null;
+  decidedBy: string | null;
+  decidedByName?: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type TempChannel = {
   existsInDiscord?: boolean | null;
   channelId: string;
