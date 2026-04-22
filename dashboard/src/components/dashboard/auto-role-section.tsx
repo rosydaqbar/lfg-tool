@@ -51,6 +51,97 @@ function createRuleId() {
   return `rule_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+type SearchableOption = {
+  value: string;
+  label: string;
+  sublabel?: string;
+  search?: string;
+};
+
+type SearchableSelectProps = {
+  value: string;
+  onChange: (value: string) => void;
+  options: SearchableOption[];
+  placeholder: string;
+  disabled?: boolean;
+  emptyText?: string;
+};
+
+function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder,
+  disabled,
+  emptyText = "No options found.",
+}: SearchableSelectProps) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((item) => item.value === value) || null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-14 w-full justify-between"
+          disabled={disabled}
+        >
+          {selected ? (
+            <span className="min-w-0 text-left">
+              <span className="block truncate">{selected.label}</span>
+              {selected.sublabel ? (
+                <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                  {selected.sublabel}
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            <span className="truncate text-left text-muted-foreground">{placeholder}</span>
+          )}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+        <Command>
+          <CommandInput placeholder="Search..." />
+          <CommandEmpty>{emptyText}</CommandEmpty>
+          <CommandList className="max-h-64 overflow-auto">
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
+                  key={option.value}
+                  value={option.search || option.label}
+                  onSelect={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      value === option.value ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate">{option.label}</span>
+                    {option.sublabel ? (
+                      <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                        {option.sublabel}
+                      </span>
+                    ) : null}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function AutoRoleSectionComponent({
   loadingConfig,
   saving,
@@ -73,9 +164,44 @@ function AutoRoleSectionComponent({
   );
 
   const formDisabled = loadingConfig || !value.enabled;
+  const roleOptions = useMemo(
+    () =>
+      roles.map((role) => ({
+        value: role.id,
+        label: role.name,
+        sublabel: role.id,
+        search: `${role.name} ${role.id}`,
+      })),
+    [roles]
+  );
+  const requiredRoleRuleOptions = useMemo(
+    () => [
+      { value: "__any_role__", label: "Any role", search: "any role" },
+      ...roles.map((role) => ({
+        value: role.id,
+        label: role.name,
+        sublabel: role.id,
+        search: `${role.name} ${role.id}`,
+      })),
+    ],
+    [roles]
+  );
+  const approvalChannelOptions = useMemo(
+    () =>
+      textChannels.map((channel) => ({
+        value: channel.id,
+        label: `#${channel.name} (${channel.id})`,
+        search: `${channel.name} ${channel.id}`,
+      })),
+    [textChannels]
+  );
 
   const hasInvalidRules = value.rules.some(
-    (rule) => Number.isNaN(rule.hours) || rule.hours < 0 || !rule.roleId
+    (rule) =>
+      Number.isNaN(rule.hours) ||
+      rule.hours < 0 ||
+      !rule.roleId ||
+      (rule.requiredRoleMode === "specific_role" && !rule.requiredRoleId)
   );
   const needsApprovalChannel = value.requireAdminApproval && !value.approvalChannelId;
 
@@ -115,7 +241,7 @@ function AutoRoleSectionComponent({
         </div>
 
         <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
-          <div className="text-sm font-medium">Role required to apply</div>
+          <div className="text-sm font-medium">Global role required to apply</div>
           <Select
             value={value.requiredRoleMode}
             disabled={formDisabled}
@@ -131,7 +257,7 @@ function AutoRoleSectionComponent({
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select requirement mode" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-64 overflow-auto">
               <SelectItem value="all_roles">All Roles</SelectItem>
               <SelectItem value="selected_roles">Selected Roles</SelectItem>
             </SelectContent>
@@ -159,7 +285,7 @@ function AutoRoleSectionComponent({
                   <Command>
                     <CommandInput placeholder="Search roles..." />
                     <CommandEmpty>No available roles.</CommandEmpty>
-                    <CommandList>
+                    <CommandList className="max-h-64 overflow-auto">
                       <CommandGroup>
                         {availableRequiredRoles.map((role) => (
                           <CommandItem
@@ -174,9 +300,11 @@ function AutoRoleSectionComponent({
                             }}
                           >
                             <Check className="mr-2 h-4 w-4 opacity-0" />
-                            <span>{role.name}</span>
-                            <span className="ml-auto text-xs text-muted-foreground font-mono">
-                              {role.id}
+                            <span className="min-w-0">
+                              <span className="block truncate">{role.name}</span>
+                              <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                                {role.id}
+                              </span>
                             </span>
                           </CommandItem>
                         ))}
@@ -246,6 +374,8 @@ function AutoRoleSectionComponent({
                       condition: "more_than",
                       hours: 1,
                       roleId: "",
+                      requiredRoleMode: "any_role",
+                      requiredRoleId: null,
                     },
                   ],
                 })
@@ -256,13 +386,53 @@ function AutoRoleSectionComponent({
             </Button>
           </div>
 
+          <div className="hidden md:grid md:grid-cols-[1fr_170px_120px_1fr_auto] gap-2 px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+            <span>Required role</span>
+            <span>Condition</span>
+            <span>Hours</span>
+            <span>Role given</span>
+            <span />
+          </div>
+
           {value.rules.length ? (
             <div className="space-y-3">
               {value.rules.map((rule) => (
                 <div
                   key={rule.id}
-                  className="grid gap-2 rounded-lg border border-border/70 bg-background/60 p-3 md:grid-cols-[170px_140px_1fr_auto]"
+                  className="grid gap-2 rounded-lg border border-border/70 bg-background/60 p-3 md:grid-cols-[1fr_170px_120px_1fr_auto]"
                 >
+                  <SearchableSelect
+                    value={
+                      rule.requiredRoleMode === "specific_role" && rule.requiredRoleId
+                        ? rule.requiredRoleId
+                        : "__any_role__"
+                    }
+                    disabled={formDisabled}
+                    options={requiredRoleRuleOptions}
+                    placeholder="Any role"
+                    emptyText="No roles found."
+                    onChange={(selectedValue) =>
+                      onChange({
+                        ...value,
+                        rules: value.rules.map((item) =>
+                          item.id === rule.id
+                            ? {
+                                ...item,
+                                requiredRoleMode:
+                                  selectedValue === "__any_role__"
+                                    ? "any_role"
+                                    : "specific_role",
+                                requiredRoleId:
+                                  selectedValue === "__any_role__"
+                                    ? null
+                                    : selectedValue,
+                              }
+                            : item
+                        ),
+                      })
+                    }
+                  />
+
                   <Select
                     value={rule.condition}
                     disabled={formDisabled}
@@ -275,10 +445,10 @@ function AutoRoleSectionComponent({
                       })
                     }
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="h-14 w-full data-[size=default]:h-14">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-64 overflow-auto">
                       {CONDITION_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
@@ -291,6 +461,7 @@ function AutoRoleSectionComponent({
                     type="number"
                     min={0}
                     step={1}
+                    className="h-14"
                     disabled={formDisabled}
                     value={Number.isFinite(rule.hours) ? String(rule.hours) : "0"}
                     onChange={(event) => {
@@ -312,10 +483,13 @@ function AutoRoleSectionComponent({
                     placeholder="Hours"
                   />
 
-                  <Select
+                  <SearchableSelect
                     value={rule.roleId}
                     disabled={formDisabled}
-                    onValueChange={(roleId) =>
+                    options={roleOptions}
+                    placeholder="Select role to give"
+                    emptyText="No roles found."
+                    onChange={(roleId) =>
                       onChange({
                         ...value,
                         rules: value.rules.map((item) =>
@@ -323,23 +497,13 @@ function AutoRoleSectionComponent({
                         ),
                       })
                     }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select role to give" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {roles.map((role) => (
-                        <SelectItem key={role.id} value={role.id}>
-                          {role.name} ({role.id})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
 
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
+                    className="h-14 w-10"
                     disabled={formDisabled}
                     onClick={() =>
                       onChange({
@@ -386,27 +550,19 @@ function AutoRoleSectionComponent({
           </div>
 
           {value.requireAdminApproval ? (
-            <Select
+            <SearchableSelect
               value={value.approvalChannelId ?? ""}
               disabled={formDisabled}
-              onValueChange={(channelId) =>
+              options={approvalChannelOptions}
+              placeholder="Select approval channel"
+              emptyText="No text channels found."
+              onChange={(channelId) =>
                 onChange({
                   ...value,
                   approvalChannelId: channelId || null,
                 })
               }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select approval channel" />
-              </SelectTrigger>
-              <SelectContent>
-                {textChannels.map((channel) => (
-                  <SelectItem key={channel.id} value={channel.id}>
-                    #{channel.name} ({channel.id})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
           ) : null}
         </div>
 
@@ -422,7 +578,7 @@ function AutoRoleSectionComponent({
             {!value.enabled
               ? "Auto role is disabled. Enable it to edit role logic and approval settings."
               : hasInvalidRules
-              ? "Each rule needs a valid role and non-negative hours."
+              ? "Each rule needs valid hours, role to give, and required role (when enabled)."
               : needsApprovalChannel
                 ? "Approval channel is required when admin approval is enabled."
                 : "Changes are saved with the dashboard configuration."}

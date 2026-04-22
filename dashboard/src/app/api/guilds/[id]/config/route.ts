@@ -13,6 +13,8 @@ type AutoRoleConfigPayload = {
     condition: AutoRoleCondition;
     hours: number;
     roleId: string;
+    requiredRoleMode: "any_role" | "specific_role";
+    requiredRoleId: string | null;
   }[];
   requireAdminApproval: boolean;
   approvalChannelId: string | null;
@@ -35,6 +37,10 @@ function normalizeAutoRoleConfig(value: unknown): AutoRoleConfigPayload {
             item.condition === "equal_to"
               ? item.condition
               : "more_than";
+          const requiredRoleMode: "any_role" | "specific_role" =
+            item.requiredRoleMode === "specific_role"
+              ? "specific_role"
+              : "any_role";
 
           return {
             id:
@@ -46,6 +52,11 @@ function normalizeAutoRoleConfig(value: unknown): AutoRoleConfigPayload {
               ? Math.max(0, Math.floor(rawHours))
               : 0,
             roleId: typeof item.roleId === "string" ? item.roleId.trim() : "",
+            requiredRoleMode,
+            requiredRoleId:
+              typeof item.requiredRoleId === "string" && item.requiredRoleId.trim().length > 0
+                ? item.requiredRoleId.trim()
+                : null,
           };
         })
     : [];
@@ -77,18 +88,22 @@ function normalizeAutoRoleConfig(value: unknown): AutoRoleConfigPayload {
 }
 
 function ruleSignature(rule: AutoRoleConfigPayload["rules"][number]) {
-  return `${rule.condition}|${rule.hours}|${rule.roleId}`;
+  return `${rule.condition}|${rule.hours}|${rule.roleId}|${rule.requiredRoleMode}|${rule.requiredRoleId || ""}`;
 }
 
 function formatRuleSignature(signature: string) {
-  const [condition, hours, roleId] = signature.split("|");
+  const [condition, hours, roleId, requiredRoleMode, requiredRoleId] = signature.split("|");
   const conditionLabel =
     condition === "more_than"
       ? "More than"
       : condition === "less_than"
         ? "Less than"
         : "Equal to";
-  return `${conditionLabel} ${hours}h -> <@&${roleId}> (\`${roleId}\`)`;
+  const requiredText =
+    requiredRoleMode === "specific_role" && requiredRoleId
+      ? ` | required: <@&${requiredRoleId}> (\`${requiredRoleId}\`)`
+      : " | required: Any role";
+  return `${conditionLabel} ${hours}h -> <@&${roleId}> (\`${roleId}\`)${requiredText}`;
 }
 
 function buildAutoRoleChangeLines(
@@ -344,6 +359,17 @@ export async function PUT(
   ) {
     return NextResponse.json(
       { error: "Select at least one required role or switch to All Roles." },
+      { status: 400 }
+    );
+  }
+
+  if (
+    autoRoleConfig.rules.some(
+      (rule) => rule.requiredRoleMode === "specific_role" && !rule.requiredRoleId
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Each rule with Required role mode must select one role." },
       { status: 400 }
     );
   }

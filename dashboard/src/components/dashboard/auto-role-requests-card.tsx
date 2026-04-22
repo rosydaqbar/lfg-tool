@@ -40,6 +40,21 @@ function formatDuration(totalMs: number) {
   return `${hours}h ${minutes}m`;
 }
 
+function formatRuleKey(ruleKey: string) {
+  const [condition, hours, roleId] = ruleKey.split(":");
+  const conditionLabel =
+    condition === "more_than"
+      ? "More than"
+      : condition === "less_than"
+        ? "Less than"
+        : condition === "equal_to"
+          ? "Equal to"
+          : condition;
+  if (!hours) return ruleKey;
+  if (!roleId) return `${conditionLabel} ${hours}h`;
+  return `${conditionLabel} ${hours}h -> ${roleId}`;
+}
+
 function statusBadge(status: AutoRoleRequest["status"]) {
   if (status === "pending") {
     return (
@@ -174,9 +189,7 @@ function AutoRoleRequestsCardComponent({
               <TableRow>
                 <TableHead>Status</TableHead>
                 <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Total Voice</TableHead>
-                <TableHead>Rule</TableHead>
+                <TableHead>Logic</TableHead>
                 <TableHead>Decision</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Action</TableHead>
@@ -195,16 +208,18 @@ function AutoRoleRequestsCardComponent({
                       <div className="text-sm font-medium">
                         {request.userName || request.userId}
                       </div>
-                      <div className="text-xs font-mono text-muted-foreground">{request.userId}</div>
+                      <div className="text-xs font-mono text-muted-foreground break-all">
+                        {request.userId}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      <div className="text-xs font-mono">{request.roleId}</div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs font-mono">{formatDuration(request.totalMs)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs">{request.ruleKey}</span>
+                      <div className="space-y-1 text-xs">
+                        <div className="font-mono break-all">Role: {request.roleId}</div>
+                        <div className="font-mono">Voice: {formatDuration(request.totalMs)}</div>
+                        <div className="text-muted-foreground break-all">
+                          Rule: {formatRuleKey(request.ruleKey)}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>
                       {request.status === "pending" ? (
@@ -221,7 +236,7 @@ function AutoRoleRequestsCardComponent({
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className="space-y-1 text-xs text-muted-foreground">
+                      <div className="space-y-1 text-xs text-muted-foreground min-w-40">
                         <div>{new Date(request.createdAt).toLocaleString()}</div>
                         {messageLink ? (
                           <a
@@ -235,7 +250,7 @@ function AutoRoleRequestsCardComponent({
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right align-top">
                       <Button
                         variant="destructive"
                         size="sm"

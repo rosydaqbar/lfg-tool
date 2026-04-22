@@ -23,6 +23,8 @@ export type AutoRoleRule = {
   condition: AutoRoleCondition;
   hours: number;
   roleId: string;
+  requiredRoleMode: "any_role" | "specific_role";
+  requiredRoleId: string | null;
 };
 
 export type AutoRoleConfig = {

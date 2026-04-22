@@ -76,6 +76,18 @@ const BASELINE_SCHEMA = [
       UNIQUE (guild_id, user_id, role_id, rule_key)
     )
   `,
+  `
+    CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      total_ms BIGINT NOT NULL DEFAULT 0,
+      sessions BIGINT NOT NULL DEFAULT 0,
+      is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (guild_id, user_id)
+    )
+  `,
 ];
 
 export async function POST(request: Request) {
@@ -153,6 +165,16 @@ export async function POST(request: Request) {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             UNIQUE (guild_id, user_id, role_id, rule_key)
+          );
+          CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+            guild_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            total_ms INTEGER NOT NULL DEFAULT 0,
+            sessions INTEGER NOT NULL DEFAULT 0,
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
           );
           CREATE TABLE IF NOT EXISTS setup_state (
             id INTEGER PRIMARY KEY,

@@ -23,6 +23,8 @@ type AutoRoleRule = {
   condition: AutoRoleCondition;
   hours: number;
   roleId: string;
+  requiredRoleMode: "any_role" | "specific_role";
+  requiredRoleId: string | null;
 };
 
 type AutoRoleConfig = {
@@ -61,6 +63,10 @@ function normalizeAutoRoleConfig(value: unknown): AutoRoleConfig {
             item.condition === "equal_to"
               ? item.condition
               : "more_than";
+          const requiredRoleMode: "any_role" | "specific_role" =
+            item.requiredRoleMode === "specific_role"
+              ? "specific_role"
+              : "any_role";
           return {
             id:
               typeof item.id === "string" && item.id.trim().length > 0
@@ -71,6 +77,12 @@ function normalizeAutoRoleConfig(value: unknown): AutoRoleConfig {
               ? Math.max(0, Math.floor(rawHours))
               : 0,
             roleId: typeof item.roleId === "string" ? item.roleId.trim() : "",
+            requiredRoleMode,
+            requiredRoleId:
+              typeof item.requiredRoleId === "string" &&
+              item.requiredRoleId.trim().length > 0
+                ? item.requiredRoleId.trim()
+                : null,
           };
         })
         .filter((rule) => rule.roleId.length > 0)
@@ -216,6 +228,16 @@ function getSqliteDb() {
       updated_at TEXT NOT NULL,
       UNIQUE (guild_id, user_id, role_id, rule_key)
     );
+    CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      total_ms INTEGER NOT NULL DEFAULT 0,
+      sessions INTEGER NOT NULL DEFAULT 0,
+      is_deleted INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (guild_id, user_id)
+    );
     CREATE TABLE IF NOT EXISTS temp_voice_channels (
       channel_id TEXT PRIMARY KEY,
       guild_id TEXT NOT NULL,
@@ -293,6 +315,7 @@ let lfgEnabledColumnEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
 let voiceAutoRoleRequestsEnsured = false;
+let voiceLeaderboardOverridesEnsured = false;
 let setupStateEnsured = false;
 let coreConfigTablesEnsured = false;
 
@@ -336,6 +359,20 @@ async function ensureCoreConfigTables() {
           guild_id TEXT PRIMARY KEY,
           config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+          guild_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          total_ms BIGINT NOT NULL DEFAULT 0,
+          sessions BIGINT NOT NULL DEFAULT 0,
+          is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, user_id)
         )
       `
     );
@@ -926,6 +963,29 @@ async function ensureVoiceAutoRoleRequestsTable() {
     voiceAutoRoleRequestsEnsured = true;
   } catch (error) {
     console.error("Failed to ensure voice_auto_role_requests table:", error);
+  }
+}
+
+async function ensureVoiceLeaderboardOverridesTable() {
+  if (voiceLeaderboardOverridesEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+          guild_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          total_ms BIGINT NOT NULL DEFAULT 0,
+          sessions BIGINT NOT NULL DEFAULT 0,
+          is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, user_id)
+        )
+      `
+    );
+    voiceLeaderboardOverridesEnsured = true;
+  } catch (error) {
+    console.error("Failed to ensure voice_leaderboard_overrides table:", error);
   }
 }
 
@@ -1875,11 +1935,59 @@ type DeleteLeaderboardRow = {
   sessions: string | number;
 };
 
+type LeaderboardOverrideRow = {
+  user_id: string;
+  total_ms: string | number;
+  sessions: string | number;
+  is_deleted: boolean | number;
+};
+
+function applyLeaderboardOverrides(
+  baseRows: { userId: string; totalMs: number; sessions: number }[],
+  overrideRows: LeaderboardOverrideRow[]
+) {
+  const aggregate = new Map(
+    baseRows.map((row) => [row.userId, { totalMs: row.totalMs, sessions: row.sessions }])
+  );
+
+  for (const row of overrideRows) {
+    const isDeleted = row.is_deleted === true || Number(row.is_deleted || 0) !== 0;
+    if (isDeleted) {
+      aggregate.delete(row.user_id);
+      continue;
+    }
+
+    aggregate.set(row.user_id, {
+      totalMs: Math.max(0, Number(row.total_ms) || 0),
+      sessions: Math.max(0, Number(row.sessions) || 0),
+    });
+  }
+
+  return [...aggregate.entries()]
+    .map(([userId, stats]) => ({
+      userId,
+      totalMs: stats.totalMs,
+      sessions: stats.sessions,
+    }))
+    .sort((a, b) => {
+      if (b.totalMs !== a.totalMs) return b.totalMs - a.totalMs;
+      if (b.sessions !== a.sessions) return b.sessions - a.sessions;
+      return a.userId.localeCompare(b.userId);
+    });
+}
+
 export async function getTempVoiceDeleteLeaderboard(
   guildId: string,
   limit = 20,
   offset = 0
 ) {
+  const safeLimit = Number.isFinite(limit)
+    ? Math.min(200, Math.max(1, Math.floor(limit)))
+    : 20;
+  const safeOffset = Number.isFinite(offset)
+    ? Math.max(0, Math.floor(offset))
+    : 0;
+
   if (!DATABASE_URL) {
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
@@ -1919,13 +2027,20 @@ export async function getTempVoiceDeleteLeaderboard(
             )
           `
         );
-
-        const safeLimit = Number.isFinite(limit)
-          ? Math.min(200, Math.max(1, Math.floor(limit)))
-          : 20;
-        const safeOffset = Number.isFinite(offset)
-          ? Math.max(0, Math.floor(offset))
-          : 0;
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              total_ms BIGINT NOT NULL DEFAULT 0,
+              sessions BIGINT NOT NULL DEFAULT 0,
+              is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              PRIMARY KEY (guild_id, user_id)
+            )
+          `
+        );
 
         const res = await client.query(
           `
@@ -1956,29 +2071,34 @@ export async function getTempVoiceDeleteLeaderboard(
             FROM all_sessions
             GROUP BY user_id
             ORDER BY total_ms DESC, sessions DESC, user_id ASC
-            LIMIT $2
-            OFFSET $3
           `,
-          [guildId, safeLimit, safeOffset]
+          [guildId]
         );
 
-        return (res.rows as DeleteLeaderboardRow[]).map((row) => ({
-          userId: row.user_id,
-          totalMs: Number(row.total_ms ?? 0),
-          sessions: Number(row.sessions ?? 0),
-        }));
+        const overrideRes = await client.query(
+          `
+            SELECT user_id, total_ms, sessions, is_deleted
+            FROM voice_leaderboard_overrides
+            WHERE guild_id = $1
+          `,
+          [guildId]
+        );
+
+        const merged = applyLeaderboardOverrides(
+          (res.rows as DeleteLeaderboardRow[]).map((row) => ({
+            userId: row.user_id,
+            totalMs: Number(row.total_ms ?? 0),
+            sessions: Number(row.sessions ?? 0),
+          })),
+          overrideRes.rows as LeaderboardOverrideRow[]
+        );
+
+        return merged.slice(safeOffset, safeOffset + safeLimit);
       } finally {
         client.release();
         await scopedPool.end().catch(() => null);
       }
     }
-
-    const safeLimit = Number.isFinite(limit)
-      ? Math.min(200, Math.max(1, Math.floor(limit)))
-      : 20;
-    const safeOffset = Number.isFinite(offset)
-      ? Math.max(0, Math.floor(offset))
-      : 0;
 
     const db = getSqliteDb();
     const aggregate = new Map<string, { totalMs: number; sessions: number }>();
@@ -2034,28 +2154,33 @@ export async function getTempVoiceDeleteLeaderboard(
       aggregate.set(row.user_id, current);
     }
 
-    return [...aggregate.entries()]
+    const overrideRows = db
+      .prepare(
+        `
+          SELECT user_id, total_ms, sessions, is_deleted
+          FROM voice_leaderboard_overrides
+          WHERE guild_id = ?
+        `
+      )
+      .all(guildId) as LeaderboardOverrideRow[];
+
+    const merged = applyLeaderboardOverrides(
+      [...aggregate.entries()]
       .map(([userId, stats]) => ({
         userId,
         totalMs: stats.totalMs,
         sessions: stats.sessions,
       }))
-      .sort((a, b) => {
-        if (b.totalMs !== a.totalMs) return b.totalMs - a.totalMs;
-        if (b.sessions !== a.sessions) return b.sessions - a.sessions;
-        return a.userId.localeCompare(b.userId);
-      })
-      .slice(safeOffset, safeOffset + safeLimit);
+      ,
+      overrideRows
+    );
+
+    return merged.slice(safeOffset, safeOffset + safeLimit);
   }
 
   await ensureTempVoiceDeleteLogsTable();
   await ensureManualVoiceSessionLogsTable();
-  const safeLimit = Number.isFinite(limit)
-    ? Math.min(200, Math.max(1, Math.floor(limit)))
-    : 20;
-  const safeOffset = Number.isFinite(offset)
-    ? Math.max(0, Math.floor(offset))
-    : 0;
+  await ensureVoiceLeaderboardOverridesTable();
 
   const res = await query(
     `
@@ -2086,17 +2211,227 @@ export async function getTempVoiceDeleteLeaderboard(
       FROM all_sessions
       GROUP BY user_id
       ORDER BY total_ms DESC, sessions DESC, user_id ASC
-      LIMIT $2
-      OFFSET $3
     `,
-    [guildId, safeLimit, safeOffset]
+    [guildId]
   );
 
-  return (res.rows as DeleteLeaderboardRow[]).map((row) => ({
-    userId: row.user_id,
-    totalMs: Number(row.total_ms ?? 0),
-    sessions: Number(row.sessions ?? 0),
-  }));
+  const overrideRes = await query(
+    `
+      SELECT user_id, total_ms, sessions, is_deleted
+      FROM voice_leaderboard_overrides
+      WHERE guild_id = $1
+    `,
+    [guildId]
+  );
+
+  const merged = applyLeaderboardOverrides(
+    (res.rows as DeleteLeaderboardRow[]).map((row) => ({
+      userId: row.user_id,
+      totalMs: Number(row.total_ms ?? 0),
+      sessions: Number(row.sessions ?? 0),
+    })),
+    overrideRes.rows as LeaderboardOverrideRow[]
+  );
+
+  return merged.slice(safeOffset, safeOffset + safeLimit);
+}
+
+export async function upsertVoiceLeaderboardEntry(
+  guildId: string,
+  userId: string,
+  totalMs: number,
+  sessions: number
+) {
+  const safeTotalMs = Math.max(0, Math.floor(totalMs));
+  const safeSessions = Math.max(0, Math.floor(sessions));
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              total_ms BIGINT NOT NULL DEFAULT 0,
+              sessions BIGINT NOT NULL DEFAULT 0,
+              is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              PRIMARY KEY (guild_id, user_id)
+            )
+          `
+        );
+        await client.query(
+          `
+            INSERT INTO voice_leaderboard_overrides (
+              guild_id,
+              user_id,
+              total_ms,
+              sessions,
+              is_deleted,
+              updated_at,
+              created_at
+            )
+            VALUES ($1, $2, $3, $4, FALSE, NOW(), NOW())
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET
+              total_ms = EXCLUDED.total_ms,
+              sessions = EXCLUDED.sessions,
+              is_deleted = FALSE,
+              updated_at = NOW()
+          `,
+          [guildId, userId, safeTotalMs, safeSessions]
+        );
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+      return;
+    }
+
+    const db = getSqliteDb();
+    const now = new Date().toISOString();
+    db.prepare(
+      `
+        INSERT INTO voice_leaderboard_overrides (
+          guild_id,
+          user_id,
+          total_ms,
+          sessions,
+          is_deleted,
+          updated_at,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, 0, ?, ?)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+          total_ms = excluded.total_ms,
+          sessions = excluded.sessions,
+          is_deleted = 0,
+          updated_at = excluded.updated_at
+      `
+    ).run(guildId, userId, safeTotalMs, safeSessions, now, now);
+    return;
+  }
+
+  await ensureVoiceLeaderboardOverridesTable();
+  await query(
+    `
+      INSERT INTO voice_leaderboard_overrides (
+        guild_id,
+        user_id,
+        total_ms,
+        sessions,
+        is_deleted,
+        updated_at,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, FALSE, NOW(), NOW())
+      ON CONFLICT (guild_id, user_id) DO UPDATE SET
+        total_ms = EXCLUDED.total_ms,
+        sessions = EXCLUDED.sessions,
+        is_deleted = FALSE,
+        updated_at = NOW()
+    `,
+    [guildId, userId, safeTotalMs, safeSessions]
+  );
+}
+
+export async function deleteVoiceLeaderboardEntry(guildId: string, userId: string) {
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              total_ms BIGINT NOT NULL DEFAULT 0,
+              sessions BIGINT NOT NULL DEFAULT 0,
+              is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              PRIMARY KEY (guild_id, user_id)
+            )
+          `
+        );
+        await client.query(
+          `
+            INSERT INTO voice_leaderboard_overrides (
+              guild_id,
+              user_id,
+              total_ms,
+              sessions,
+              is_deleted,
+              updated_at,
+              created_at
+            )
+            VALUES ($1, $2, 0, 0, TRUE, NOW(), NOW())
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET
+              is_deleted = TRUE,
+              updated_at = NOW()
+          `,
+          [guildId, userId]
+        );
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+      return;
+    }
+
+    const db = getSqliteDb();
+    const now = new Date().toISOString();
+    db.prepare(
+      `
+        INSERT INTO voice_leaderboard_overrides (
+          guild_id,
+          user_id,
+          total_ms,
+          sessions,
+          is_deleted,
+          updated_at,
+          created_at
+        )
+        VALUES (?, ?, 0, 0, 1, ?, ?)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+          is_deleted = 1,
+          updated_at = excluded.updated_at
+      `
+    ).run(guildId, userId, now, now);
+    return;
+  }
+
+  await ensureVoiceLeaderboardOverridesTable();
+  await query(
+    `
+      INSERT INTO voice_leaderboard_overrides (
+        guild_id,
+        user_id,
+        total_ms,
+        sessions,
+        is_deleted,
+        updated_at,
+        created_at
+      )
+      VALUES ($1, $2, 0, 0, TRUE, NOW(), NOW())
+      ON CONFLICT (guild_id, user_id) DO UPDATE SET
+        is_deleted = TRUE,
+        updated_at = NOW()
+    `,
+    [guildId, userId]
+  );
 }
 
 type AutoRoleRequestRow = {

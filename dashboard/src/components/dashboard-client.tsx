@@ -41,7 +41,13 @@ function normalizeAutoRoleConfig(
   const rules = Array.isArray(value.rules)
     ? value.rules
         .filter((rule) => rule && typeof rule === "object")
-        .map((rule, index) => ({
+        .map((rule, index) => {
+          const requiredRoleMode: "any_role" | "specific_role" =
+            rule.requiredRoleMode === "specific_role"
+              ? "specific_role"
+              : "any_role";
+          return {
+            requiredRoleMode,
           id:
             typeof rule.id === "string" && rule.id.trim().length > 0
               ? rule.id
@@ -54,7 +60,12 @@ function normalizeAutoRoleConfig(
               : "more_than",
           hours: Math.max(0, Number.isFinite(Number(rule.hours)) ? Math.floor(Number(rule.hours)) : 0),
           roleId: typeof rule.roleId === "string" ? rule.roleId : "",
-        }))
+          requiredRoleId:
+            typeof rule.requiredRoleId === "string" && rule.requiredRoleId.trim().length > 0
+              ? rule.requiredRoleId
+              : null,
+          };
+        })
     : [];
 
   return {

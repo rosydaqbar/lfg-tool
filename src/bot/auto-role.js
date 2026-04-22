@@ -28,7 +28,7 @@ function createAutoRoleManager({ client, configStore }) {
   let running = false;
 
   function buildRuleKey(rule) {
-    return `${rule.condition}:${rule.hours}:${rule.roleId}`;
+    return `${rule.condition}:${rule.hours}:${rule.roleId}:${rule.requiredRoleMode || 'any_role'}:${rule.requiredRoleId || ''}`;
   }
 
   function isRuleMatched(totalMs, rule) {
@@ -46,6 +46,13 @@ function createAutoRoleManager({ client, configStore }) {
       return false;
     }
     return autoRoleConfig.requiredRoleIds.some((roleId) => member.roles.cache.has(roleId));
+  }
+
+  function hasRuleRequiredRole(member, rule) {
+    if (!member || !rule) return false;
+    if ((rule.requiredRoleMode || 'any_role') !== 'specific_role') return true;
+    if (!rule.requiredRoleId) return false;
+    return member.roles.cache.has(rule.requiredRoleId);
   }
 
   function buildApprovalPayload({ requestId, memberId, roleId, rule, totalMs }) {
@@ -213,6 +220,8 @@ function createAutoRoleManager({ client, configStore }) {
       for (const rule of autoRoleConfig.rules) {
         if (!rule?.roleId) continue;
         if (!isRuleMatched(entry.totalMs, rule)) continue;
+        if (!hasRuleRequiredRole(member, rule)) continue;
+        if (member.roles.cache.has(rule.roleId)) continue;
 
         if (autoRoleConfig.requireAdminApproval) {
           await maybeCreateApprovalRequest({
@@ -224,8 +233,6 @@ function createAutoRoleManager({ client, configStore }) {
           });
           continue;
         }
-
-        if (member.roles.cache.has(rule.roleId)) continue;
 
         await member.roles.add(rule.roleId, 'Auto role by voice time').catch((error) => {
           console.error('Failed to assign auto role:', error);

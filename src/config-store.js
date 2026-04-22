@@ -693,6 +693,14 @@ function normalizeAutoRoleConfig(value) {
             ? Math.max(0, Math.floor(rawHours))
             : 0,
           roleId: typeof rule.roleId === 'string' ? rule.roleId.trim() : '',
+          requiredRoleMode:
+            rule.requiredRoleMode === 'specific_role'
+              ? 'specific_role'
+              : 'any_role',
+          requiredRoleId:
+            typeof rule.requiredRoleId === 'string' && rule.requiredRoleId.trim().length > 0
+              ? rule.requiredRoleId.trim()
+              : null,
         };
       })
       .filter((rule) => rule.roleId.length > 0)
