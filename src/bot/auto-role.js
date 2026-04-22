@@ -213,7 +213,6 @@ function createAutoRoleManager({ client, configStore }) {
       for (const rule of autoRoleConfig.rules) {
         if (!rule?.roleId) continue;
         if (!isRuleMatched(entry.totalMs, rule)) continue;
-        if (member.roles.cache.has(rule.roleId)) continue;
 
         if (autoRoleConfig.requireAdminApproval) {
           await maybeCreateApprovalRequest({
@@ -225,6 +224,8 @@ function createAutoRoleManager({ client, configStore }) {
           });
           continue;
         }
+
+        if (member.roles.cache.has(rule.roleId)) continue;
 
         await member.roles.add(rule.roleId, 'Auto role by voice time').catch((error) => {
           console.error('Failed to assign auto role:', error);
