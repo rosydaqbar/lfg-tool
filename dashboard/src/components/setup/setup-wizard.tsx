@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,36 +19,14 @@ type SetupState = {
   discordClientId: string | null;
   discordClientSecretSet: boolean;
   databaseUrlSet: boolean;
-  steps: {
-    ownerClaimed: boolean;
-    discordAppConfigured: boolean;
-    botTokenValidated: boolean;
-    guildValidated: boolean;
-    inviteChecked: boolean;
-    databaseValidated: boolean;
-    channelsSaved: boolean;
-  };
 };
 
 type TextChannel = { id: string; name: string };
-type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
-
-const stepLabels: Record<WizardStep, string> = {
-  1: "Claim Owner",
-  2: "Discord App",
-  3: "Bot Token",
-  4: "Guild ID",
-  5: "Invite Bot",
-  6: "Database",
-  7: "Channels",
-  8: "Finalize",
-};
 
 export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [setup, setSetup] = useState<SetupState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState<WizardStep>(1);
 
   const [discordClientIdInput, setDiscordClientIdInput] = useState("");
   const [discordClientSecretInput, setDiscordClientSecretInput] = useState("");
@@ -57,7 +36,6 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [alreadyInvited, setAlreadyInvited] = useState<boolean | null>(null);
 
-  const [dbProvider, setDbProvider] = useState<"local_postgres" | "local_sqlite" | "supabase">("supabase");
   const [dbUrlInput, setDbUrlInput] = useState("");
   const [applySchema, setApplySchema] = useState(true);
   const [schemaSql, setSchemaSql] = useState("");
@@ -70,19 +48,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
 
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
-  const localSqlitePath = "dashboard-local.db";
-
-  function getProgressStep(state: SetupState): WizardStep {
-    if (!state.ownerDiscordId) return 1;
-    if (!(state.discordClientId && state.discordClientSecretSet)) return 2;
-    if (!state.botTokenSet) return 3;
-    if (!state.selectedGuildId) return 4;
-    if (!state.databaseValidatedAt) return 6;
-    if (!state.logChannelId) return 7;
-    return 8;
-  }
-
-  async function reloadState(options?: { keepStep?: boolean }) {
+  async function reloadState() {
     setLoading(true);
     setError(null);
     try {
@@ -94,8 +60,6 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       setLogChannelId(payload.setup.logChannelId ?? "");
       setLfgChannelId(payload.setup.lfgChannelId ?? "");
       setDiscordClientIdInput(payload.setup.discordClientId ?? "");
-      if (payload.setup.databaseProvider) setDbProvider(payload.setup.databaseProvider);
-      if (!options?.keepStep) setCurrentStep(getProgressStep(payload.setup));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load setup state");
     } finally {
@@ -107,15 +71,36 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     reloadState().catch(() => null);
   }, []);
 
+  useEffect(() => {
+    if (schemaSql || schemaLoading) return;
+    setSchemaLoading(true);
+    fetch("/api/setup/database/schema", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string; schemaSql?: string }
+          | null;
+        if (!response.ok) {
+          throw new Error(payload?.error || "Failed to load schema SQL");
+        }
+        setSchemaSql(payload?.schemaSql || "");
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load schema SQL");
+      })
+      .finally(() => {
+        setSchemaLoading(false);
+      });
+  }, [schemaLoading, schemaSql]);
+
   const canFinalize = useMemo(() => {
     return Boolean(
       setup?.ownerDiscordId &&
-      setup.discordClientId &&
-      setup.discordClientSecretSet &&
-      setup.botTokenSet &&
-      setup.selectedGuildId &&
-      setup.databaseValidatedAt &&
-      setup.logChannelId
+        setup.discordClientId &&
+        setup.discordClientSecretSet &&
+        setup.botTokenSet &&
+        setup.selectedGuildId &&
+        setup.databaseValidatedAt &&
+        setup.logChannelId
     );
   }, [setup]);
 
@@ -129,8 +114,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         body: JSON.stringify({ action: "claim_owner" }),
       });
       if (!response.ok) throw new Error("Failed to claim setup owner");
-      await reloadState({ keepStep: true });
-      setCurrentStep(2);
+      await reloadState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to claim owner");
     } finally {
@@ -151,10 +135,10 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         }),
       });
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(payload?.error || "Failed to save Discord app credentials");
+      if (!response.ok)
+        throw new Error(payload?.error || "Failed to save Discord app credentials");
       setDiscordClientSecretInput("");
-      await reloadState({ keepStep: true });
-      setCurrentStep(3);
+      await reloadState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save Discord app credentials");
     } finally {
@@ -174,10 +158,55 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || "Invalid token");
       setTokenInput("");
-      await reloadState({ keepStep: true });
-      setCurrentStep(4);
+      await reloadState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to validate token");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function validateAndSaveToken() {
+    setBusyKey("discord-token-combined");
+    setError(null);
+    try {
+      const canReuseSecret = Boolean(setup?.discordClientSecretSet && !discordClientSecretInput.trim());
+      if (!discordClientIdInput.trim() || (!discordClientSecretInput.trim() && !canReuseSecret)) {
+        throw new Error("Discord Client ID, Client Secret, and Bot Token are required.");
+      }
+
+      const saveResponse = await fetch("/api/setup/discord-app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: discordClientIdInput.trim(),
+          clientSecret: discordClientSecretInput.trim(),
+        }),
+      });
+      const savePayload = (await saveResponse.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      if (!saveResponse.ok) {
+        throw new Error(savePayload?.error || "Failed to save Discord app credentials");
+      }
+
+      const tokenResponse = await fetch("/api/setup/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: tokenInput }),
+      });
+      const tokenPayload = (await tokenResponse.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      if (!tokenResponse.ok) {
+        throw new Error(tokenPayload?.error || "Failed to validate bot token");
+      }
+
+      setDiscordClientSecretInput("");
+      setTokenInput("");
+      await reloadState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to validate and save token");
     } finally {
       setBusyKey(null);
     }
@@ -194,8 +223,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       });
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || "Failed to save guild");
-      await reloadState({ keepStep: true });
-      setCurrentStep(5);
+      await reloadState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save guild");
     } finally {
@@ -228,11 +256,11 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       const response = await fetch("/api/setup/database", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          dbProvider === "local_sqlite"
-            ? { provider: dbProvider, sqlitePath: dbUrlInput.trim(), applySchema }
-            : { provider: dbProvider, databaseUrl: dbUrlInput.trim(), applySchema }
-        ),
+        body: JSON.stringify({
+          provider: "supabase",
+          databaseUrl: dbUrlInput.trim(),
+          applySchema,
+        }),
       });
       const payload = (await response.json().catch(() => null)) as
         | { error?: string; details?: string; hint?: string | null }
@@ -243,8 +271,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         if (payload?.hint) parts.push(`Hint: ${payload.hint}`);
         throw new Error(parts.join("\n"));
       }
-      await reloadState({ keepStep: true });
-      setCurrentStep(7);
+      await reloadState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Database validation failed");
     } finally {
@@ -252,34 +279,14 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     }
   }
 
-  async function quickLocalDatabaseSetup() {
-    setBusyKey("database-local-quick");
-    setError(null);
+  async function copySchemaSql() {
+    if (!schemaSql.trim()) return;
     try {
-      setDbProvider("local_sqlite");
-      setDbUrlInput(localSqlitePath);
-      const response = await fetch("/api/setup/database", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: "local_sqlite",
-          sqlitePath: localSqlitePath,
-          applySchema: true,
-        }),
-      });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) {
-        throw new Error(
-          payload?.error
-            || "Failed to initialize local .db file."
-        );
-      }
-      await reloadState({ keepStep: true });
-      setCurrentStep(7);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed local database quick setup");
-    } finally {
-      setBusyKey(null);
+      await navigator.clipboard.writeText(schemaSql);
+      setSchemaCopied(true);
+      setTimeout(() => setSchemaCopied(false), 1600);
+    } catch {
+      setError("Failed to copy schema SQL. Copy manually from the code block.");
     }
   }
 
@@ -300,41 +307,6 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     }
   }
 
-  async function loadSchemaSql() {
-    if (schemaLoading || schemaSql) return;
-    setSchemaLoading(true);
-    try {
-      const response = await fetch("/api/setup/database/schema", { cache: "no-store" });
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; schemaSql?: string }
-        | null;
-      if (!response.ok) {
-        throw new Error(payload?.error || "Failed to load schema SQL");
-      }
-      setSchemaSql(payload?.schemaSql || "");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load schema SQL");
-    } finally {
-      setSchemaLoading(false);
-    }
-  }
-
-  async function copySchemaSql() {
-    if (!schemaSql.trim()) return;
-    try {
-      await navigator.clipboard.writeText(schemaSql);
-      setSchemaCopied(true);
-      setTimeout(() => setSchemaCopied(false), 1600);
-    } catch {
-      setError("Failed to copy schema SQL. Copy manually from the code block.");
-    }
-  }
-
-  useEffect(() => {
-    if (currentStep !== 6 || dbProvider !== "supabase") return;
-    loadSchemaSql().catch(() => null);
-  }, [currentStep, dbProvider]);
-
   async function saveChannels() {
     setBusyKey("channels-save");
     setError(null);
@@ -346,8 +318,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       });
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || "Failed to save channels");
-      await reloadState({ keepStep: true });
-      setCurrentStep(8);
+      await reloadState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save channels");
     } finally {
@@ -374,67 +345,96 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     return <div className="text-sm text-muted-foreground">Loading setup wizard...</div>;
   }
 
-  const stepNumbers: WizardStep[] = [1, 2, 3, 4, 5, 6, 7, 8];
+  const ownerClaimedByCurrentUser = setup?.ownerDiscordId === currentUserId;
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 text-sm font-medium">Setup Progress</div>
-        <div className="grid gap-2 md:grid-cols-8">
-          {stepNumbers.map((step) => {
-            const isActive = step === currentStep;
-            const isPast = step < currentStep;
-            return (
-              <button
-                key={step}
-                type="button"
-                className={`rounded-md border px-2 py-2 text-left text-xs ${
-                  isActive
-                    ? "border-primary bg-primary/10"
-                    : isPast
-                      ? "border-border bg-muted/50"
-                      : "border-border bg-background"
-                }`}
-                onClick={() => setCurrentStep(step)}
-              >
-                <div className="font-semibold">Step {step}</div>
-                <div className="text-muted-foreground">{stepLabels[step]}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {error ? (
-        <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive whitespace-pre-wrap">
           {error}
         </div>
       ) : null}
 
-      {currentStep === 1 ? (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="text-lg font-semibold">Step 1 - Claim Setup Owner</h2>
-          <p className="text-sm text-muted-foreground">Current user: <code>{currentUserId}</code></p>
-          <p className="text-sm text-muted-foreground">Owner: <code>{setup?.ownerDiscordId || "(not claimed)"}</code></p>
-          <Button onClick={claimOwner} disabled={busyKey === "claim" || setup?.ownerDiscordId === currentUserId}>
-            {setup?.ownerDiscordId === currentUserId ? "Owner Claimed" : "Claim as Owner"}
-          </Button>
-        </section>
-      ) : null}
+      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">A. Set Up Database</h2>
+          <p className="text-sm text-muted-foreground">
+            One step only. We support Supabase integration in setup.
+          </p>
+        </div>
 
-      {currentStep === 2 ? (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="text-lg font-semibold">Step 2 - Discord App Credentials</h2>
-          <label htmlFor="discord-client-id" className="text-sm font-medium">Discord Client ID</label>
+        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium">Step A1 - Configure Supabase Database</p>
+          <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-foreground">
+            Use Supabase Transaction Pooler URL (port <code>6543</code>) and include <code>sslmode=require</code>.
+          </div>
+          <label htmlFor="db-url" className="text-sm font-medium">Database URL</label>
           <Input
-            id="discord-client-id"
+            id="db-url"
+            type="password"
+            value={dbUrlInput}
+            onChange={(event) => setDbUrlInput(event.target.value)}
+            placeholder="postgresql://...:6543/postgres?sslmode=require"
+          />
+
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={applySchema}
+              onChange={(event) => setApplySchema(event.target.checked)}
+            />
+            Apply baseline schema check
+          </label>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-foreground">Schema SQL (`scripts/schema-postgres.sql`)</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={copySchemaSql}
+                disabled={!schemaSql.trim()}
+              >
+                {schemaCopied ? "Copied" : "Copy SQL"}
+              </Button>
+            </div>
+            <pre className="max-h-56 overflow-auto rounded-md border border-border bg-background p-3 text-[11px] leading-5 text-foreground">
+              <code>{schemaLoading ? "Loading schema SQL..." : schemaSql || "Schema SQL unavailable."}</code>
+            </pre>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button onClick={validateDatabase} disabled={busyKey === "database" || !dbUrlInput.trim()}>
+              Validate Database
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {setup?.databaseValidatedAt ? `Validated at ${new Date(setup.databaseValidatedAt).toLocaleString()}` : "Not validated yet"}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">B. Set Up Discord</h2>
+          <p className="text-sm text-muted-foreground">
+            Configure app, authenticate, claim owner, then validate and save token.
+          </p>
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium">Step B1 - Configure Discord App Basics</p>
+          <label htmlFor="discord-client-id-basic" className="text-sm font-medium">Discord Client ID</label>
+          <Input
+            id="discord-client-id-basic"
             value={discordClientIdInput}
             onChange={(event) => setDiscordClientIdInput(event.target.value)}
             placeholder="1234567890"
           />
-          <label htmlFor="discord-client-secret" className="text-sm font-medium">Discord Client Secret</label>
+          <label htmlFor="discord-client-secret-basic" className="text-sm font-medium">Discord Client Secret</label>
           <Input
-            id="discord-client-secret"
+            id="discord-client-secret-basic"
             type="password"
             value={discordClientSecretInput}
             onChange={(event) => setDiscordClientSecretInput(event.target.value)}
@@ -447,29 +447,70 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             </code>
             <p>Add this exact URI in Discord Developer Portal - OAuth2 - Redirects.</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setCurrentStep(1)}>Back</Button>
+          <div className="flex items-center gap-3">
             <Button
               onClick={saveDiscordApp}
               disabled={
-                busyKey === "discord-app"
-                || !discordClientIdInput.trim()
-                || (!discordClientSecretInput.trim() && !setup?.discordClientSecretSet)
+                busyKey === "discord-app" ||
+                !discordClientIdInput.trim() ||
+                (!discordClientSecretInput.trim() && !setup?.discordClientSecretSet)
               }
             >
-              Save Discord App
+              Save and Enable Login
+            </Button>
+            {setup?.discordClientId && setup?.discordClientSecretSet ? (
+              <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium">Step B2 - Login with Discord</p>
+          <p className="text-sm text-muted-foreground">You are signed in as <strong>{currentUserId}</strong>.</p>
+          <div className="flex gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/api/auth/signout">Switch account</Link>
             </Button>
           </div>
-          {setup?.discordClientId && setup?.discordClientSecretSet ? (
-            <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
-          ) : null}
-        </section>
-      ) : null}
+        </div>
 
-      {currentStep === 3 ? (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="text-lg font-semibold">Step 3 - Bot Token</h2>
-          <label htmlFor="bot-token" className="text-sm font-medium">Discord bot token</label>
+        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium">Step B3 - Claim Setup Owner</p>
+          <p className="text-sm text-muted-foreground">
+            Current owner: <code>{setup?.ownerDiscordId || "(not claimed)"}</code>
+          </p>
+          <Button
+            onClick={claimOwner}
+            disabled={busyKey === "claim" || ownerClaimedByCurrentUser}
+          >
+            {ownerClaimedByCurrentUser ? "Owner Claimed" : "Claim Setup Owner"}
+          </Button>
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium">Step B4 - Confirm Discord App and Save Bot Token</p>
+          <label htmlFor="discord-client-id-confirm" className="text-sm font-medium">Discord Client ID</label>
+          <Input
+            id="discord-client-id-confirm"
+            value={discordClientIdInput}
+            onChange={(event) => setDiscordClientIdInput(event.target.value)}
+            placeholder="1234567890"
+          />
+          <label htmlFor="discord-client-secret-confirm" className="text-sm font-medium">Discord Client Secret</label>
+          <Input
+            id="discord-client-secret-confirm"
+            type="password"
+            value={discordClientSecretInput}
+            onChange={(event) => setDiscordClientSecretInput(event.target.value)}
+            placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
+          />
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+            <code className="block rounded bg-background px-2 py-1 break-all">
+              http://localhost:3000/api/auth/callback/discord
+            </code>
+          </div>
+          <label htmlFor="bot-token" className="text-sm font-medium">Discord Bot Token</label>
           <Input
             id="bot-token"
             type="password"
@@ -478,22 +519,27 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             placeholder={setup?.botTokenSet ? "Token already saved" : "Paste token"}
           />
           {setup?.botDisplayName ? (
-            <p className="text-sm text-muted-foreground">
-              Bot detected: <strong>{setup.botDisplayName}</strong>
-            </p>
+            <p className="text-sm text-muted-foreground">Bot detected: <strong>{setup.botDisplayName}</strong></p>
           ) : null}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setCurrentStep(2)}>Back</Button>
-            <Button onClick={validateToken} disabled={busyKey === "token" || !tokenInput.trim()}>
-              Validate and Save Token
-            </Button>
-          </div>
-        </section>
-      ) : null}
+          <Button
+            onClick={validateAndSaveToken}
+            disabled={busyKey === "discord-token-combined" || !tokenInput.trim()}
+          >
+            Validate and Save Token
+          </Button>
+        </div>
+      </section>
 
-      {currentStep === 4 ? (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="text-lg font-semibold">Step 4 - Guild ID</h2>
+      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">C. Set Up Guild</h2>
+          <p className="text-sm text-muted-foreground">
+            Select guild, ensure bot invite, then map channels.
+          </p>
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium">Step C1 - Add Guild ID</p>
           <label htmlFor="guild-id" className="text-sm font-medium">Guild ID</label>
           <Input
             id="guild-id"
@@ -501,25 +547,17 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             onChange={(event) => setGuildIdInput(event.target.value)}
             placeholder="670147766839803924"
           />
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setCurrentStep(3)}>Back</Button>
-            <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>
-              Validate Guild
-            </Button>
-          </div>
-        </section>
-      ) : null}
+          <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>
+            Validate Guild
+          </Button>
+        </div>
 
-      {currentStep === 5 ? (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="text-lg font-semibold">Step 5 - Invite Bot (Skippable)</h2>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setCurrentStep(4)}>Back</Button>
-            <Button onClick={checkInvite} disabled={busyKey === "invite" || !setup?.selectedGuildId}>
-              Check Invite Status
-            </Button>
-            <Button variant="secondary" onClick={() => setCurrentStep(6)}>Skip</Button>
-          </div>
+        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium">Step C2 - Invite Bot</p>
+          <p className="text-xs text-muted-foreground">Skippable (same behavior as previous flow).</p>
+          <Button onClick={checkInvite} disabled={busyKey === "invite" || !setup?.selectedGuildId}>
+            Check Invite Status
+          </Button>
           {alreadyInvited !== null ? (
             <p className="text-sm text-muted-foreground">
               {alreadyInvited ? "Bot is already invited to this guild." : "Bot is not in the guild yet."}
@@ -535,162 +573,11 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
               Open Invite Link
             </a>
           ) : null}
-          {alreadyInvited ? <Button onClick={() => setCurrentStep(6)}>Continue</Button> : null}
-        </section>
-      ) : null}
+        </div>
 
-      {currentStep === 6 ? (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="text-lg font-semibold">Step 6 - Database</h2>
-          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-foreground">
-            <p className="font-medium">Recommended: Supabase</p>
-            <p className="text-muted-foreground">
-              Supabase is the main recommended option for this project because it is managed,
-              reliable, and easier to keep online for dashboard + bot in production.
-            </p>
-          </div>
+        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium">Step C3 - Set Up Channels</p>
           <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={dbProvider === "supabase" ? "default" : "outline"}
-              onClick={() => setDbProvider("supabase")}
-            >
-              Supabase
-            </Button>
-            <Button
-              type="button"
-              variant={dbProvider === "local_sqlite" ? "default" : "outline"}
-              onClick={() => setDbProvider("local_sqlite")}
-            >
-              Local .db (SQLite) (Beta)
-            </Button>
-            <Button
-              type="button"
-              variant={dbProvider === "local_postgres" ? "default" : "outline"}
-              onClick={() => setDbProvider("local_postgres")}
-            >
-              Local Postgres (Beta)
-            </Button>
-          </div>
-
-          {(dbProvider === "local_sqlite" || dbProvider === "local_postgres") ? (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-foreground">
-              <p className="font-medium">Local database warning</p>
-              <p className="text-muted-foreground">
-                If you use a local database, you must host the Discord bot locally as well so it can access
-                your database.
-              </p>
-            </div>
-          ) : null}
-
-          {dbProvider === "supabase" ? (
-            <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-foreground space-y-1">
-              <p className="font-medium">Supabase connection tip</p>
-              <p className="text-muted-foreground">Use the Transaction pooler connection string (port `6543`) with `sslmode=require`.</p>
-            </div>
-          ) : null}
-
-          {dbProvider === "local_sqlite" ? (
-            <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-2">
-              <p className="font-medium text-foreground">Local SQLite helper</p>
-              <p>This option creates a local `.db` file automatically on your machine.</p>
-              <Button
-                type="button"
-                onClick={quickLocalDatabaseSetup}
-                disabled={busyKey === "database-local-quick"}
-              >
-                {busyKey === "database-local-quick" ? "Setting up..." : "One-Click Local Setup"}
-              </Button>
-              <p>Suggested file path:</p>
-              <code className="block rounded bg-background px-2 py-1 break-all">{localSqlitePath}</code>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setDbUrlInput(localSqlitePath)}
-              >
-                Use Suggested .db Path
-              </Button>
-            </div>
-          ) : null}
-
-          <label htmlFor="db-url" className="text-sm font-medium">
-            {dbProvider === "local_sqlite" ? "SQLite file path" : "Database URL"}
-          </label>
-          <Input
-            id="db-url"
-            type="password"
-            value={dbUrlInput}
-            onChange={(event) => setDbUrlInput(event.target.value)}
-            placeholder={dbProvider === "local_sqlite" ? "dashboard-local.db" : "postgresql://..."}
-          />
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={applySchema}
-              onChange={(event) => setApplySchema(event.target.checked)}
-            />
-            Apply baseline schema check
-          </label>
-
-          {dbProvider === "supabase" ? (
-            <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-              <p className="text-sm font-medium text-foreground">Supabase setup steps</p>
-              <ol className="list-decimal space-y-2 pl-5 text-xs text-muted-foreground">
-                <li>Create a Supabase project and wait until it is fully ready.</li>
-                <li>
-                  Open <strong>Project Settings - Database</strong> and copy the Postgres connection
-                  string.
-                </li>
-                <li>
-                  Use the <strong>Transaction Pooler</strong> URL when available and ensure it includes
-                  <code>sslmode=require</code>.
-                </li>
-                <li>Paste that URL into the Database URL input above.</li>
-                <li>Keep <strong>Apply baseline schema check</strong> enabled.</li>
-                <li>
-                  Click <strong>Validate Database</strong> to save and test connection.
-                </li>
-                <li>
-                  If tables are missing, run the SQL below in Supabase SQL Editor, then validate
-                  again.
-                </li>
-              </ol>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-foreground">Schema SQL (`scripts/schema-postgres.sql`)</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={copySchemaSql}
-                    disabled={!schemaSql.trim()}
-                  >
-                    {schemaCopied ? "Copied" : "Copy SQL"}
-                  </Button>
-                </div>
-                <pre className="max-h-72 overflow-auto rounded-md border border-border bg-background p-3 text-[11px] leading-5 text-foreground">
-                  <code>{schemaLoading ? "Loading schema SQL..." : schemaSql || "Schema SQL unavailable."}</code>
-                </pre>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setCurrentStep(5)}>Back</Button>
-            <Button onClick={validateDatabase} disabled={busyKey === "database" || !dbUrlInput.trim()}>
-              Validate Database
-            </Button>
-          </div>
-        </section>
-      ) : null}
-
-      {currentStep === 7 ? (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="text-lg font-semibold">Step 7 - Channels</h2>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setCurrentStep(6)}>Back</Button>
             <Button onClick={loadChannels} disabled={busyKey === "channels-load" || !setup?.selectedGuildId}>
               Load Text Channels
             </Button>
@@ -729,21 +616,24 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           <Button onClick={saveChannels} disabled={busyKey === "channels-save" || !logChannelId}>
             Save Channel Setup
           </Button>
-        </section>
-      ) : null}
+        </div>
+      </section>
 
-      {currentStep === 8 ? (
-        <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <h2 className="text-lg font-semibold">Step 8 - Finalize</h2>
-          <p className="text-sm text-muted-foreground">Complete setup and continue to dashboard.</p>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setCurrentStep(7)}>Back</Button>
-            <Button onClick={completeSetup} disabled={!canFinalize || busyKey === "complete"}>
-              Complete Setup
-            </Button>
-          </div>
-        </section>
-      ) : null}
+      <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Finalize</h2>
+        <p className="text-sm text-muted-foreground">Complete setup after all sections above are done.</p>
+        <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+          <li>Database validated: {setup?.databaseValidatedAt ? "Yes" : "No"}</li>
+          <li>Discord app configured: {setup?.discordClientId && setup?.discordClientSecretSet ? "Yes" : "No"}</li>
+          <li>Bot token saved: {setup?.botTokenSet ? "Yes" : "No"}</li>
+          <li>Owner claimed: {setup?.ownerDiscordId ? "Yes" : "No"}</li>
+          <li>Guild selected: {setup?.selectedGuildId ? "Yes" : "No"}</li>
+          <li>Channels saved: {setup?.logChannelId ? "Yes" : "No"}</li>
+        </ul>
+        <Button onClick={completeSetup} disabled={!canFinalize || busyKey === "complete"}>
+          Complete Setup
+        </Button>
+      </section>
     </div>
   );
 }

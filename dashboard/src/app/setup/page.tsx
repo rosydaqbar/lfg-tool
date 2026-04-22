@@ -18,9 +18,11 @@ export default async function SetupPage({
   const setup = await getSetupState();
   const forceConfigureDiscord = params.configureDiscord === "1";
   const isSetupLocked = setup.setupComplete;
+  const showLoginGateCard = !session?.user?.id || isSetupLocked;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-12">
+      {showLoginGateCard ? (
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>{isSetupLocked ? "Setup Status" : "Step 0 - Discord Login"}</CardTitle>
@@ -56,6 +58,7 @@ export default async function SetupPage({
           )}
         </CardContent>
       </Card>
+      ) : null}
 
       {!session?.user?.id ? (
         <div className="space-y-6">
