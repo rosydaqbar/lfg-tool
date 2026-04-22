@@ -38,6 +38,7 @@ let manualVoicePanelMessageEnsured = false;
 let persistentLfgMessageEnsured = false;
 let voiceAutoRoleConfigEnsured = false;
 let voiceAutoRoleRequestsEnsured = false;
+let voiceLeaderboardOverridesEnsured = false;
 
 const TEMP_OWNER_CACHE_TTL_MS = 15_000;
 const tempOwnerByOwnerKeyCache = new Map();
@@ -342,6 +343,7 @@ async function getGuildVoiceTotals(guildId) {
   await ensureManualVoiceSessionLogsTable();
   await ensureTempVoiceActivityTable();
   await ensureManualVoiceActivityTable();
+  await ensureVoiceLeaderboardOverridesTable();
 
   const res = await query(
     `
@@ -408,10 +410,35 @@ async function getGuildVoiceTotals(guildId) {
     [guildId]
   );
 
-  return res.rows.map((row) => ({
-    userId: row.user_id,
-    totalMs: Number(row.total_ms || 0),
-  }));
+  const baseTotals = new Map(
+    res.rows.map((row) => [row.user_id, Number(row.total_ms || 0)])
+  );
+
+  const overrideRes = await query(
+    `
+      SELECT user_id, total_ms, is_deleted
+      FROM voice_leaderboard_overrides
+      WHERE guild_id = $1
+    `,
+    [guildId]
+  );
+
+  for (const row of overrideRes.rows) {
+    const isDeleted = row.is_deleted === true || Number(row.is_deleted || 0) !== 0;
+    if (isDeleted) {
+      baseTotals.delete(row.user_id);
+      continue;
+    }
+    baseTotals.set(row.user_id, Math.max(0, Number(row.total_ms || 0)));
+  }
+
+  return [...baseTotals.entries()]
+    .map(([userId, totalMs]) => ({ userId, totalMs }))
+    .filter((row) => row.totalMs > 0)
+    .sort((a, b) => {
+      if (b.totalMs !== a.totalMs) return b.totalMs - a.totalMs;
+      return a.userId.localeCompare(b.userId);
+    });
 }
 
 function mapVoiceAutoRoleRequestRow(row) {
@@ -770,6 +797,29 @@ async function ensureVoiceAutoRoleRequestsTable() {
     voiceAutoRoleRequestsEnsured = true;
   } catch (error) {
     console.error('Failed to ensure voice_auto_role_requests table:', error);
+  }
+}
+
+async function ensureVoiceLeaderboardOverridesTable() {
+  if (voiceLeaderboardOverridesEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
+          guild_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          total_ms BIGINT NOT NULL DEFAULT 0,
+          sessions BIGINT NOT NULL DEFAULT 0,
+          is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, user_id)
+        )
+      `
+    );
+    voiceLeaderboardOverridesEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure voice_leaderboard_overrides table:', error);
   }
 }
 
