@@ -370,10 +370,6 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     }
   }
 
-  if (loading && !setup) {
-    return <div className="text-sm text-muted-foreground">Loading setup wizard...</div>;
-  }
-
   const ownerClaimedByCurrentUser = setup?.ownerDiscordId === currentUserId;
   const discordStep1Done = Boolean(setup?.discordClientId && setup?.discordClientSecretSet);
   const discordStep2Done = true;
@@ -402,6 +398,10 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       return;
     }
   }, [phase, discordStep1Done, discordStep3Done, discordStep4Done]);
+
+  if (loading && !setup) {
+    return <div className="text-sm text-muted-foreground">Loading setup wizard...</div>;
+  }
 
   function DiscordSubstepCard({
     step,
