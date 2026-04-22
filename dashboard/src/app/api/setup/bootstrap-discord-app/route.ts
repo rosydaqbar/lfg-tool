@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const setup = await getSetupState();
-  if (setup.ownerDiscordId && !setup.setupComplete) {
+  if (setup.setupComplete) {
     return NextResponse.json(
-      { error: "Setup is already initialized. Sign in to continue." },
+      { error: "Setup already completed. Sign in to manage credentials." },
       { status: 403 }
     );
   }
@@ -41,13 +41,6 @@ export async function DELETE() {
   if (setup.setupComplete) {
     return NextResponse.json(
       { error: "Setup already completed. Sign in to manage credentials." },
-      { status: 403 }
-    );
-  }
-
-  if (setup.ownerDiscordId) {
-    return NextResponse.json(
-      { error: "Owner already claimed. Sign in to reset credentials." },
       { status: 403 }
     );
   }
