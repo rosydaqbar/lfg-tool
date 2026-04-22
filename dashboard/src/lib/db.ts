@@ -487,6 +487,11 @@ async function ensureSetupStateTable() {
 
 function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupState {
   const value = (snake: string, camel: string) => row?.[snake] ?? row?.[camel];
+  const asIsoString = (input: unknown) => {
+    if (typeof input === "string") return input;
+    if (input instanceof Date) return input.toISOString();
+    return null;
+  };
 
   const steps = {
     ownerClaimed: Boolean(value("owner_discord_id", "ownerDiscordId")),
@@ -529,9 +534,7 @@ function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupStat
         ? (value("database_provider", "databaseProvider") as "local_postgres" | "local_sqlite" | "supabase")
         : null,
     databaseValidatedAt:
-      typeof value("database_validated_at", "databaseValidatedAt") === "string"
-        ? (value("database_validated_at", "databaseValidatedAt") as string)
-        : null,
+      asIsoString(value("database_validated_at", "databaseValidatedAt")),
     botTokenSet: Boolean(
       value("bot_token_encrypted", "botTokenEncrypted")
       || value("bot_token", "botToken")
