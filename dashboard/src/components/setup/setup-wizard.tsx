@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
@@ -49,6 +50,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
 
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [phase, setPhase] = useState<SetupPhase>("A");
+  const [discordSubstep, setDiscordSubstep] = useState<1 | 2 | 3 | 4>(1);
 
   async function reloadState() {
     setLoading(true);
@@ -373,6 +375,74 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   }
 
   const ownerClaimedByCurrentUser = setup?.ownerDiscordId === currentUserId;
+  const discordStep1Done = Boolean(setup?.discordClientId && setup?.discordClientSecretSet);
+  const discordStep2Done = true;
+  const discordStep3Done = ownerClaimedByCurrentUser;
+  const discordStep4Done = Boolean(setup?.botTokenSet);
+
+  const canOpenDiscordSubstep = (step: 1 | 2 | 3 | 4) => {
+    if (step === 1) return true;
+    if (step === 2) return discordStep1Done;
+    if (step === 3) return discordStep1Done && discordStep2Done;
+    return discordStep1Done && discordStep2Done && discordStep3Done;
+  };
+
+  useEffect(() => {
+    if (phase !== "B") return;
+    if (!discordStep1Done) {
+      setDiscordSubstep(1);
+      return;
+    }
+    if (!discordStep3Done) {
+      setDiscordSubstep(3);
+      return;
+    }
+    if (!discordStep4Done) {
+      setDiscordSubstep(4);
+      return;
+    }
+  }, [phase, discordStep1Done, discordStep3Done, discordStep4Done]);
+
+  function DiscordSubstepCard({
+    step,
+    title,
+    done,
+    children,
+  }: {
+    step: 1 | 2 | 3 | 4;
+    title: string;
+    done: boolean;
+    children: React.ReactNode;
+  }) {
+    const open = discordSubstep === step;
+    const enabled = canOpenDiscordSubstep(step);
+
+    return (
+      <div className="rounded-lg border border-border bg-background">
+        <button
+          type="button"
+          disabled={!enabled}
+          onClick={() => enabled && setDiscordSubstep(step)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className={`inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs ${
+                done ? "border-emerald-500/40 text-emerald-400" : "border-border text-muted-foreground"
+              }`}
+            >
+              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : step}
+            </span>
+            <span className={`text-sm font-medium ${enabled ? "text-foreground" : "text-muted-foreground"}`}>
+              {title}
+            </span>
+          </div>
+          {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        </button>
+        {open ? <div className="border-t border-border px-4 py-4">{children}</div> : null}
+      </div>
+    );
+  }
   const phaseOrder: SetupPhase[] = ["A", "B", "C", "FINAL"];
   const phaseIndex = phaseOrder.indexOf(phase);
   const previousPhase = phaseIndex > 0 ? phaseOrder[phaseIndex - 1] : null;
@@ -509,9 +579,12 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           ) : null}
 
           {phase === "B" ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-3 rounded-lg border border-border bg-background p-4">
-                <p className="text-sm font-medium">B1. Configure Discord App Basics</p>
+            <div className="space-y-3">
+              <DiscordSubstepCard
+                step={1}
+                title="Configure Discord App Basics"
+                done={discordStep1Done}
+              >
                 <label htmlFor="discord-client-id-basic" className="text-sm font-medium">Discord Client ID</label>
                 <Input
                   id="discord-client-id-basic"
@@ -548,33 +621,40 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                     <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
                   ) : null}
                 </div>
-              </div>
+              </DiscordSubstepCard>
 
-              <div className="space-y-4">
-                <div className="space-y-3 rounded-lg border border-border bg-background p-4">
-                  <p className="text-sm font-medium">B2. Login with Discord</p>
-                  <p className="text-sm text-muted-foreground">You are signed in as <strong>{currentUserId}</strong>.</p>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href="/api/auth/signout">Switch account</Link>
-                  </Button>
-                </div>
+              <DiscordSubstepCard
+                step={2}
+                title="Login with Discord"
+                done={discordStep2Done}
+              >
+                <p className="text-sm text-muted-foreground">You are signed in as <strong>{currentUserId}</strong>.</p>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/api/auth/signout">Switch account</Link>
+                </Button>
+              </DiscordSubstepCard>
 
-                <div className="space-y-3 rounded-lg border border-border bg-background p-4">
-                  <p className="text-sm font-medium">B3. Claim Setup Owner</p>
-                  <p className="text-sm text-muted-foreground">
-                    Current owner: <code>{setup?.ownerDiscordId || "(not claimed)"}</code>
-                  </p>
-                  <Button
-                    onClick={claimOwner}
-                    disabled={busyKey === "claim" || ownerClaimedByCurrentUser}
-                  >
-                    {ownerClaimedByCurrentUser ? "Owner Claimed" : "Claim Setup Owner"}
-                  </Button>
-                </div>
-              </div>
+              <DiscordSubstepCard
+                step={3}
+                title="Claim Setup Owner"
+                done={discordStep3Done}
+              >
+                <p className="text-sm text-muted-foreground">
+                  Current owner: <code>{setup?.ownerDiscordId || "(not claimed)"}</code>
+                </p>
+                <Button
+                  onClick={claimOwner}
+                  disabled={busyKey === "claim" || ownerClaimedByCurrentUser}
+                >
+                  {ownerClaimedByCurrentUser ? "Owner Claimed" : "Claim Setup Owner"}
+                </Button>
+              </DiscordSubstepCard>
 
-              <div className="space-y-3 rounded-lg border border-border bg-background p-4 md:col-span-2">
-                <p className="text-sm font-medium">B4. Confirm Discord App and Save Bot Token</p>
+              <DiscordSubstepCard
+                step={4}
+                title="Confirm Discord App and Save Bot Token"
+                done={discordStep4Done}
+              >
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
                     <label htmlFor="discord-client-id-confirm" className="text-sm font-medium">Discord Client ID</label>
@@ -619,7 +699,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 >
                   Validate and Save Token
                 </Button>
-              </div>
+              </DiscordSubstepCard>
             </div>
           ) : null}
 
