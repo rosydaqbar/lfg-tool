@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
@@ -56,6 +56,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [inviteCheckFeedback, setInviteCheckFeedback] = useState<"present" | "missing" | null>(null);
 
   const [dbUrlInput, setDbUrlInput] = useState("");
+  const [databaseValidateSuccess, setDatabaseValidateSuccess] = useState(false);
   const [applySchema, setApplySchema] = useState(true);
   const [schemaSql, setSchemaSql] = useState("");
   const [schemaLoading, setSchemaLoading] = useState(false);
@@ -326,6 +327,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   async function validateDatabase() {
     setBusyKey("database");
     setError(null);
+    setDatabaseValidateSuccess(false);
     try {
       const response = await fetch("/api/setup/database", {
         method: "POST",
@@ -346,6 +348,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         throw new Error(parts.join("\n"));
       }
       await reloadState();
+      setDatabaseValidateSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Database validation failed");
     } finally {
@@ -442,6 +445,12 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     const timeout = window.setTimeout(() => setChannelLoadSuccess(false), 2600);
     return () => window.clearTimeout(timeout);
   }, [channelLoadSuccess]);
+
+  useEffect(() => {
+    if (!databaseValidateSuccess) return;
+    const timeout = window.setTimeout(() => setDatabaseValidateSuccess(false), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [databaseValidateSuccess]);
 
   useEffect(() => {
     if (!guildValidateSuccess) return;
@@ -692,7 +701,12 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     <div className="rounded-2xl border border-border bg-card shadow-lg shadow-black/5 overflow-hidden">
       <div className="flex items-center justify-between px-6 py-5">
         <div>
-          <h2 className="text-xl font-semibold">Setup Wizard</h2>
+          <h2 className="flex items-center gap-2 text-xl font-semibold">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary">
+              <Sparkles className="h-4 w-4" />
+            </span>
+            Setup Wizard
+          </h2>
           <p className="text-sm text-muted-foreground">{phaseTitles[phase]}</p>
         </div>
         <Button type="button" variant="ghost" size="sm" className="text-muted-foreground">
@@ -736,7 +750,12 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           {phase === "A" ? (
             <div className="space-y-4 rounded-lg border border-border bg-background p-4">
               <div className="space-y-2">
-                <label htmlFor="db-url" className="text-sm font-semibold">Database URL</label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label htmlFor="db-url" className="text-sm font-semibold">Database URL</label>
+                  <span className="rounded-full border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                    Required
+                  </span>
+                </div>
                 <Input
                   id="db-url"
                   type="password"
@@ -766,7 +785,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                   <div className="space-y-1">
                     <p className="text-xs font-semibold text-foreground">Schema SQL</p>
                     <p className="text-xs text-muted-foreground">
-                      Baseline schema from <code>scripts/schema-postgres.sql</code>. Hidden by default.
+                      Baseline schema from <code>scripts/schema-postgres.sql</code>.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -799,12 +818,18 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
 
               <div className="flex items-center gap-3">
                 <Button onClick={validateDatabase} disabled={busyKey === "database" || !dbUrlInput.trim()}>
-                  Validate Database
+                  {busyKey === "database" ? "Validating..." : "Validate Database"}
                 </Button>
                 <span className="text-xs text-muted-foreground">
                   {setup?.databaseValidatedAt ? `Validated at ${new Date(setup.databaseValidatedAt).toLocaleString()}` : "Not validated yet"}
                 </span>
               </div>
+              {databaseValidateSuccess ? (
+                <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 shadow-sm shadow-emerald-500/10 animate-pulse">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Database validated successfully. Continue to Discord setup.
+                </div>
+              ) : null}
             </div>
           ) : null}
 
