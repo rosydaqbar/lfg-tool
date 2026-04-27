@@ -127,6 +127,7 @@ export type SetupState = {
   discordClientId: string | null;
   discordClientSecretSet: boolean;
   databaseUrlSet: boolean;
+  setupAbandonedAt: string | null;
   steps: {
     ownerClaimed: boolean;
     discordAppConfigured: boolean;
@@ -463,6 +464,7 @@ async function ensureSetupStateTable() {
           database_provider TEXT,
           database_url_encrypted TEXT,
           database_validated_at TIMESTAMPTZ,
+          setup_abandoned_at TIMESTAMPTZ,
           owner_claimed_at TIMESTAMPTZ,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -478,6 +480,9 @@ async function ensureSetupStateTable() {
     );
     await query(
       "ALTER TABLE IF EXISTS setup_state ADD COLUMN IF NOT EXISTS discord_client_secret_encrypted TEXT"
+    );
+    await query(
+      "ALTER TABLE IF EXISTS setup_state ADD COLUMN IF NOT EXISTS setup_abandoned_at TIMESTAMPTZ"
     );
     setupStateEnsured = true;
   } catch (error) {
@@ -549,6 +554,8 @@ function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupStat
       value("database_url_encrypted", "databaseUrlEncrypted")
       || value("database_url", "databaseUrl")
     ),
+    setupAbandonedAt:
+      asIsoString(value("setup_abandoned_at", "setupAbandonedAt")),
     steps,
   };
 }
@@ -588,7 +595,7 @@ export async function getSetupState(): Promise<SetupState> {
   const res = await query(`SELECT * FROM setup_state WHERE id = 1`);
   let state = parseSetupStateRow(res.rows[0]);
 
-  if (!state.setupComplete && !state.steps.guildValidated) {
+  if (!state.setupComplete && !state.setupAbandonedAt && !state.steps.guildValidated) {
     let existing: { guild_id?: string; log_channel_id?: string; lfg_channel_id?: string } | undefined;
     try {
       const configRes = await query(
@@ -640,6 +647,7 @@ export async function updateSetupState(fields: {
   databaseUrlEncrypted?: string | null;
   databaseUrl?: string | null;
   databaseValidatedAt?: string | null;
+  setupAbandonedAt?: string | null;
   ownerClaimedAt?: string | null;
 }) {
   await ensureSetupRow();
@@ -674,6 +682,7 @@ export async function updateSetupState(fields: {
     databaseUrlEncrypted: "database_url_encrypted",
     databaseUrl: undefined,
     databaseValidatedAt: "database_validated_at",
+    setupAbandonedAt: "setup_abandoned_at",
     ownerClaimedAt: "owner_claimed_at",
   };
 
@@ -717,6 +726,7 @@ export async function resetSetupDraft() {
     databaseUrlEncrypted: null,
     databaseUrl: null,
     databaseValidatedAt: null,
+    setupAbandonedAt: new Date().toISOString(),
   });
 }
 

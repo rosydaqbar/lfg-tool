@@ -50,6 +50,7 @@ export async function POST(request: Request) {
     databaseUrlEncrypted: null,
     databaseUrl: null,
     databaseValidatedAt: null,
+    setupAbandonedAt: new Date().toISOString(),
   });
 
   return NextResponse.json({ ok: true, setup: await getSetupState() });

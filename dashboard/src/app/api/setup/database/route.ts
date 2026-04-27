@@ -190,6 +190,7 @@ export async function POST(request: Request) {
             database_provider TEXT,
             database_url_encrypted TEXT,
             database_validated_at TEXT,
+            setup_abandoned_at TEXT,
             owner_claimed_at TEXT,
             updated_at TEXT NOT NULL,
             created_at TEXT NOT NULL

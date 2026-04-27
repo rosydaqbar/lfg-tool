@@ -26,6 +26,6 @@ export async function POST() {
     );
   }
 
-  await updateSetupState({ setupComplete: true });
+  await updateSetupState({ setupComplete: true, setupAbandonedAt: null });
   return NextResponse.json({ ok: true, setup: await getSetupState() });
 }
