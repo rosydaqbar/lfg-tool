@@ -28,6 +28,7 @@ type SetupPhase = "A" | "B" | "C" | "FINAL";
 const BOT_INVITE_PERMISSIONS = "288427024";
 const SETUP_ACTIVE_STORAGE_KEY = "lfg-tool.setup-active";
 const SETUP_ABANDON_ENDPOINT = "/api/setup/abandon";
+const OAUTH_REDIRECT_URI = "http://localhost:3000/api/auth/callback/discord";
 
 function createBotInviteUrl(clientId: string, guildId?: string | null) {
   const params = new URLSearchParams({
@@ -49,6 +50,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
 
   const [discordClientIdInput, setDiscordClientIdInput] = useState("");
   const [discordClientSecretInput, setDiscordClientSecretInput] = useState("");
+  const [oauthCopied, setOauthCopied] = useState(false);
 
   const [tokenInput, setTokenInput] = useState("");
   const [guildIdInput, setGuildIdInput] = useState("");
@@ -372,6 +374,16 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       setTimeout(() => setSchemaCopied(false), 1600);
     } catch {
       setError("Failed to copy schema SQL. Copy manually from the code block.");
+    }
+  }
+
+  async function copyOAuthRedirectUri() {
+    try {
+      await navigator.clipboard.writeText(OAUTH_REDIRECT_URI);
+      setOauthCopied(true);
+      setTimeout(() => setOauthCopied(false), 1600);
+    } catch {
+      setError("Failed to copy OAuth redirect URI. Copy it manually from the text block.");
     }
   }
 
@@ -960,10 +972,18 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                   onChange={(event) => setDiscordClientSecretInput(event.target.value)}
                   placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
                 />
-                <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-                  <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+                <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-2">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+                      <p>Add this exact URI in Discord Developer Portal - OAuth2 - Redirects.</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={copyOAuthRedirectUri}>
+                      {oauthCopied ? "Copied" : "Copy OAuth URI"}
+                    </Button>
+                  </div>
                   <code className="block rounded bg-background px-2 py-1 break-all">
-                    http://localhost:3000/api/auth/callback/discord
+                    {OAUTH_REDIRECT_URI}
                   </code>
                 </div>
                 <div className="flex items-center gap-3">
@@ -1015,44 +1035,60 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 title="Confirm Discord App and Save Bot Token"
                 done={discordStep4Done}
               >
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label htmlFor="discord-client-id-confirm" className="text-sm font-medium">Discord Client ID</label>
-                    <Input
-                      id="discord-client-id-confirm"
-                      value={discordClientIdInput}
-                      onChange={(event) => setDiscordClientIdInput(event.target.value)}
-                      placeholder="1234567890"
-                    />
+                <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/5 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="bot-token" className="text-sm font-semibold">Discord Bot Token</label>
+                    <span className="rounded-full border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                      Required
+                    </span>
                   </div>
-                  <div className="space-y-2">
-                    <label htmlFor="discord-client-secret-confirm" className="text-sm font-medium">Discord Client Secret</label>
-                    <Input
-                      id="discord-client-secret-confirm"
-                      type="password"
-                      value={discordClientSecretInput}
-                      onChange={(event) => setDiscordClientSecretInput(event.target.value)}
-                      placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
-                    />
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Paste the bot token from Discord Developer Portal. This is the only value needed in this step.
+                  </p>
+                  <Input
+                    id="bot-token"
+                    type="password"
+                    value={tokenInput}
+                    onChange={(event) => setTokenInput(event.target.value)}
+                    placeholder={setup?.botTokenSet ? "Token already saved" : "Paste token"}
+                  />
                 </div>
-                <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-                  <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
-                  <code className="block rounded bg-background px-2 py-1 break-all">
-                    http://localhost:3000/api/auth/callback/discord
-                  </code>
-                </div>
-                <label htmlFor="bot-token" className="text-sm font-medium">Discord Bot Token</label>
-                <Input
-                  id="bot-token"
-                  type="password"
-                  value={tokenInput}
-                  onChange={(event) => setTokenInput(event.target.value)}
-                  placeholder={setup?.botTokenSet ? "Token already saved" : "Paste token"}
-                />
                 {setup?.botDisplayName ? (
                   <p className="text-sm text-muted-foreground">Bot detected: <strong>{setup.botDisplayName}</strong></p>
                 ) : null}
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                    <p className="font-semibold text-foreground">Discord Client ID</p>
+                    <p className="text-muted-foreground">Saved from the Discord app setup step.</p>
+                    <code className="mt-2 block rounded bg-background px-2 py-1 break-all text-foreground">
+                      {setup?.discordClientId || discordClientIdInput || "Not saved"}
+                    </code>
+                  </div>
+                  <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                    <p className="font-semibold text-foreground">Discord Client Secret</p>
+                    <p className="text-muted-foreground">Stored securely and hidden after saving.</p>
+                    <p className="mt-2 rounded bg-background px-2 py-1 text-foreground">
+                      {setup?.discordClientSecretSet ? "Secret already saved" : "Not saved"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-2">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-foreground">OAuth2 Redirect URI</p>
+                      <p>Copy this into Discord Developer Portal - OAuth2 - Redirects.</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={copyOAuthRedirectUri}>
+                      {oauthCopied ? "Copied" : "Copy OAuth URI"}
+                    </Button>
+                  </div>
+                  <code className="block rounded bg-background px-2 py-1 break-all text-foreground">
+                    {OAUTH_REDIRECT_URI}
+                  </code>
+                </div>
+
                 <Button
                   onClick={validateAndSaveToken}
                   disabled={busyKey === "discord-token-combined" || !tokenInput.trim()}
