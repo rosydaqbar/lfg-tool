@@ -699,6 +699,27 @@ export async function updateSetupState(fields: {
   );
 }
 
+export async function resetSetupDraft() {
+  await updateSetupState({
+    setupComplete: false,
+    ownerDiscordId: null,
+    ownerClaimedAt: null,
+    discordClientId: null,
+    discordClientSecretEncrypted: null,
+    discordClientSecret: null,
+    botTokenEncrypted: null,
+    botToken: null,
+    botDisplayName: null,
+    selectedGuildId: null,
+    logChannelId: null,
+    lfgChannelId: null,
+    databaseProvider: null,
+    databaseUrlEncrypted: null,
+    databaseUrl: null,
+    databaseValidatedAt: null,
+  });
+}
+
 export async function getSetupSecretPayload() {
   await ensureSetupRow();
 

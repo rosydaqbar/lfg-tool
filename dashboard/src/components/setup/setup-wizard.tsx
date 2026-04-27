@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,8 @@ type TextChannel = { id: string; name: string };
 type SetupPhase = "A" | "B" | "C" | "FINAL";
 
 const BOT_INVITE_PERMISSIONS = "288427024";
+const SETUP_ACTIVE_STORAGE_KEY = "lfg-tool.setup-active";
+const SETUP_ABANDON_ENDPOINT = "/api/setup/abandon";
 
 function createBotInviteUrl(clientId: string, guildId?: string | null) {
   const params = new URLSearchParams({
@@ -73,6 +75,12 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [phase, setPhase] = useState<SetupPhase>("A");
   const [discordSubstep, setDiscordSubstep] = useState<1 | 2 | 3 | 4>(1);
   const [guildSubstep, setGuildSubstep] = useState<1 | 2 | 3>(1);
+  const skipAbandonResetRef = useRef(false);
+  const setupCompleteRef = useRef(false);
+  const setupVisitInitializedRef = useRef(false);
+  const revisitResetStartedRef = useRef(false);
+
+  setupCompleteRef.current = Boolean(setup?.setupComplete);
 
   async function reloadState() {
     setLoading(true);
@@ -414,10 +422,58 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       const response = await fetch("/api/setup/complete", { method: "POST" });
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || "Failed to complete setup");
+      skipAbandonResetRef.current = true;
+      window.localStorage.removeItem(SETUP_ACTIVE_STORAGE_KEY);
       window.location.href = "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to complete setup");
     } finally {
+      setBusyKey(null);
+    }
+  }
+
+  function sendAbandonReset() {
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(SETUP_ABANDON_ENDPOINT, new Blob([], { type: "text/plain" }));
+        return;
+      }
+    } catch {
+      // fall back to fetch below
+    }
+
+    fetch(SETUP_ABANDON_ENDPOINT, { method: "POST", keepalive: true }).catch(() => null);
+  }
+
+  async function resetAbandonedSetupDraft() {
+    const response = await fetch(SETUP_ABANDON_ENDPOINT, { method: "POST" });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    if (!response.ok) {
+      throw new Error(payload?.error || "Failed to reset incomplete setup");
+    }
+  }
+
+  async function leaveSetup() {
+    if (setup?.setupComplete) {
+      window.location.href = "/";
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Leaving setup will reset your unfinished setup progress. Continue?"
+    );
+    if (!confirmed) return;
+
+    setBusyKey("setup-abandon");
+    setError(null);
+    try {
+      skipAbandonResetRef.current = true;
+      await resetAbandonedSetupDraft();
+      window.localStorage.removeItem(SETUP_ACTIVE_STORAGE_KEY);
+      window.location.href = "/";
+    } catch (err) {
+      skipAbandonResetRef.current = false;
+      setError(err instanceof Error ? err.message : "Failed to reset incomplete setup");
       setBusyKey(null);
     }
   }
@@ -445,6 +501,55 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     const timeout = window.setTimeout(() => setChannelLoadSuccess(false), 2600);
     return () => window.clearTimeout(timeout);
   }, [channelLoadSuccess]);
+
+  useEffect(() => {
+    if (!setup || setup.setupComplete || setupVisitInitializedRef.current || revisitResetStartedRef.current) {
+      if (setup?.setupComplete) {
+        window.localStorage.removeItem(SETUP_ACTIVE_STORAGE_KEY);
+      }
+      return;
+    }
+
+    setupVisitInitializedRef.current = true;
+    const hasActiveSetupDraft = window.localStorage.getItem(SETUP_ACTIVE_STORAGE_KEY) === "1";
+    window.localStorage.setItem(SETUP_ACTIVE_STORAGE_KEY, "1");
+    if (!hasActiveSetupDraft) return;
+
+    revisitResetStartedRef.current = true;
+    setBusyKey("setup-revisit-reset");
+    setError(null);
+    resetAbandonedSetupDraft()
+      .then(() => reloadState())
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to reset incomplete setup");
+      })
+      .finally(() => {
+        setBusyKey(null);
+      });
+  }, [setup]);
+
+  useEffect(() => {
+    const shouldBlock = () => !skipAbandonResetRef.current && !setupCompleteRef.current;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!shouldBlock()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const handlePageHide = () => {
+      if (!shouldBlock()) return;
+      window.localStorage.setItem(SETUP_ACTIVE_STORAGE_KEY, "1");
+      sendAbandonReset();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, []);
 
   useEffect(() => {
     if (!databaseValidateSuccess) return;
@@ -528,7 +633,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           type="button"
           disabled={!enabled}
           onClick={() => enabled && setDiscordSubstep(step)}
-          className="flex w-full items-center justify-between px-4 py-3 text-left"
+          className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors duration-150 hover:bg-muted/20 disabled:hover:bg-transparent"
         >
           <div className="flex items-center gap-3">
             <span
@@ -544,7 +649,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           </div>
           {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
         </button>
-        {open ? <div className="space-y-4 border-t border-border px-4 py-4">{children}</div> : null}
+        {open ? <div className="setup-accordion-panel space-y-4 border-t border-border px-4 py-4">{children}</div> : null}
       </div>
     );
   }
@@ -569,7 +674,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           type="button"
           disabled={!enabled}
           onClick={() => enabled && setGuildSubstep(step)}
-          className="flex w-full items-center justify-between px-4 py-3 text-left"
+          className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors duration-150 hover:bg-muted/20 disabled:hover:bg-transparent"
         >
           <div className="flex items-center gap-3">
             <span
@@ -585,7 +690,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           </div>
           {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
         </button>
-        {open ? <div className="space-y-4 border-t border-border px-4 py-4">{children}</div> : null}
+        {open ? <div className="setup-accordion-panel space-y-4 border-t border-border px-4 py-4">{children}</div> : null}
       </div>
     );
   }
@@ -735,7 +840,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                   disabled={!enabled}
                   onClick={() => setPhase(item)}
                 >
-                  <div className={`h-1 rounded-full ${active ? "bg-primary" : done ? "bg-primary/50" : "bg-muted"}`} />
+                  <div className={`h-1 rounded-full transition-colors duration-200 ${active ? "bg-primary" : done ? "bg-primary/50" : "bg-muted"}`} />
                   <p className={`mt-2 text-xs font-medium ${active ? "text-foreground" : "text-muted-foreground"}`}>
                     Step {index + 1}
                   </p>
@@ -748,7 +853,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           </div>
 
           {phase === "A" ? (
-            <div className="space-y-4 rounded-lg border border-border bg-background p-4">
+            <div className="setup-step-panel space-y-4 rounded-lg border border-border bg-background p-4">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <label htmlFor="db-url" className="text-sm font-semibold">Database URL</label>
@@ -834,7 +939,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           ) : null}
 
           {phase === "B" ? (
-            <div className="space-y-3">
+            <div className="setup-step-panel space-y-3">
               <DiscordSubstepCard
                 step={1}
                 title="Configure Discord App Basics"
@@ -959,7 +1064,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           ) : null}
 
           {phase === "C" ? (
-            <div className="space-y-3">
+            <div className="setup-step-panel space-y-3">
               <GuildSubstepCard
                 step={1}
                 title="Add Guild ID"
@@ -1133,7 +1238,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           ) : null}
 
           {phase === "FINAL" ? (
-            <div className="space-y-5 rounded-lg border border-border bg-background p-5">
+            <div className="setup-step-panel space-y-5 rounded-lg border border-border bg-background p-5">
               <div className="flex items-start gap-3">
                 <span
                   className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${
@@ -1250,10 +1355,18 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           >
             Back
           </Button>
-          <Button asChild type="button" variant="ghost" size="sm">
-            <Link href="/">Cancel</Link>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              leaveSetup().catch(() => null);
+            }}
+            disabled={busyKey === "setup-abandon"}
+          >
+            Cancel
           </Button>
-          <span className="text-xs text-muted-foreground">Draft setup saved automatically</span>
+          <span className="text-xs text-muted-foreground">Leaving or refreshing resets unfinished setup.</span>
         </div>
 
         <div className="flex items-center gap-2">

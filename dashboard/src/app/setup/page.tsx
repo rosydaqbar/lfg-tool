@@ -1,12 +1,25 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getSetupState } from "@/lib/db";
+import { getSetupState, resetSetupDraft, type SetupState } from "@/lib/db";
 import { SetupBootstrapDiscordApp } from "@/components/setup/setup-bootstrap-discord";
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
 import { SetupWizard } from "@/components/setup/setup-wizard";
 import { ResetSettingsSection } from "@/components/dashboard/reset-settings-section";
 import { getSafeServerSession } from "@/lib/safe-session";
+
+function hasIncompleteSetupDraft(setup: SetupState) {
+  if (setup.setupComplete) return false;
+  return Boolean(
+    setup.ownerDiscordId ||
+      setup.selectedGuildId ||
+      setup.logChannelId ||
+      setup.lfgChannelId ||
+      setup.databaseValidatedAt ||
+      setup.databaseUrlSet ||
+      setup.botTokenSet
+  );
+}
 
 export default async function SetupPage({
   searchParams,
@@ -15,7 +28,11 @@ export default async function SetupPage({
 }) {
   const params = await searchParams;
   const session = await getSafeServerSession();
-  const setup = await getSetupState();
+  let setup = await getSetupState();
+  if (session?.user?.id && hasIncompleteSetupDraft(setup)) {
+    await resetSetupDraft();
+    setup = await getSetupState();
+  }
   const forceConfigureDiscord = params.configureDiscord === "1";
   const isSetupLocked = setup.setupComplete;
   const showLoginGateCard = !session?.user?.id || isSetupLocked;
