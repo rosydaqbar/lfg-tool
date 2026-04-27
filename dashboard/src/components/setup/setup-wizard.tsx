@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
@@ -616,6 +616,77 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           ? "Next: Finalize"
           : "Complete Setup";
 
+  const finalStatusItems = [
+    {
+      title: "Database",
+      ready: isDatabaseReady,
+      detail: setup?.databaseValidatedAt
+        ? `Supabase connection validated at ${new Date(setup.databaseValidatedAt).toLocaleString()}.`
+        : "Supabase connection has not been validated yet.",
+      issue: isDatabaseReady ? null : "Validate the database in Step 1 before completing setup.",
+    },
+    {
+      title: "Discord App",
+      ready: discordStep1Done,
+      detail: discordStep1Done
+        ? "Client ID is saved and the client secret is stored securely."
+        : "Discord application credentials are incomplete.",
+      issue: discordStep1Done ? null : "Save the Discord Client ID and Client Secret in Step 2.",
+    },
+    {
+      title: "Bot Token",
+      ready: discordStep4Done,
+      detail: discordStep4Done
+        ? setup?.botDisplayName
+          ? `Bot token validated for ${setup.botDisplayName}.`
+          : "Bot token is saved and ready for runtime use."
+        : "Bot token has not been validated yet.",
+      issue: discordStep4Done ? null : "Validate and save the Discord Bot Token in Step 2.",
+    },
+    {
+      title: "Setup Owner",
+      ready: discordStep3Done,
+      detail: discordStep3Done
+        ? `Setup owner is your Discord account (${currentUserId}).`
+        : setup?.ownerDiscordId
+          ? `Setup owner is ${setup.ownerDiscordId}, not the current account.`
+          : "Setup owner has not been claimed.",
+      issue: discordStep3Done ? null : "Claim setup ownership with the Discord account that should manage this dashboard.",
+    },
+    {
+      title: "Guild",
+      ready: guildStep1Done,
+      detail: guildStep1Done
+        ? `Configured server ID: ${setup?.selectedGuildId}.`
+        : "No Discord server ID is configured.",
+      issue: guildStep1Done ? null : "Validate the Guild ID in Step 3.",
+    },
+    {
+      title: "Channels",
+      ready: guildStep3Done,
+      detail: guildStep3Done
+        ? `Log channel is set to ${setup?.logChannelId}. ${setup?.lfgChannelId ? `LFG channel is set to ${setup.lfgChannelId}.` : "LFG channel will use fallback behavior."}`
+        : "Log channel has not been selected.",
+      issue: guildStep3Done ? null : "Load text channels and select a required log channel in Step 3.",
+    },
+  ];
+
+  const finalPotentialIssues = [
+    ...(alreadyInvited === true
+      ? []
+      : [
+          alreadyInvited === false
+            ? "Bot was not confirmed in the server. Use Invite Bot to Server, authorize it, then recheck status."
+            : "Invite status has not been checked in this session. Check it if this is a fresh server setup.",
+        ]),
+    ...(!setup?.lfgChannelId
+      ? ["No dedicated LFG channel is selected. LFG posts will use fallback behavior unless you set one."]
+      : []),
+    ...finalStatusItems
+      .filter((item) => item.issue)
+      .map((item) => item.issue as string),
+  ];
+
   return (
     <div className="rounded-2xl border border-border bg-card shadow-lg shadow-black/5 overflow-hidden">
       <div className="flex items-center justify-between px-6 py-5">
@@ -1014,17 +1085,105 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           ) : null}
 
           {phase === "FINAL" ? (
-            <div className="space-y-3 rounded-lg border border-border bg-background p-4">
-              <h3 className="text-lg font-semibold">Ready to finalize</h3>
-              <p className="text-sm text-muted-foreground">Review completion checks before continuing.</p>
-              <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
-                <li>Database validated: {setup?.databaseValidatedAt ? "Yes" : "No"}</li>
-                <li>Discord app configured: {setup?.discordClientId && setup?.discordClientSecretSet ? "Yes" : "No"}</li>
-                <li>Bot token saved: {setup?.botTokenSet ? "Yes" : "No"}</li>
-                <li>Owner claimed: {setup?.ownerDiscordId ? "Yes" : "No"}</li>
-                <li>Guild selected: {setup?.selectedGuildId ? "Yes" : "No"}</li>
-                <li>Channels saved: {setup?.logChannelId ? "Yes" : "No"}</li>
-              </ul>
+            <div className="space-y-5 rounded-lg border border-border bg-background p-5">
+              <div className="flex items-start gap-3">
+                <span
+                  className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${
+                    canFinalize
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                      : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                  }`}
+                >
+                  {canFinalize ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+                </span>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-semibold">
+                    {canFinalize ? "Ready to complete setup" : "Setup needs attention"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Review each setup area before launching the dashboard and bot runtime.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {finalStatusItems.map((item) => (
+                  <div
+                    key={item.title}
+                    className={`rounded-lg border px-4 py-3 ${
+                      item.ready
+                        ? "border-emerald-500/30 bg-emerald-500/5"
+                        : "border-amber-500/35 bg-amber-500/10"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span
+                        className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                          item.ready
+                            ? "border-emerald-500/40 text-emerald-300"
+                            : "border-amber-500/40 text-amber-300"
+                        }`}
+                      >
+                        {item.ready ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                      </span>
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold">{item.title}</p>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                              item.ready
+                                ? "bg-emerald-500/15 text-emerald-200"
+                                : "bg-amber-500/15 text-amber-200"
+                            }`}
+                          >
+                            {item.ready ? "Ready" : "Needs action"}
+                          </span>
+                        </div>
+                        <p className="text-xs leading-5 text-muted-foreground">{item.detail}</p>
+                        {item.issue ? (
+                          <p className="text-xs leading-5 text-amber-200">{item.issue}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                className={`rounded-lg border px-4 py-3 ${
+                  finalPotentialIssues.length > 0
+                    ? "border-amber-500/35 bg-amber-500/10"
+                    : "border-emerald-500/30 bg-emerald-500/5"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                      finalPotentialIssues.length > 0
+                        ? "border-amber-500/40 text-amber-300"
+                        : "border-emerald-500/40 text-emerald-300"
+                    }`}
+                  >
+                    {finalPotentialIssues.length > 0 ? <AlertTriangle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  </span>
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">
+                      {finalPotentialIssues.length > 0 ? "Potential issues" : "No potential issues detected"}
+                    </p>
+                    {finalPotentialIssues.length > 0 ? (
+                      <div className="space-y-1 text-xs leading-5 text-amber-100">
+                        {finalPotentialIssues.map((issue) => (
+                          <p key={issue}>{issue}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        Required setup is complete and no optional warnings are currently visible.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           ) : null}
         </div>
