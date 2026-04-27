@@ -277,7 +277,10 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
           ...payload,
           allowedMentions: { users: [tempInfo.ownerId] },
         }).catch((error) => {
-          console.error('Failed to send fallback Join-to-Create prompt:', error);
+          console.error('Failed to send fallback Join-to-Create prompt:', {
+            guildId: guild.id,
+            channelId,
+          }, error);
           return null;
         });
         if (sent?.id) {
@@ -296,7 +299,11 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         })
         .then(() => true)
         .catch((error) => {
-          console.error('Failed to refresh Join-to-Create prompt:', error);
+          console.error('Failed to refresh Join-to-Create prompt:', {
+            guildId: guild.id,
+            channelId,
+            messageId: message.id,
+          }, error);
           return false;
         });
 
@@ -310,7 +317,11 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         ...payload,
         allowedMentions: { users: [tempInfo.ownerId] },
       }).catch((error) => {
-        console.error('Failed to resend Join-to-Create prompt after edit failure:', error);
+        console.error('Failed to resend Join-to-Create prompt after edit failure:', {
+          guildId: guild.id,
+          channelId,
+          previousMessageId: message.id,
+        }, error);
         return null;
       });
       if (sent?.id) {
@@ -393,7 +404,11 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         await rememberPromptMessageId(channel.id, sent.id);
         await refreshPersistentLfgForGuild(channel.guild?.id);
       } catch (error) {
-        console.error('Failed to send Join-to-Create prompt:', error);
+        console.error('Failed to send Join-to-Create prompt:', {
+          guildId: channel.guild?.id,
+          channelId: channel.id,
+          ownerId: member.id,
+        }, error);
       }
     });
   }

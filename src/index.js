@@ -17,6 +17,7 @@ const {
 const { createJoinToCreateManager } = require('./bot/join-to-create');
 const { createLfgManager } = require('./bot/lfg');
 const { createLogChannelFetcher } = require('./bot/log-channel');
+const { createErrorLogReporter } = require('./bot/error-log');
 const { createVoiceLogger } = require('./bot/voice-log');
 const { createHealthServer } = require('./bot/health-server');
 const { createStatsManager } = require('./bot/stats');
@@ -38,6 +39,13 @@ const client = new Client({
 
 const debugLog = createDebugLogger(DEBUG === 'true');
 const { getLogChannel } = createLogChannelFetcher(client);
+const errorLogReporter = createErrorLogReporter({
+  client,
+  getLogChannel,
+  configStore,
+  env: { LOG_CHANNEL_ID },
+});
+errorLogReporter.installConsoleErrorBridge();
 const statsManager = createStatsManager({
   client,
   configStore,
@@ -167,6 +175,9 @@ process.on('SIGINT', () => {
 
 client.once(Events.ClientReady, () => {
   logger.info(`Logged in as ${client.user.tag}`);
+  errorLogReporter.flushPending().catch((error) => {
+    console.error('Failed to flush pending error reports:', error);
+  });
   lfgManager.startPersistentLoop();
   lfgManager.startPromptReconcileLoop?.();
   joinToCreateManager.startStuckLobbyWatchdog?.();
