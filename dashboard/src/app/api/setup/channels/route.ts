@@ -13,10 +13,10 @@ export const dynamic = "force-dynamic";
 
 const TEXT_TYPES = new Set([0, 5]);
 
-async function loadTextChannels(guildId: string, botToken: string) {
+async function loadTextChannels(guildId: string, authorizationHeader: string) {
   const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
     headers: {
-      Authorization: `Bot ${botToken}`,
+      Authorization: authorizationHeader,
     },
     cache: "no-store",
   });
@@ -50,14 +50,47 @@ export async function GET() {
   }
 
   const secrets = await getSetupSecretPayload();
-  if (!secrets.botTokenEncrypted && !secrets.botToken) {
-    return NextResponse.json({ error: "Bot token is not configured" }, { status: 400 });
-  }
+  const accessToken =
+    typeof (auth.session as { accessToken?: unknown } | undefined)?.accessToken === "string"
+      ? ((auth.session as { accessToken?: string }).accessToken as string)
+      : "";
+
+  let textChannels: { id: string; name: string }[] = [];
+  let warning: string | null = null;
+  let botFetchFailed = false;
 
   try {
-    const botToken = secrets.botToken || decryptSetupValue(secrets.botTokenEncrypted as string);
-    const textChannels = await loadTextChannels(setup.selectedGuildId, botToken);
-    return NextResponse.json({ textChannels });
+    const botToken = secrets.botToken || (secrets.botTokenEncrypted ? decryptSetupValue(secrets.botTokenEncrypted as string) : "");
+    if (botToken) {
+      try {
+        textChannels = await loadTextChannels(setup.selectedGuildId, `Bot ${botToken}`);
+      } catch {
+        botFetchFailed = true;
+      }
+    }
+
+    if (textChannels.length === 0 && accessToken) {
+      try {
+        const userVisibleChannels = await loadTextChannels(
+          setup.selectedGuildId,
+          `Bearer ${accessToken}`
+        );
+        if (userVisibleChannels.length > 0) {
+          textChannels = userVisibleChannels;
+          warning = botFetchFailed
+            ? "Loaded channels using your Discord account. Bot API access failed; ensure bot is invited and can View Channels."
+            : "Loaded channels visible to your account. If missing in production, ensure bot can View Channels in this guild.";
+        }
+      } catch {
+        // ignore user-token fallback failure, handled by warning below
+      }
+    }
+
+    if (textChannels.length === 0) {
+      warning = "No text channels found. Ensure either your account or the bot can view text channels in this guild, then reload channels.";
+    }
+
+    return NextResponse.json({ textChannels, warning });
   } catch {
     return NextResponse.json({ error: "Failed to load text channels" }, { status: 400 });
   }

@@ -45,6 +45,8 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [schemaCopied, setSchemaCopied] = useState(false);
 
   const [textChannels, setTextChannels] = useState<TextChannel[]>([]);
+  const [channelLoadWarning, setChannelLoadWarning] = useState<string | null>(null);
+  const [channelLoadSuccess, setChannelLoadSuccess] = useState(false);
   const [logChannelId, setLogChannelId] = useState("");
   const [lfgChannelId, setLfgChannelId] = useState("");
 
@@ -339,13 +341,17 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   async function loadChannels() {
     setBusyKey("channels-load");
     setError(null);
+    setChannelLoadSuccess(false);
     try {
       const response = await fetch("/api/setup/channels", { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string; textChannels?: TextChannel[] }
+        | { error?: string; textChannels?: TextChannel[]; warning?: string | null }
         | null;
       if (!response.ok) throw new Error(payload?.error || "Failed to load channels");
-      setTextChannels(payload?.textChannels ?? []);
+      const loadedChannels = payload?.textChannels ?? [];
+      setTextChannels(loadedChannels);
+      setChannelLoadWarning(payload?.warning ?? null);
+      setChannelLoadSuccess(loadedChannels.length > 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load channels");
     } finally {
@@ -395,6 +401,13 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const guildStep1Done = Boolean(setup?.selectedGuildId);
   const guildStep2Done = true;
   const guildStep3Done = Boolean(setup?.logChannelId);
+  const hasLoadedTextChannels = textChannels.length > 0;
+
+  useEffect(() => {
+    if (!channelLoadSuccess) return;
+    const timeout = window.setTimeout(() => setChannelLoadSuccess(false), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [channelLoadSuccess]);
 
   const canOpenDiscordSubstep = (step: 1 | 2 | 3 | 4) => {
     if (step === 1) return true;
@@ -831,19 +844,40 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 title="Set Up Channels"
                 done={guildStep3Done}
               >
-                <Button onClick={loadChannels} disabled={busyKey === "channels-load" || !setup?.selectedGuildId}>
-                  Load Text Channels
-                </Button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button onClick={loadChannels} disabled={busyKey === "channels-load" || !setup?.selectedGuildId}>
+                    {busyKey === "channels-load" ? "Loading..." : hasLoadedTextChannels ? "Reload Text Channels" : "Load Text Channels"}
+                  </Button>
+                  {!hasLoadedTextChannels ? (
+                    <span className="text-xs text-muted-foreground">Load text channels before choosing log or LFG channels.</span>
+                  ) : (
+                    <span className="text-xs text-emerald-300">{textChannels.length} text channels loaded.</span>
+                  )}
+                </div>
+
+                {channelLoadSuccess ? (
+                  <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 shadow-sm shadow-emerald-500/10 animate-pulse">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Text channels loaded successfully. Pick your log channel below.
+                  </div>
+                ) : null}
+
+                {channelLoadWarning ? (
+                  <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    {channelLoadWarning}
+                  </div>
+                ) : null}
 
                 <div className="space-y-2">
                   <label htmlFor="log-channel" className="text-sm font-medium">Log Channel (required)</label>
                   <select
                     id="log-channel"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    className={`w-full rounded-md border border-border bg-background px-3 py-2 text-sm transition-opacity ${hasLoadedTextChannels ? "" : "cursor-not-allowed opacity-50"}`}
                     value={logChannelId}
                     onChange={(event) => setLogChannelId(event.target.value)}
+                    disabled={!hasLoadedTextChannels}
                   >
-                    <option value="">Select channel</option>
+                    <option value="">{hasLoadedTextChannels ? "Select channel" : "Load text channels first"}</option>
                     {textChannels.map((channel) => (
                       <option key={channel.id} value={channel.id}>{channel.name}</option>
                     ))}
@@ -854,17 +888,18 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                   <label htmlFor="lfg-channel" className="text-sm font-medium">LFG Channel (optional)</label>
                   <select
                     id="lfg-channel"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    className={`w-full rounded-md border border-border bg-background px-3 py-2 text-sm transition-opacity ${hasLoadedTextChannels ? "" : "cursor-not-allowed opacity-50"}`}
                     value={lfgChannelId}
                     onChange={(event) => setLfgChannelId(event.target.value)}
+                    disabled={!hasLoadedTextChannels}
                   >
-                    <option value="">Use fallback behavior</option>
+                    <option value="">{hasLoadedTextChannels ? "Use fallback behavior" : "Load text channels first"}</option>
                     {textChannels.map((channel) => (
                       <option key={channel.id} value={channel.id}>{channel.name}</option>
                     ))}
                   </select>
                 </div>
-                <Button onClick={saveChannels} disabled={busyKey === "channels-save" || !logChannelId}>
+                <Button onClick={saveChannels} disabled={busyKey === "channels-save" || !hasLoadedTextChannels || !logChannelId}>
                   Save Channel Setup
                 </Button>
               </GuildSubstepCard>
