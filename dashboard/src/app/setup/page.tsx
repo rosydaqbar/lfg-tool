@@ -233,7 +233,7 @@ export default async function SetupPage({
           </CardContent>
         </Card>
       ) : (
-        <SetupWizard currentUserId={session.user.id} />
+        <SetupWizard currentUserId={session.user.id} currentUserName={session.user.name ?? null} />
       )}
     </div>
   );

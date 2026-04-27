@@ -43,13 +43,20 @@ function createBotInviteUrl(clientId: string, guildId?: string | null) {
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 
-export function SetupWizard({ currentUserId }: { currentUserId: string }) {
+export function SetupWizard({
+  currentUserId,
+  currentUserName,
+}: {
+  currentUserId: string;
+  currentUserName?: string | null;
+}) {
   const [setup, setSetup] = useState<SetupState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [discordClientIdInput, setDiscordClientIdInput] = useState("");
   const [discordClientSecretInput, setDiscordClientSecretInput] = useState("");
+  const [editingDiscordApp, setEditingDiscordApp] = useState(false);
   const [oauthCopied, setOauthCopied] = useState(false);
 
   const [tokenInput, setTokenInput] = useState("");
@@ -199,6 +206,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       if (!response.ok)
         throw new Error(payload?.error || "Failed to save Discord app credentials");
       setDiscordClientSecretInput("");
+      setEditingDiscordApp(false);
       await reloadState();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save Discord app credentials");
@@ -880,11 +888,24 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                   onChange={(event) => setDbUrlInput(event.target.value)}
                   placeholder="postgresql://...:6543/postgres?sslmode=require"
                 />
-                <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs leading-5 text-foreground">
-                  <p className="font-semibold">Supabase connection details</p>
-                  <p className="text-muted-foreground">
-                    Use the Supabase Transaction Pooler URL on port <code>6543</code> and include <code>sslmode=require</code>.
-                  </p>
+                <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs leading-5 text-foreground">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold">Supabase connection details</p>
+                      <p className="text-muted-foreground">
+                        Use the Supabase Transaction Pooler URL on port <code>6543</code> and include <code>sslmode=require</code>.
+                      </p>
+                    </div>
+                    <Button asChild variant="outline" size="sm" className="shrink-0">
+                      <a
+                        href="https://supabase.com/docs/guides/database/connecting-to-postgres#pooler-session-mode"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Supabase guide
+                      </a>
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -954,53 +975,123 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
             <div className="setup-step-panel space-y-3">
               <DiscordSubstepCard
                 step={1}
-                title="Configure Discord App Basics"
+                title={discordStep1Done ? "Review Discord App Basics" : "Configure Discord App Basics"}
                 done={discordStep1Done}
               >
-                <label htmlFor="discord-client-id-basic" className="text-sm font-medium">Discord Client ID</label>
-                <Input
-                  id="discord-client-id-basic"
-                  value={discordClientIdInput}
-                  onChange={(event) => setDiscordClientIdInput(event.target.value)}
-                  placeholder="1234567890"
-                />
-                <label htmlFor="discord-client-secret-basic" className="text-sm font-medium">Discord Client Secret</label>
-                <Input
-                  id="discord-client-secret-basic"
-                  type="password"
-                  value={discordClientSecretInput}
-                  onChange={(event) => setDiscordClientSecretInput(event.target.value)}
-                  placeholder={setup?.discordClientSecretSet ? "Secret already saved" : "Paste secret"}
-                />
-                <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-2">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
-                      <p>Add this exact URI in Discord Developer Portal - OAuth2 - Redirects.</p>
+                {discordStep1Done && !editingDiscordApp ? (
+                  <>
+                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-500/40 text-emerald-300">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </span>
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-foreground">Discord app credentials are already saved.</p>
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            These were saved during onboarding. Review them here or change them if you need to use a different Discord application.
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={copyOAuthRedirectUri}>
-                      {oauthCopied ? "Copied" : "Copy OAuth URI"}
-                    </Button>
-                  </div>
-                  <code className="block rounded bg-background px-2 py-1 break-all">
-                    {OAUTH_REDIRECT_URI}
-                  </code>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button
-                    onClick={saveDiscordApp}
-                    disabled={
-                      busyKey === "discord-app" ||
-                      !discordClientIdInput.trim() ||
-                      (!discordClientSecretInput.trim() && !setup?.discordClientSecretSet)
-                    }
-                  >
-                    Save and Enable Login
-                  </Button>
-                  {setup?.discordClientId && setup?.discordClientSecretSet ? (
-                    <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
-                  ) : null}
-                </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                        <p className="font-semibold text-foreground">Discord Client ID</p>
+                        <code className="mt-2 block rounded bg-background px-2 py-1 break-all text-foreground">
+                          {setup?.discordClientId || "Not saved"}
+                        </code>
+                      </div>
+                      <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                        <p className="font-semibold text-foreground">Discord Client Secret</p>
+                        <p className="mt-2 rounded bg-background px-2 py-1 text-foreground">
+                          {setup?.discordClientSecretSet ? "Secret saved and hidden" : "Not saved"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-2">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+                          <p>Add this exact URI in Discord Developer Portal - OAuth2 - Redirects.</p>
+                        </div>
+                        <Button type="button" variant="outline" size="sm" onClick={copyOAuthRedirectUri}>
+                          {oauthCopied ? "Copied" : "Copy OAuth URI"}
+                        </Button>
+                      </div>
+                      <code className="block rounded bg-background px-2 py-1 break-all">
+                        {OAUTH_REDIRECT_URI}
+                      </code>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button type="button" variant="outline" onClick={() => setEditingDiscordApp(true)}>
+                        Change credentials
+                      </Button>
+                      <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label htmlFor="discord-client-id-basic" className="text-sm font-medium">Discord Client ID</label>
+                    <Input
+                      id="discord-client-id-basic"
+                      value={discordClientIdInput}
+                      onChange={(event) => setDiscordClientIdInput(event.target.value)}
+                      placeholder="1234567890"
+                    />
+                    <label htmlFor="discord-client-secret-basic" className="text-sm font-medium">Discord Client Secret</label>
+                    <Input
+                      id="discord-client-secret-basic"
+                      type="password"
+                      value={discordClientSecretInput}
+                      onChange={(event) => setDiscordClientSecretInput(event.target.value)}
+                      placeholder={setup?.discordClientSecretSet ? "Leave empty to keep current secret" : "Paste secret"}
+                    />
+                    <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-2">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
+                          <p>Add this exact URI in Discord Developer Portal - OAuth2 - Redirects.</p>
+                        </div>
+                        <Button type="button" variant="outline" size="sm" onClick={copyOAuthRedirectUri}>
+                          {oauthCopied ? "Copied" : "Copy OAuth URI"}
+                        </Button>
+                      </div>
+                      <code className="block rounded bg-background px-2 py-1 break-all">
+                        {OAUTH_REDIRECT_URI}
+                      </code>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        onClick={saveDiscordApp}
+                        disabled={
+                          busyKey === "discord-app" ||
+                          !discordClientIdInput.trim() ||
+                          (!discordClientSecretInput.trim() && !setup?.discordClientSecretSet)
+                        }
+                      >
+                        {busyKey === "discord-app" ? "Saving..." : "Save Discord App"}
+                      </Button>
+                      {discordStep1Done ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => {
+                            setDiscordClientIdInput(setup?.discordClientId ?? "");
+                            setDiscordClientSecretInput("");
+                            setEditingDiscordApp(false);
+                          }}
+                        >
+                          Cancel changes
+                        </Button>
+                      ) : null}
+                      {setup?.discordClientId && setup?.discordClientSecretSet ? (
+                        <SetupResetDiscordButton endpoint="/api/setup/discord-app" />
+                      ) : null}
+                    </div>
+                  </>
+                )}
               </DiscordSubstepCard>
 
               <DiscordSubstepCard
@@ -1019,6 +1110,18 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 title="Claim Setup Owner"
                 done={discordStep3Done}
               >
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-foreground">Lock setup to your account</p>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    This Discord account becomes the dashboard owner for setup and future admin access.
+                  </p>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium text-foreground">Will be set as setup owner</p>
+                  <p className="text-muted-foreground">
+                    {currentUserName || "Signed-in Discord user"} <code>{currentUserId}</code>
+                  </p>
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Current owner: <code>{setup?.ownerDiscordId || "(not claimed)"}</code>
                 </p>
@@ -1032,7 +1135,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
 
               <DiscordSubstepCard
                 step={4}
-                title="Confirm Discord App and Save Bot Token"
+                title="Discord Bot Token"
                 done={discordStep4Done}
               >
                 <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/5 p-4">
