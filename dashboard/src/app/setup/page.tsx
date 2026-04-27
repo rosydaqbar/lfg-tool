@@ -78,25 +78,6 @@ function SetupOnboardingPage({
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-border/70 bg-background/45 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Status</p>
-                  <p className="mt-2 text-sm font-semibold text-foreground">
-                    {isSetupLocked ? "Setup complete" : discordCredentialsReady ? "Login ready" : "OAuth needed"}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/45 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Step</p>
-                  <p className="mt-2 text-sm font-semibold text-foreground">{isSetupLocked ? "Complete" : "0 of 4"}</p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/45 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Owner</p>
-                  <p className="mt-2 text-sm font-semibold text-foreground">
-                    {setup.ownerDiscordId ? "Claimed" : "Not claimed"}
-                  </p>
-                </div>
-              </div>
-
               <div className="space-y-3">
                 {onboardingSteps.map((step, index) => {
                   const Icon = step.icon;
