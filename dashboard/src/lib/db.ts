@@ -312,6 +312,17 @@ function writeSetupStateFallback(nextState: Record<string, unknown>) {
   );
 }
 
+function writeAbandonedSetupStateFallback(now: string) {
+  const current = readSetupStateFallback();
+  writeSetupStateFallback({
+    id: 1,
+    setupComplete: false,
+    setupAbandonedAt: now,
+    createdAt: (current.createdAt as string | undefined) || now,
+    updatedAt: now,
+  });
+}
+
 let lfgEnabledColumnEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
@@ -710,16 +721,9 @@ export async function updateSetupState(fields: {
 
 export async function resetSetupDraft() {
   const now = new Date().toISOString();
+  writeAbandonedSetupStateFallback(now);
 
   if (!DATABASE_URL) {
-    const current = readSetupStateFallback();
-    writeSetupStateFallback({
-      id: 1,
-      setupComplete: false,
-      setupAbandonedAt: now,
-      createdAt: (current.createdAt as string | undefined) || now,
-      updatedAt: now,
-    });
     return;
   }
 
