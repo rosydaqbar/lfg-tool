@@ -838,7 +838,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           </div>
         ) : null}
 
-        <div className="rounded-xl border border-border bg-muted/10 p-5 space-y-6">
+        <div className="space-y-6">
           <div className="grid gap-3 md:grid-cols-4">
             {phaseOrder.map((item, index) => {
               const enabled = canOpenPhase(item);
