@@ -60,6 +60,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [schemaSql, setSchemaSql] = useState("");
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaCopied, setSchemaCopied] = useState(false);
+  const [schemaOpen, setSchemaOpen] = useState(false);
 
   const [textChannels, setTextChannels] = useState<TextChannel[]>([]);
   const [channelLoadWarning, setChannelLoadWarning] = useState<string | null>(null);
@@ -733,19 +734,23 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
           </div>
 
           {phase === "A" ? (
-            <div className="space-y-3 rounded-lg border border-border bg-background p-4">
-              <p className="text-sm font-medium">A1. Configure Supabase Database</p>
-              <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-foreground">
-                Use Supabase Transaction Pooler URL (port <code>6543</code>) and include <code>sslmode=require</code>.
+            <div className="space-y-4 rounded-lg border border-border bg-background p-4">
+              <div className="space-y-2">
+                <label htmlFor="db-url" className="text-sm font-semibold">Database URL</label>
+                <Input
+                  id="db-url"
+                  type="password"
+                  value={dbUrlInput}
+                  onChange={(event) => setDbUrlInput(event.target.value)}
+                  placeholder="postgresql://...:6543/postgres?sslmode=require"
+                />
+                <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs leading-5 text-foreground">
+                  <p className="font-semibold">Supabase connection details</p>
+                  <p className="text-muted-foreground">
+                    Use the Supabase Transaction Pooler URL on port <code>6543</code> and include <code>sslmode=require</code>.
+                  </p>
+                </div>
               </div>
-              <label htmlFor="db-url" className="text-sm font-medium">Database URL</label>
-              <Input
-                id="db-url"
-                type="password"
-                value={dbUrlInput}
-                onChange={(event) => setDbUrlInput(event.target.value)}
-                placeholder="postgresql://...:6543/postgres?sslmode=require"
-              />
 
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input
@@ -756,22 +761,40 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 Apply baseline schema check
               </label>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-foreground">Schema SQL (`scripts/schema-postgres.sql`)</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={copySchemaSql}
-                    disabled={!schemaSql.trim()}
-                  >
-                    {schemaCopied ? "Copied" : "Copy SQL"}
-                  </Button>
+              <div className="rounded-lg border border-border bg-muted/10 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-foreground">Schema SQL</p>
+                    <p className="text-xs text-muted-foreground">
+                      Baseline schema from <code>scripts/schema-postgres.sql</code>. Hidden by default.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={copySchemaSql}
+                      disabled={!schemaSql.trim()}
+                    >
+                      {schemaCopied ? "Copied" : "Copy SQL"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSchemaOpen((current) => !current)}
+                    >
+                      {schemaOpen ? "Hide SQL" : "Show SQL"}
+                      {schemaOpen ? <ChevronDown className="ml-1 h-4 w-4" /> : <ChevronRight className="ml-1 h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
-                <pre className="max-h-56 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-5 text-foreground">
-                  <code>{schemaLoading ? "Loading schema SQL..." : schemaSql || "Schema SQL unavailable."}</code>
-                </pre>
+                {schemaOpen ? (
+                  <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-border bg-background p-3 text-[11px] leading-5 text-foreground">
+                    <code>{schemaLoading ? "Loading schema SQL..." : schemaSql || "Schema SQL unavailable."}</code>
+                  </pre>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-3">
