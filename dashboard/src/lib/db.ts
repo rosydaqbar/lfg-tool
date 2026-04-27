@@ -304,12 +304,41 @@ function readSetupStateFallback(): Record<string, unknown> {
   }
 }
 
+function hasSetupStateFallback() {
+  try {
+    return fs.existsSync(SETUP_STATE_FALLBACK_PATH);
+  } catch {
+    return false;
+  }
+}
+
 function writeSetupStateFallback(nextState: Record<string, unknown>) {
   fs.writeFileSync(
     SETUP_STATE_FALLBACK_PATH,
     JSON.stringify(nextState, null, 2),
     "utf8"
   );
+}
+
+function mergeSetupStateFallback(fields: Record<string, unknown>) {
+  const now = new Date().toISOString();
+  const current = readSetupStateFallback();
+  const next: Record<string, unknown> = {
+    ...current,
+    id: 1,
+    createdAt: (current.createdAt as string | undefined) || now,
+    updatedAt: now,
+  };
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null || value === undefined) {
+      delete next[key];
+      continue;
+    }
+    next[key] = value;
+  }
+
+  writeSetupStateFallback(next);
 }
 
 function writeAbandonedSetupStateFallback(now: string) {
@@ -596,11 +625,15 @@ async function ensureSetupRow() {
 }
 
 export async function getSetupState(): Promise<SetupState> {
+  if (hasSetupStateFallback()) {
+    const fallback = readSetupStateFallback();
+    return parseSetupStateRow(fallback);
+  }
+
   await ensureSetupRow();
 
   if (!DATABASE_URL) {
-    const fallback = readSetupStateFallback();
-    return parseSetupStateRow(fallback);
+    return parseSetupStateRow(readSetupStateFallback());
   }
 
   const res = await query(`SELECT * FROM setup_state WHERE id = 1`);
@@ -661,62 +694,61 @@ export async function updateSetupState(fields: {
   setupAbandonedAt?: string | null;
   ownerClaimedAt?: string | null;
 }) {
-  await ensureSetupRow();
+  mergeSetupStateFallback(fields as Record<string, unknown>);
 
   if (!DATABASE_URL) {
-    const current = readSetupStateFallback();
-    const next = {
-      ...current,
-      ...fields,
-      updatedAt: new Date().toISOString(),
-    };
-    writeSetupStateFallback(next);
     return;
   }
 
-  const keys = Object.keys(fields) as (keyof typeof fields)[];
-  if (keys.length === 0) return;
+  try {
+    await ensureSetupRow();
 
-  const columnByKey: Partial<Record<keyof typeof fields, string>> = {
-    ownerDiscordId: "owner_discord_id",
-    setupComplete: "setup_complete",
-    selectedGuildId: "selected_guild_id",
-    logChannelId: "log_channel_id",
-    lfgChannelId: "lfg_channel_id",
-    botTokenEncrypted: "bot_token_encrypted",
-    botToken: undefined,
-    botDisplayName: "bot_display_name",
-    discordClientId: "discord_client_id",
-    discordClientSecretEncrypted: "discord_client_secret_encrypted",
-    discordClientSecret: undefined,
-    databaseProvider: "database_provider",
-    databaseUrlEncrypted: "database_url_encrypted",
-    databaseUrl: undefined,
-    databaseValidatedAt: "database_validated_at",
-    setupAbandonedAt: "setup_abandoned_at",
-    ownerClaimedAt: "owner_claimed_at",
-  };
+    const keys = Object.keys(fields) as (keyof typeof fields)[];
+    if (keys.length === 0) return;
 
-  const assignments: string[] = [];
-  const values: unknown[] = [];
-  keys.forEach((key) => {
-    const column = columnByKey[key];
-    if (!column) return;
-    assignments.push(`${column} = $${values.length + 1}`);
-    values.push(fields[key]);
-  });
+    const columnByKey: Partial<Record<keyof typeof fields, string>> = {
+      ownerDiscordId: "owner_discord_id",
+      setupComplete: "setup_complete",
+      selectedGuildId: "selected_guild_id",
+      logChannelId: "log_channel_id",
+      lfgChannelId: "lfg_channel_id",
+      botTokenEncrypted: "bot_token_encrypted",
+      botToken: undefined,
+      botDisplayName: "bot_display_name",
+      discordClientId: "discord_client_id",
+      discordClientSecretEncrypted: "discord_client_secret_encrypted",
+      discordClientSecret: undefined,
+      databaseProvider: "database_provider",
+      databaseUrlEncrypted: "database_url_encrypted",
+      databaseUrl: undefined,
+      databaseValidatedAt: "database_validated_at",
+      setupAbandonedAt: "setup_abandoned_at",
+      ownerClaimedAt: "owner_claimed_at",
+    };
 
-  if (assignments.length === 0) return;
+    const assignments: string[] = [];
+    const values: unknown[] = [];
+    keys.forEach((key) => {
+      const column = columnByKey[key];
+      if (!column) return;
+      assignments.push(`${column} = $${values.length + 1}`);
+      values.push(fields[key]);
+    });
 
-  values.push(1);
-  await query(
-    `
-      UPDATE setup_state
-      SET ${assignments.join(", ")}, updated_at = NOW()
-      WHERE id = $${values.length}
-    `,
-    values
-  );
+    if (assignments.length === 0) return;
+
+    values.push(1);
+    await query(
+      `
+        UPDATE setup_state
+        SET ${assignments.join(", ")}, updated_at = NOW()
+        WHERE id = $${values.length}
+      `,
+      values
+    );
+  } catch (error) {
+    console.error("Failed to mirror setup_state to database:", error);
+  }
 }
 
 export async function resetSetupDraft() {
@@ -749,10 +781,18 @@ export async function resetSetupDraft() {
 }
 
 export async function getSetupSecretPayload() {
-  await ensureSetupRow();
+  let fallback: Record<string, unknown> | null = null;
 
-  if (!DATABASE_URL) {
-    const fallback = readSetupStateFallback();
+  if (hasSetupStateFallback()) {
+    fallback = readSetupStateFallback();
+  } else {
+    await ensureSetupRow();
+    if (!DATABASE_URL) {
+      fallback = readSetupStateFallback();
+    }
+  }
+
+  if (fallback) {
     return {
       botTokenEncrypted: (fallback.botTokenEncrypted as string | null) ?? null,
       botToken: (fallback.botToken as string | null) ?? null,
