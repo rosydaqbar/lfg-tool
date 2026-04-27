@@ -5,7 +5,20 @@ import { requireSetupSession } from "@/lib/setup-session";
 
 export const dynamic = "force-dynamic";
 
-const REQUIRED_PERMISSIONS = "16781328";
+const BOT_INVITE_PERMISSIONS = "288427024";
+
+function createBotInviteUrl(clientId: string, guildId?: string | null) {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    permissions: BOT_INVITE_PERMISSIONS,
+    scope: "bot applications.commands",
+  });
+  if (guildId) {
+    params.set("guild_id", guildId);
+    params.set("disable_guild_select", "true");
+  }
+  return `https://discord.com/oauth2/authorize?${params.toString()}`;
+}
 
 async function fetchBotIdentity(botToken: string) {
   const response = await fetch("https://discord.com/api/v10/users/@me", {
@@ -28,7 +41,7 @@ export async function GET() {
   const clientId = setup.discordClientId || process.env.DISCORD_CLIENT_ID || null;
 
   const inviteUrl = clientId
-    ? `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=${REQUIRED_PERMISSIONS}&scope=bot%20applications.commands`
+    ? createBotInviteUrl(clientId, guildId)
     : null;
 
   if (!guildId) {

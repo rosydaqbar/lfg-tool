@@ -25,6 +25,21 @@ type SetupState = {
 type TextChannel = { id: string; name: string };
 type SetupPhase = "A" | "B" | "C" | "FINAL";
 
+const BOT_INVITE_PERMISSIONS = "288427024";
+
+function createBotInviteUrl(clientId: string, guildId?: string | null) {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    permissions: BOT_INVITE_PERMISSIONS,
+    scope: "bot applications.commands",
+  });
+  if (guildId) {
+    params.set("guild_id", guildId);
+    params.set("disable_guild_select", "true");
+  }
+  return `https://discord.com/oauth2/authorize?${params.toString()}`;
+}
+
 export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [setup, setSetup] = useState<SetupState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,6 +52,8 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const [guildIdInput, setGuildIdInput] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [alreadyInvited, setAlreadyInvited] = useState<boolean | null>(null);
+  const [guildValidateSuccess, setGuildValidateSuccess] = useState(false);
+  const [inviteCheckFeedback, setInviteCheckFeedback] = useState<"present" | "missing" | null>(null);
 
   const [dbUrlInput, setDbUrlInput] = useState("");
   const [applySchema, setApplySchema] = useState(true);
@@ -263,6 +280,10 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   async function saveGuild() {
     setBusyKey("guild");
     setError(null);
+    setGuildValidateSuccess(false);
+    setInviteUrl(null);
+    setAlreadyInvited(null);
+    setInviteCheckFeedback(null);
     try {
       const response = await fetch("/api/setup/guild", {
         method: "POST",
@@ -272,6 +293,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || "Failed to save guild");
       await reloadState();
+      setGuildValidateSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save guild");
     } finally {
@@ -282,6 +304,7 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   async function checkInvite() {
     setBusyKey("invite");
     setError(null);
+    setInviteCheckFeedback(null);
     try {
       const response = await fetch("/api/setup/invite", { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as
@@ -289,7 +312,9 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
         | null;
       if (!response.ok) throw new Error(payload?.error || "Failed to check invite");
       setInviteUrl(payload?.inviteUrl ?? null);
-      setAlreadyInvited(payload?.alreadyInvited ?? false);
+      const botAlreadyInvited = payload?.alreadyInvited ?? false;
+      setAlreadyInvited(botAlreadyInvited);
+      setInviteCheckFeedback(botAlreadyInvited ? "present" : "missing");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to check invite status");
     } finally {
@@ -402,6 +427,11 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const guildStep2Done = true;
   const guildStep3Done = Boolean(setup?.logChannelId);
   const hasLoadedTextChannels = textChannels.length > 0;
+  const inviteGuildId = setup?.selectedGuildId || guildIdInput.trim() || null;
+  const directInviteUrl = setup?.discordClientId
+    ? createBotInviteUrl(setup.discordClientId, inviteGuildId)
+    : null;
+  const activeInviteUrl = inviteUrl || directInviteUrl;
   const channelSelectClass = `w-full appearance-none rounded-md border border-border bg-background px-3 py-2 pr-10 text-sm leading-6 transition focus:outline-none focus:ring-2 focus:ring-primary/40 ${
     hasLoadedTextChannels ? "text-foreground" : "cursor-not-allowed text-muted-foreground opacity-50"
   }`;
@@ -411,6 +441,18 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
     const timeout = window.setTimeout(() => setChannelLoadSuccess(false), 2600);
     return () => window.clearTimeout(timeout);
   }, [channelLoadSuccess]);
+
+  useEffect(() => {
+    if (!guildValidateSuccess) return;
+    const timeout = window.setTimeout(() => setGuildValidateSuccess(false), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [guildValidateSuccess]);
+
+  useEffect(() => {
+    if (!inviteCheckFeedback) return;
+    const timeout = window.setTimeout(() => setInviteCheckFeedback(null), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [inviteCheckFeedback]);
 
   const canOpenDiscordSubstep = (step: 1 | 2 | 3 | 4) => {
     if (step === 1) return true;
@@ -808,12 +850,24 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 <Input
                   id="guild-id"
                   value={guildIdInput}
-                  onChange={(event) => setGuildIdInput(event.target.value)}
+                  onChange={(event) => {
+                    setGuildIdInput(event.target.value);
+                    setGuildValidateSuccess(false);
+                    setInviteUrl(null);
+                    setAlreadyInvited(null);
+                    setInviteCheckFeedback(null);
+                  }}
                   placeholder="670147766839803924"
                 />
                 <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>
-                  Validate Guild
+                  {busyKey === "guild" ? "Validating..." : guildStep1Done ? "Revalidate Guild" : "Validate Guild"}
                 </Button>
+                {guildValidateSuccess ? (
+                  <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 shadow-sm shadow-emerald-500/10 animate-pulse">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Guild ID validated successfully. Continue with the bot invite check.
+                  </div>
+                ) : null}
               </GuildSubstepCard>
 
               <GuildSubstepCard
@@ -821,24 +875,46 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 title="Invite Bot"
                 done={guildStep2Done}
               >
-                <p className="text-xs text-muted-foreground">Skippable step.</p>
-                <Button onClick={checkInvite} disabled={busyKey === "invite" || !setup?.selectedGuildId}>
-                  Check Invite Status
-                </Button>
-                {alreadyInvited !== null ? (
-                  <p className="text-sm text-muted-foreground">
-                    {alreadyInvited ? "Bot is already invited to this guild." : "Bot is not in the guild yet."}
-                  </p>
+                <p className="text-xs text-muted-foreground">
+                  Invite the bot to this server, then use the status check to confirm Discord sees it.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button onClick={checkInvite} disabled={busyKey === "invite" || !setup?.selectedGuildId}>
+                    {busyKey === "invite" ? "Checking..." : alreadyInvited === null ? "Check Invite Status" : "Recheck Invite Status"}
+                  </Button>
+                  {activeInviteUrl ? (
+                    <Button asChild variant="outline">
+                      <a href={activeInviteUrl} target="_blank" rel="noreferrer">
+                        Invite Bot to Server
+                      </a>
+                    </Button>
+                  ) : null}
+                </div>
+                {!activeInviteUrl ? (
+                  <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    Save your Discord Client ID first to generate the bot invite link.
+                  </div>
                 ) : null}
-                {!alreadyInvited && inviteUrl ? (
-                  <a
-                    href={inviteUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                {alreadyInvited !== null ? (
+                  <div
+                    className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-sm ${
+                      alreadyInvited
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 shadow-emerald-500/10"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-200 shadow-amber-500/10"
+                    } ${inviteCheckFeedback ? "animate-pulse" : ""}`}
                   >
-                    Open Invite Link
-                  </a>
+                    {alreadyInvited ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <ChevronRight className="mt-0.5 h-4 w-4" />}
+                    <div className="space-y-1">
+                      <p className="font-medium">
+                        {alreadyInvited ? "Bot is already invited." : "Bot is not in this guild yet."}
+                      </p>
+                      <p>
+                        {alreadyInvited
+                          ? "You can continue to channel setup."
+                          : "Use the invite button, authorize the bot, then recheck the status."}
+                      </p>
+                    </div>
+                  </div>
                 ) : null}
               </GuildSubstepCard>
 
