@@ -10,11 +10,6 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const setup = await getSetupState();
-  if (setup.setupComplete) {
-    return NextResponse.json({ ok: true, skipped: true, setup });
-  }
-
   await resetSetupDraft();
   return NextResponse.json({ ok: true, setup: await getSetupState() });
 }

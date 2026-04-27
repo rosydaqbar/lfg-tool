@@ -17,7 +17,8 @@ function hasIncompleteSetupDraft(setup: SetupState) {
       setup.lfgChannelId ||
       setup.databaseValidatedAt ||
       setup.databaseUrlSet ||
-      setup.botTokenSet
+      setup.botTokenSet ||
+      setup.setupAbandonedAt
   );
 }
 

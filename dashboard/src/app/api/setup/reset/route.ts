@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSetupState, updateSetupState } from "@/lib/db";
+import { getSetupState, resetSetupDraft } from "@/lib/db";
 import { requireAdminSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -33,25 +33,7 @@ export async function POST(request: Request) {
     );
   }
 
-  await updateSetupState({
-    setupComplete: false,
-    ownerDiscordId: null,
-    ownerClaimedAt: null,
-    discordClientId: null,
-    discordClientSecretEncrypted: null,
-    discordClientSecret: null,
-    botTokenEncrypted: null,
-    botToken: null,
-    botDisplayName: null,
-    selectedGuildId: null,
-    logChannelId: null,
-    lfgChannelId: null,
-    databaseProvider: null,
-    databaseUrlEncrypted: null,
-    databaseUrl: null,
-    databaseValidatedAt: null,
-    setupAbandonedAt: new Date().toISOString(),
-  });
+  await resetSetupDraft();
 
   return NextResponse.json({ ok: true, setup: await getSetupState() });
 }

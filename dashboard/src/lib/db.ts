@@ -709,6 +709,20 @@ export async function updateSetupState(fields: {
 }
 
 export async function resetSetupDraft() {
+  const now = new Date().toISOString();
+
+  if (!DATABASE_URL) {
+    const current = readSetupStateFallback();
+    writeSetupStateFallback({
+      id: 1,
+      setupComplete: false,
+      setupAbandonedAt: now,
+      createdAt: (current.createdAt as string | undefined) || now,
+      updatedAt: now,
+    });
+    return;
+  }
+
   await updateSetupState({
     setupComplete: false,
     ownerDiscordId: null,
@@ -726,7 +740,7 @@ export async function resetSetupDraft() {
     databaseUrlEncrypted: null,
     databaseUrl: null,
     databaseValidatedAt: null,
-    setupAbandonedAt: new Date().toISOString(),
+    setupAbandonedAt: now,
   });
 }
 
