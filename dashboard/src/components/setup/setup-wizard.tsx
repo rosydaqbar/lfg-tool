@@ -402,6 +402,9 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
   const guildStep2Done = true;
   const guildStep3Done = Boolean(setup?.logChannelId);
   const hasLoadedTextChannels = textChannels.length > 0;
+  const channelSelectClass = `w-full appearance-none rounded-md border border-border bg-background px-3 py-2 pr-10 text-sm leading-6 transition focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+    hasLoadedTextChannels ? "text-foreground" : "cursor-not-allowed text-muted-foreground opacity-50"
+  }`;
 
   useEffect(() => {
     if (!channelLoadSuccess) return;
@@ -869,35 +872,63 @@ export function SetupWizard({ currentUserId }: { currentUserId: string }) {
                 ) : null}
 
                 <div className="space-y-2">
-                  <label htmlFor="log-channel" className="text-sm font-medium">Log Channel (required)</label>
-                  <select
-                    id="log-channel"
-                    className={`w-full rounded-md border border-border bg-background px-3 py-2 text-sm transition-opacity ${hasLoadedTextChannels ? "" : "cursor-not-allowed opacity-50"}`}
-                    value={logChannelId}
-                    onChange={(event) => setLogChannelId(event.target.value)}
-                    disabled={!hasLoadedTextChannels}
-                  >
-                    <option value="">{hasLoadedTextChannels ? "Select channel" : "Load text channels first"}</option>
-                    {textChannels.map((channel) => (
-                      <option key={channel.id} value={channel.id}>{channel.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="log-channel" className="text-sm font-semibold">Log Channel</label>
+                    <span className="rounded-full border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                      Required
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Receives setup alerts, bot errors, voice activity logs, and operational notices.
+                  </p>
+                  <div className="relative">
+                    <select
+                      id="log-channel"
+                      className={channelSelectClass}
+                      value={logChannelId}
+                      onChange={(event) => setLogChannelId(event.target.value)}
+                      disabled={!hasLoadedTextChannels}
+                    >
+                      <option value="">{hasLoadedTextChannels ? "Select channel" : "Load text channels first"}</option>
+                      {textChannels.map((channel) => (
+                        <option key={channel.id} value={channel.id}>{channel.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pick a text channel the bot can view and send messages in.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="lfg-channel" className="text-sm font-medium">LFG Channel (optional)</label>
-                  <select
-                    id="lfg-channel"
-                    className={`w-full rounded-md border border-border bg-background px-3 py-2 text-sm transition-opacity ${hasLoadedTextChannels ? "" : "cursor-not-allowed opacity-50"}`}
-                    value={lfgChannelId}
-                    onChange={(event) => setLfgChannelId(event.target.value)}
-                    disabled={!hasLoadedTextChannels}
-                  >
-                    <option value="">{hasLoadedTextChannels ? "Use fallback behavior" : "Load text channels first"}</option>
-                    {textChannels.map((channel) => (
-                      <option key={channel.id} value={channel.id}>{channel.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="lfg-channel" className="text-sm font-semibold">LFG Channel</label>
+                    <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Optional
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Destination for LFG posts sent from Join-to-Create voice controls.
+                  </p>
+                  <div className="relative">
+                    <select
+                      id="lfg-channel"
+                      className={channelSelectClass}
+                      value={lfgChannelId}
+                      onChange={(event) => setLfgChannelId(event.target.value)}
+                      disabled={!hasLoadedTextChannels}
+                    >
+                      <option value="">{hasLoadedTextChannels ? "Use fallback behavior" : "Load text channels first"}</option>
+                      {textChannels.map((channel) => (
+                        <option key={channel.id} value={channel.id}>{channel.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Leave empty to fall back to the log channel behavior.
+                  </p>
                 </div>
                 <Button onClick={saveChannels} disabled={busyKey === "channels-save" || !hasLoadedTextChannels || !logChannelId}>
                   Save Channel Setup
