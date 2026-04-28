@@ -2482,6 +2482,8 @@ export async function deleteVoiceLeaderboardEntry(guildId: string, userId: strin
             )
             VALUES ($1, $2, 0, 0, TRUE, NOW(), NOW())
             ON CONFLICT (guild_id, user_id) DO UPDATE SET
+              total_ms = 0,
+              sessions = 0,
               is_deleted = TRUE,
               updated_at = NOW()
           `,
@@ -2509,6 +2511,8 @@ export async function deleteVoiceLeaderboardEntry(guildId: string, userId: strin
         )
         VALUES (?, ?, 0, 0, 1, ?, ?)
         ON CONFLICT(guild_id, user_id) DO UPDATE SET
+          total_ms = 0,
+          sessions = 0,
           is_deleted = 1,
           updated_at = excluded.updated_at
       `
@@ -2530,6 +2534,8 @@ export async function deleteVoiceLeaderboardEntry(guildId: string, userId: strin
       )
       VALUES ($1, $2, 0, 0, TRUE, NOW(), NOW())
       ON CONFLICT (guild_id, user_id) DO UPDATE SET
+        total_ms = 0,
+        sessions = 0,
         is_deleted = TRUE,
         updated_at = NOW()
     `,

@@ -99,6 +99,87 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     }
   }
 
+  function getDiscordErrorCode(error) {
+    return error?.code || error?.rawError?.code || error?.data?.code || null;
+  }
+
+  function describePromptError(error) {
+    const code = getDiscordErrorCode(error);
+    if (code === 10003) {
+      return {
+        expected: true,
+        reason: 'Discord says the temp channel no longer exists or is not accessible.',
+        action: 'Cleared the saved prompt reference. This usually happens after a temp voice channel is deleted.',
+      };
+    }
+    if (code === 10008) {
+      return {
+        expected: true,
+        reason: 'Discord says the saved prompt message no longer exists.',
+        action: 'Cleared the saved prompt reference so a new prompt can be created when needed.',
+      };
+    }
+    if (code === 'ChannelNotCached') {
+      return {
+        expected: true,
+        reason: 'The prompt message points to a channel that is no longer in the bot cache.',
+        action: 'Cleared the saved prompt reference. The next refresh will use the current channel state.',
+      };
+    }
+    if (code === 50001 || code === 50013) {
+      return {
+        expected: true,
+        reason: 'The bot cannot access or edit the prompt in that channel.',
+        action: 'Check the bot permissions for View Channel, Send Messages, and Manage Messages if this channel still exists.',
+      };
+    }
+
+    return {
+      expected: false,
+      reason: error?.message || 'Unexpected Discord error.',
+      action: 'The full error is included for debugging.',
+    };
+  }
+
+  function logPromptRefreshIssue(context, error) {
+    const description = describePromptError(error);
+    const details = {
+      guildId: context.guildId,
+      channelId: context.channelId,
+      messageId: context.messageId,
+      code: getDiscordErrorCode(error) || '-',
+      reason: description.reason,
+      nextStep: description.action,
+    };
+
+    if (description.expected) {
+      console.error('Join-to-Create prompt refresh skipped:', details);
+      return;
+    }
+
+    console.error('Join-to-Create prompt refresh failed unexpectedly:', details, error);
+  }
+
+  function logPromptSendIssue(title, context, error) {
+    const description = describePromptError(error);
+    const details = {
+      guildId: context.guildId,
+      channelId: context.channelId,
+      ownerId: context.ownerId,
+      previousMessageId: context.previousMessageId,
+      code: getDiscordErrorCode(error) || '-',
+      reason: description.reason,
+      nextStep: description.action,
+    };
+
+    if (description.expected) {
+      console.error(title, details);
+      return;
+    }
+
+    console.error(title, details, error);
+  }
+
   function isVoiceChannelLocked(channel, guild) {
     const everyoneId = guild?.roles?.everyone?.id;
     if (!everyoneId) return false;
@@ -277,9 +358,10 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
           ...payload,
           allowedMentions: { users: [tempInfo.ownerId] },
         }).catch((error) => {
-          console.error('Failed to send fallback Join-to-Create prompt:', {
+          logPromptSendIssue('Join-to-Create prompt send skipped:', {
             guildId: guild.id,
             channelId,
+            ownerId: tempInfo.ownerId,
           }, error);
           return null;
         });
@@ -298,12 +380,15 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
           allowedMentions: { parse: [] },
         })
         .then(() => true)
-        .catch((error) => {
-          console.error('Failed to refresh Join-to-Create prompt:', {
+        .catch(async (error) => {
+          logPromptRefreshIssue({
             guildId: guild.id,
             channelId,
             messageId: message.id,
           }, error);
+          if (describePromptError(error).expected) {
+            await clearPromptMessageId(channelId);
+          }
           return false;
         });
 
@@ -317,9 +402,10 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         ...payload,
         allowedMentions: { users: [tempInfo.ownerId] },
       }).catch((error) => {
-        console.error('Failed to resend Join-to-Create prompt after edit failure:', {
+        logPromptSendIssue('Join-to-Create prompt resend skipped:', {
           guildId: guild.id,
           channelId,
+          ownerId: tempInfo.ownerId,
           previousMessageId: message.id,
         }, error);
         return null;
@@ -387,12 +473,25 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         const existingMessage = await channel.messages.fetch(existingMessageId).catch(() => null);
         if (existingMessage && isPromptMessageForChannel(existingMessage, channel.id)) {
           const { flags: _ignoredFlags, ...editPayload } = payload;
-          await existingMessage
+          const edited = await existingMessage
             .edit({ ...editPayload, allowedMentions: { parse: [] } })
-            .catch(() => null);
-          await rememberPromptMessageId(channel.id, existingMessage.id);
-          await refreshPersistentLfgForGuild(channel.guild?.id);
-          return;
+            .then(() => true)
+            .catch(async (error) => {
+              logPromptRefreshIssue({
+                guildId: channel.guild?.id,
+                channelId: channel.id,
+                messageId: existingMessage.id,
+              }, error);
+              if (describePromptError(error).expected) {
+                await clearPromptMessageId(channel.id);
+              }
+              return false;
+            });
+          if (edited) {
+            await rememberPromptMessageId(channel.id, existingMessage.id);
+            await refreshPersistentLfgForGuild(channel.guild?.id);
+            return;
+          }
         }
       }
 
@@ -404,7 +503,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         await rememberPromptMessageId(channel.id, sent.id);
         await refreshPersistentLfgForGuild(channel.guild?.id);
       } catch (error) {
-        console.error('Failed to send Join-to-Create prompt:', {
+        logPromptSendIssue('Join-to-Create prompt send skipped:', {
           guildId: channel.guild?.id,
           channelId: channel.id,
           ownerId: member.id,

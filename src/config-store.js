@@ -338,6 +338,99 @@ async function getVoiceAutoRoleConfig(guildId) {
   return normalizeAutoRoleConfig(row?.config_json || null);
 }
 
+function isLeaderboardOverrideDeleted(row) {
+  return row?.is_deleted === true || Number(row?.is_deleted || 0) !== 0;
+}
+
+function applyVoiceLeaderboardOverrides(baseRows, overrideRows) {
+  const aggregate = new Map(
+    baseRows.map((row) => [
+      row.userId,
+      {
+        totalMs: Math.max(0, Number(row.totalMs || 0)),
+        sessions: Math.max(0, Number(row.sessions || 0)),
+      },
+    ])
+  );
+
+  for (const row of overrideRows) {
+    if (isLeaderboardOverrideDeleted(row)) {
+      aggregate.delete(row.user_id);
+      continue;
+    }
+
+    aggregate.set(row.user_id, {
+      totalMs: Math.max(0, Number(row.total_ms || 0)),
+      sessions: Math.max(0, Number(row.sessions || 0)),
+    });
+  }
+
+  return [...aggregate.entries()]
+    .map(([userId, stats]) => ({ userId, ...stats }))
+    .filter((row) => row.totalMs > 0)
+    .sort((a, b) => {
+      if (b.totalMs !== a.totalMs) return b.totalMs - a.totalMs;
+      if (b.sessions !== a.sessions) return b.sessions - a.sessions;
+      return a.userId.localeCompare(b.userId);
+    });
+}
+
+async function getVoiceLeaderboardRows(guildId) {
+  await ensureTempVoiceDeleteLogsTable();
+  await ensureManualVoiceSessionLogsTable();
+  await ensureVoiceLeaderboardOverridesTable();
+
+  const res = await query(
+    `
+      WITH temp_expanded AS (
+        SELECT
+          elem->>'userId' AS user_id,
+          CASE
+            WHEN (elem->>'totalMs') ~ '^[0-9]+$'
+              THEN (elem->>'totalMs')::bigint
+            ELSE 0
+          END AS total_ms
+        FROM temp_voice_delete_logs logs
+        CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
+        WHERE logs.guild_id = $1
+          AND elem ? 'userId'
+      ),
+      all_sessions AS (
+        SELECT user_id, total_ms FROM temp_expanded
+        UNION ALL
+        SELECT user_id, total_ms
+        FROM manual_voice_session_logs
+        WHERE guild_id = $1
+      )
+      SELECT
+        user_id,
+        SUM(total_ms)::bigint AS total_ms,
+        COUNT(*)::bigint AS sessions
+      FROM all_sessions
+      GROUP BY user_id
+    `,
+    [guildId]
+  );
+
+  const overrideRes = await query(
+    `
+      SELECT user_id, total_ms, sessions, is_deleted
+      FROM voice_leaderboard_overrides
+      WHERE guild_id = $1
+    `,
+    [guildId]
+  );
+
+  return applyVoiceLeaderboardOverrides(
+    res.rows.map((row) => ({
+      userId: row.user_id,
+      totalMs: Number(row.total_ms || 0),
+      sessions: Number(row.sessions || 0),
+    })),
+    overrideRes.rows
+  );
+}
+
 async function getGuildVoiceTotals(guildId) {
   await ensureTempVoiceDeleteLogsTable();
   await ensureManualVoiceSessionLogsTable();
@@ -424,8 +517,7 @@ async function getGuildVoiceTotals(guildId) {
   );
 
   for (const row of overrideRes.rows) {
-    const isDeleted = row.is_deleted === true || Number(row.is_deleted || 0) !== 0;
-    if (isDeleted) {
+    if (isLeaderboardOverrideDeleted(row)) {
       baseTotals.delete(row.user_id);
       continue;
     }
@@ -1218,6 +1310,7 @@ async function getVoiceStatsForUser(guildId, userId) {
   await ensureTempVoiceDeleteLogsTable();
   await ensureManualVoiceActivityTable();
   await ensureManualVoiceSessionLogsTable();
+  await ensureVoiceLeaderboardOverridesTable();
 
   const summaryRes = await query(
     `
@@ -1314,6 +1407,19 @@ async function getVoiceStatsForUser(guildId, userId) {
   );
 
   const summary = summaryRes.rows[0] || {};
+  const leaderboardRows = await getVoiceLeaderboardRows(guildId);
+  const leaderboardIndex = leaderboardRows.findIndex((row) => row.userId === userId);
+  const leaderboardEntry = leaderboardIndex >= 0 ? leaderboardRows[leaderboardIndex] : null;
+  const overrideRes = await query(
+    `
+      SELECT is_deleted
+      FROM voice_leaderboard_overrides
+      WHERE guild_id = $1
+        AND user_id = $2
+    `,
+    [guildId, userId]
+  );
+  const leaderboardDeleted = overrideRes.rows.some(isLeaderboardOverrideDeleted);
   const tempActive = activeRes.rows[0] || null;
   const manualActive = manualActiveRes.rows[0] || null;
   let active = null;
@@ -1343,12 +1449,14 @@ async function getVoiceStatsForUser(guildId, userId) {
   }
 
   return {
-    totalMs: Number(summary.total_ms || 0),
-    sessions: Number(summary.sessions || 0),
-    longestMs: Number(summary.longest_ms || 0),
+    totalMs: leaderboardDeleted ? 0 : leaderboardEntry?.totalMs || 0,
+    sessions: leaderboardDeleted ? 0 : leaderboardEntry?.sessions || 0,
+    longestMs: !leaderboardDeleted && leaderboardEntry
+      ? Math.min(Number(summary.longest_ms || 0), leaderboardEntry.totalMs)
+      : 0,
     ownerCount: Number(ownerRes.rows[0]?.owner_count || 0),
-    rank: Number(summary.rank_position || 0) || null,
-    activeNow: active
+    rank: !leaderboardDeleted && leaderboardIndex >= 0 ? leaderboardIndex + 1 : null,
+    activeNow: active && !leaderboardDeleted
       ? {
           channelId: active.channel_id,
           joinedAt: active.joined_at ? new Date(active.joined_at) : null,
@@ -1359,51 +1467,16 @@ async function getVoiceStatsForUser(guildId, userId) {
 }
 
 async function getVoiceLeaderboard(guildId, limit = 10) {
-  await ensureTempVoiceDeleteLogsTable();
-  await ensureManualVoiceSessionLogsTable();
   const safeLimit = Number.isFinite(limit)
     ? Math.min(50, Math.max(1, Math.floor(limit)))
     : 10;
 
-  const res = await query(
-    `
-      WITH temp_expanded AS (
-        SELECT
-          elem->>'userId' AS user_id,
-          CASE
-            WHEN (elem->>'totalMs') ~ '^[0-9]+$'
-              THEN (elem->>'totalMs')::bigint
-            ELSE 0
-          END AS total_ms
-        FROM temp_voice_delete_logs logs
-        CROSS JOIN LATERAL jsonb_array_elements(logs.history_json) elem
-        WHERE logs.guild_id = $1
-          AND elem ? 'userId'
-      ),
-      all_sessions AS (
-        SELECT user_id, total_ms FROM temp_expanded
-        UNION ALL
-        SELECT user_id, total_ms
-        FROM manual_voice_session_logs
-        WHERE guild_id = $1
-      )
-      SELECT
-        user_id,
-        SUM(total_ms)::bigint AS total_ms,
-        COUNT(*)::bigint AS sessions
-      FROM all_sessions
-      GROUP BY user_id
-      ORDER BY total_ms DESC, sessions DESC, user_id ASC
-      LIMIT $2
-    `,
-    [guildId, safeLimit]
-  );
-
-  return res.rows.map((row, index) => ({
+  const rows = await getVoiceLeaderboardRows(guildId);
+  return rows.slice(0, safeLimit).map((row, index) => ({
     rank: index + 1,
-    userId: row.user_id,
-    totalMs: Number(row.total_ms || 0),
-    sessions: Number(row.sessions || 0),
+    userId: row.userId,
+    totalMs: row.totalMs,
+    sessions: row.sessions,
   }));
 }
 
