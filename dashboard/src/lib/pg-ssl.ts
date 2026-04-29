@@ -25,15 +25,18 @@ function isEnabled(value: unknown, defaultValue = true) {
 
 export function buildPgSslConfig() {
   const mode = process.env.PG_SSL_MODE || process.env.PGSSLMODE || "require";
+  const normalizedMode = normalize(mode);
   if (isDisabled(mode)) {
     return false;
   }
 
+  const defaultRejectUnauthorized =
+    normalizedMode === "verify-ca" || normalizedMode === "verify-full";
+
   const rejectUnauthorized = isEnabled(
     process.env.PG_SSL_REJECT_UNAUTHORIZED ??
-      process.env.PGSSLREJECTUNAUTHORIZED ??
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED,
-    true
+      process.env.PGSSLREJECTUNAUTHORIZED,
+    defaultRejectUnauthorized
   );
 
   const ca = process.env.PG_SSL_CA || null;
