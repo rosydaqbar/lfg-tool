@@ -220,28 +220,21 @@ function AutoRoleSectionComponent({
               Assign server roles based on total voice time in JTC and Voice Log channels.
             </CardDescription>
           </div>
-          <Badge variant={value.enabled ? "default" : "secondary"} className="rounded-full px-3 py-1">
-            {value.enabled ? "Enabled" : "Disabled"}
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant={value.enabled ? "default" : "secondary"} className="rounded-full px-3 py-1">
+              {value.enabled ? "Enabled" : "Disabled"}
+            </Badge>
+            <Switch
+              checked={value.enabled}
+              onCheckedChange={(enabled) => onChange({ ...value, enabled })}
+              aria-label="Enable auto role"
+              disabled={loadingConfig}
+            />
+          </div>
         </div>
         <Separator />
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex items-center justify-between rounded-xl border border-border/70 bg-muted/20 p-4">
-          <div>
-            <div className="text-sm font-medium">Enable auto role</div>
-            <div className="text-xs text-muted-foreground">
-              When enabled, the bot evaluates time-based role rules automatically.
-            </div>
-          </div>
-          <Switch
-            checked={value.enabled}
-            onCheckedChange={(enabled) => onChange({ ...value, enabled })}
-            aria-label="Enable auto role"
-            disabled={loadingConfig}
-          />
-        </div>
-
         <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
           <div>
             <div className="text-sm font-medium">Global role required to apply</div>
