@@ -16,6 +16,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -158,12 +159,13 @@ function AutoRoleSectionComponent({
     [roles]
   );
 
-  const availableRequiredRoles = useMemo(
-    () => roles.filter((role) => !value.requiredRoleIds.includes(role.id)),
-    [roles, value.requiredRoleIds]
-  );
-
   const formDisabled = loadingConfig || !value.enabled;
+  const selectedRequiredRoleIds = value.requiredRoleMode === "selected_roles"
+    ? value.requiredRoleIds
+    : [];
+  const requiredRoleButtonLabel = selectedRequiredRoleIds.length
+    ? `${selectedRequiredRoleIds.length} role${selectedRequiredRoleIds.length === 1 ? "" : "s"} selected`
+    : "All roles";
   const roleOptions = useMemo(
     () =>
       roles.map((role) => ({
@@ -241,117 +243,134 @@ function AutoRoleSectionComponent({
         </div>
 
         <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
-          <div className="text-sm font-medium">Global role required to apply</div>
-          <Select
-            value={value.requiredRoleMode}
-            disabled={formDisabled}
-            onValueChange={(nextValue: "all_roles" | "selected_roles") => {
-              onChange({
-                ...value,
-                requiredRoleMode: nextValue,
-                requiredRoleIds:
-                  nextValue === "all_roles" ? [] : value.requiredRoleIds,
-              });
-            }}
+          <div>
+            <div className="text-sm font-medium">Global role required to apply</div>
+            <div className="text-xs text-muted-foreground">
+              Choose who can be evaluated by auto-role rules. Pick All roles, or select one or more required guild roles.
+            </div>
+          </div>
+
+          <Popover
+            open={requiredRolePickerOpen}
+            onOpenChange={setRequiredRolePickerOpen}
           >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select requirement mode" />
-            </SelectTrigger>
-            <SelectContent className="max-h-64 overflow-auto">
-              <SelectItem value="all_roles">All Roles</SelectItem>
-              <SelectItem value="selected_roles">Selected Roles</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {value.requiredRoleMode === "selected_roles" ? (
-            <div className="space-y-3">
-              <Popover
-                open={requiredRolePickerOpen}
-                onOpenChange={setRequiredRolePickerOpen}
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={requiredRolePickerOpen}
+                className="w-full justify-between"
+                disabled={formDisabled}
               >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={requiredRolePickerOpen}
-                    className="w-full justify-between"
-                    disabled={formDisabled || availableRequiredRoles.length === 0}
-                  >
-                    Add required role
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-                  <Command>
-                    <CommandInput placeholder="Search roles..." />
-                    <CommandEmpty>No available roles.</CommandEmpty>
-                    <CommandList className="max-h-64 overflow-auto">
-                      <CommandGroup>
-                        {availableRequiredRoles.map((role) => (
-                          <CommandItem
-                            key={role.id}
-                            value={`${role.name} ${role.id}`}
-                            onSelect={() => {
-                              onChange({
-                                ...value,
-                                requiredRoleIds: [...value.requiredRoleIds, role.id],
-                              });
-                              setRequiredRolePickerOpen(false);
-                            }}
-                          >
-                            <Check className="mr-2 h-4 w-4 opacity-0" />
-                            <span className="min-w-0">
-                              <span className="block truncate">{role.name}</span>
-                              <span className="block truncate font-mono text-[10px] text-muted-foreground">
-                                {role.id}
-                              </span>
-                            </span>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-
-              <div className="flex flex-wrap gap-2">
-                {value.requiredRoleIds.length ? (
-                  value.requiredRoleIds.map((roleId) => {
-                    const role = roleById.get(roleId);
-                    return (
-                      <Badge
-                        key={roleId}
-                        variant="secondary"
-                        className="inline-flex items-center gap-2 rounded-full px-3 py-1"
-                      >
-                        <span>{role?.name ?? roleId}</span>
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {roleId}
+                <span className="truncate text-left">{requiredRoleButtonLabel}</span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+              <Command>
+                <CommandInput placeholder="Search roles..." />
+                <CommandEmpty>No roles found.</CommandEmpty>
+                <CommandList className="max-h-72 overflow-auto">
+                  <CommandGroup>
+                    <CommandItem
+                      value="all roles everyone no requirement"
+                      onSelect={() => {
+                        onChange({
+                          ...value,
+                          requiredRoleMode: "all_roles",
+                          requiredRoleIds: [],
+                        });
+                        setRequiredRolePickerOpen(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          value.requiredRoleMode === "all_roles" ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate">All roles</span>
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          Everyone can be evaluated by auto-role rules.
                         </span>
-                        <button
-                          type="button"
-                          className="rounded-full p-0.5 hover:bg-muted"
-                          disabled={formDisabled}
-                          onClick={() =>
+                      </span>
+                    </CommandItem>
+                  </CommandGroup>
+                  <CommandSeparator />
+                  <CommandGroup heading="Guild roles">
+                    {roles.map((role) => {
+                      const selected = selectedRequiredRoleIds.includes(role.id);
+                      return (
+                        <CommandItem
+                          key={role.id}
+                          value={`${role.name} ${role.id}`}
+                          onSelect={() => {
+                            const nextIds = selected
+                              ? selectedRequiredRoleIds.filter((id) => id !== role.id)
+                              : [...selectedRequiredRoleIds, role.id];
                             onChange({
                               ...value,
-                              requiredRoleIds: value.requiredRoleIds.filter(
-                                (id) => id !== roleId
-                              ),
-                            })
-                          }
+                              requiredRoleMode: nextIds.length ? "selected_roles" : "all_roles",
+                              requiredRoleIds: nextIds,
+                            });
+                          }}
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    );
-                  })
-                ) : (
-                  <div className="text-xs text-muted-foreground">
-                    No required role selected. Pick at least one role.
-                  </div>
-                )}
-              </div>
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selected ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate">{role.name}</span>
+                            <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                              {role.id}
+                            </span>
+                          </span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+
+          {selectedRequiredRoleIds.length ? (
+            <div className="flex flex-wrap gap-2">
+              {selectedRequiredRoleIds.map((roleId) => {
+                const role = roleById.get(roleId);
+                return (
+                  <Badge
+                    key={roleId}
+                    variant="secondary"
+                    className="inline-flex items-center gap-2 rounded-full px-3 py-1"
+                  >
+                    <span>{role?.name ?? roleId}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {roleId}
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 hover:bg-muted"
+                      disabled={formDisabled}
+                      onClick={() => {
+                        const nextIds = selectedRequiredRoleIds.filter(
+                          (id) => id !== roleId
+                        );
+                        onChange({
+                          ...value,
+                          requiredRoleMode: nextIds.length ? "selected_roles" : "all_roles",
+                          requiredRoleIds: nextIds,
+                        });
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                );
+              })}
             </div>
           ) : null}
         </div>
