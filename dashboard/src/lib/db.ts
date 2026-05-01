@@ -352,6 +352,76 @@ function writeAbandonedSetupStateFallback(now: string) {
   });
 }
 
+function envValue(...keys: string[]) {
+  for (const key of keys) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function isEnvSetupCompleteEnabled() {
+  return ["true", "1", "yes", "on"].includes(
+    (process.env.SETUP_COMPLETE || "").trim().toLowerCase()
+  );
+}
+
+function getEnvSetupStateRow(): Record<string, unknown> | null {
+  if (!isEnvSetupCompleteEnabled()) return null;
+
+  const ownerDiscordId = envValue("ADMIN_DISCORD_USER_ID", "OWNER_DISCORD_ID");
+  const selectedGuildId = envValue("SELECTED_GUILD_ID", "GUILD_ID", "DISCORD_GUILD_ID");
+  const logChannelId = envValue("LOG_CHANNEL_ID");
+  const lfgChannelId = envValue("LFG_CHANNEL_ID");
+  const discordClientId = envValue("DISCORD_CLIENT_ID");
+  const discordClientSecret = envValue("DISCORD_CLIENT_SECRET");
+  const botToken = envValue("DISCORD_TOKEN", "DISCORD_BOT_TOKEN");
+  const databaseUrl = envValue("DATABASE_URL");
+
+  if (
+    !ownerDiscordId ||
+    !selectedGuildId ||
+    !logChannelId ||
+    !discordClientId ||
+    !discordClientSecret ||
+    !botToken ||
+    !databaseUrl
+  ) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  return {
+    id: 1,
+    setupComplete: true,
+    ownerDiscordId,
+    selectedGuildId,
+    logChannelId,
+    lfgChannelId,
+    discordClientId,
+    discordClientSecret,
+    botToken,
+    databaseProvider: envValue("DATABASE_PROVIDER") || "supabase",
+    databaseUrl,
+    databaseValidatedAt:
+      envValue("DATABASE_VALIDATED_AT", "SETUP_DATABASE_VALIDATED_AT") || now,
+    ownerClaimedAt: envValue("OWNER_CLAIMED_AT") || now,
+    createdAt: envValue("SETUP_CREATED_AT") || now,
+    updatedAt: envValue("SETUP_UPDATED_AT") || now,
+  };
+}
+
+function getEnvSetupSecretPayload() {
+  return {
+    botTokenEncrypted: null,
+    botToken: envValue("DISCORD_TOKEN", "DISCORD_BOT_TOKEN"),
+    databaseUrlEncrypted: null,
+    databaseUrl: envValue("DATABASE_URL"),
+    discordClientSecretEncrypted: null,
+    discordClientSecret: envValue("DISCORD_CLIENT_SECRET"),
+  };
+}
+
 let lfgEnabledColumnEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
 let manualVoiceSessionLogsEnsured = false;
@@ -630,14 +700,20 @@ export async function getSetupState(): Promise<SetupState> {
     return parseSetupStateRow(fallback);
   }
 
+  const envSetupState = getEnvSetupStateRow();
+
   await ensureSetupRow();
 
   if (!DATABASE_URL) {
-    return parseSetupStateRow(readSetupStateFallback());
+    return parseSetupStateRow(envSetupState ?? readSetupStateFallback());
   }
 
   const res = await query(`SELECT * FROM setup_state WHERE id = 1`);
   let state = parseSetupStateRow(res.rows[0]);
+
+  if (!state.setupComplete && envSetupState) {
+    state = parseSetupStateRow(envSetupState);
+  }
 
   if (!state.setupComplete && !state.setupAbandonedAt && !state.steps.guildValidated) {
     let existing: { guild_id?: string; log_channel_id?: string; lfg_channel_id?: string } | undefined;
@@ -802,6 +878,15 @@ export async function getSetupSecretPayload() {
         (fallback.discordClientSecretEncrypted as string | null) ?? null,
       discordClientSecret: (fallback.discordClientSecret as string | null) ?? null,
     };
+  }
+
+  const envSecrets = getEnvSetupSecretPayload();
+  if (
+    envSecrets.botToken ||
+    envSecrets.databaseUrl ||
+    envSecrets.discordClientSecret
+  ) {
+    return envSecrets;
   }
 
   const res = await query(
