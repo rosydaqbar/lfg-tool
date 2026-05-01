@@ -58,10 +58,10 @@ function createAutoRoleManager({ client, configStore }) {
   function buildApprovalPayload({ requestId, memberId, roleId, rule, totalMs }) {
     const conditionLabel =
       rule.condition === 'more_than'
-        ? 'more than'
+        ? 'lebih dari'
         : rule.condition === 'less_than'
-          ? 'less than'
-          : 'equal to';
+          ? 'kurang dari'
+          : 'sama dengan';
 
     return {
       components: [
@@ -70,13 +70,13 @@ function createAutoRoleManager({ client, configStore }) {
           .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
               [
-                '### Auto Role Approval Request',
-                '-# Permintaan ini perlu tindakan dari Administrator server.',
+                '### Auto Role Butuh Approval',
+                '-# Ada user yang sudah memenuhi syarat auto role. Admin perlu cek dan approve dulu sebelum role diberikan.',
                 '',
                 `- User: <@${memberId}>`,
-                `- Role to give: <@&${roleId}> (\`${roleId}\`)`,
-                `- Current total voice: \`${formatDuration(totalMs)}\``,
-                `- Matched rule: \`${conditionLabel} ${rule.hours}h\``,
+                `- Role yang akan diberikan: <@&${roleId}> (\`${roleId}\`)`,
+                `- Total waktu voice saat ini: \`${formatDuration(totalMs)}\``,
+                `- Rule yang cocok: \`${conditionLabel} ${rule.hours}h\``,
               ].join('\n')
             )
           )
@@ -85,11 +85,11 @@ function createAutoRoleManager({ client, configStore }) {
             new ActionRowBuilder().addComponents(
               new ButtonBuilder()
                 .setCustomId(`${APPROVE_PREFIX}:${requestId}`)
-                .setLabel('Approve')
+                .setLabel('Setujui')
                 .setStyle(ButtonStyle.Success),
               new ButtonBuilder()
                 .setCustomId(`${DENY_PREFIX}:${requestId}`)
-                .setLabel('Deny')
+                .setLabel('Tolak')
                 .setStyle(ButtonStyle.Danger)
             )
           )
@@ -109,7 +109,7 @@ function createAutoRoleManager({ client, configStore }) {
     request,
     adminId,
   }) {
-    const statusLabel = status === 'approved' ? 'Approved' : 'Denied';
+    const statusLabel = status === 'approved' ? 'Disetujui' : 'Ditolak';
     const emoji = status === 'approved' ? '✅' : '❌';
     const accentColor = status === 'approved' ? 0x22c55e : 0xef4444;
     return [
@@ -118,11 +118,11 @@ function createAutoRoleManager({ client, configStore }) {
         .addTextDisplayComponents(
           new TextDisplayBuilder().setContent(
             [
-              '### Auto Role Approval Request',
+              '### Auto Role Butuh Approval',
               `- User: <@${request.userId}>`,
-              `- Role to give: <@&${request.roleId}> (\`${request.roleId}\`)`,
-              `- Current total voice: \`${formatDuration(request.totalMs)}\``,
-              `${emoji} Status: **${statusLabel}** by <@${adminId}> at <t:${Math.floor(Date.now() / 1000)}:F>`,
+              `- Role yang ${status === 'approved' ? 'diberikan' : 'diminta'}: <@&${request.roleId}> (\`${request.roleId}\`)`,
+              `- Total waktu voice saat ini: \`${formatDuration(request.totalMs)}\``,
+              `${emoji} Status: **${statusLabel}** oleh <@${adminId}> pada <t:${Math.floor(Date.now() / 1000)}:F>`,
             ].join('\n')
           )
         )
