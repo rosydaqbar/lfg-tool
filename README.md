@@ -130,8 +130,11 @@ State source:
 - The owner is claimed in the setup wizard and saved as `ownerDiscordId`.
 
 Required local/VPS env before opening setup:
-- `NEXTAUTH_URL`
-- `NEXTAUTH_SECRET`
+
+```env
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=replace_with_a_long_random_string
+```
 
 These two values are only for dashboard login/session runtime. They are not bot, guild, owner, channel, or database setup values.
 
@@ -145,23 +148,43 @@ The setup wizard collects:
 
 Steps:
 1. Install dependencies:
-   - `npm install`
-   - `npm --prefix dashboard install`
+   ```bash
+   npm install
+   npm --prefix dashboard install
+   ```
 2. Create a minimal env file for dashboard auth runtime:
-   - `cp .env.example .env`
+   ```bash
+   cp .env.example .env
+   ```
 3. Set only these local/VPS auth values:
-   - `NEXTAUTH_URL=http://localhost:3000` for local development
-   - `NEXTAUTH_URL=https://your-vps-dashboard-domain.com` for VPS hosting
-   - `NEXTAUTH_SECRET=replace_with_a_long_random_string`
+   ```env
+   # Local development
+   NEXTAUTH_URL=http://localhost:3000
+
+   # VPS hosting
+   # NEXTAUTH_URL=https://your-vps-dashboard-domain.com
+
+   NEXTAUTH_SECRET=replace_with_a_long_random_string
+   ```
 4. Run dashboard:
-   - local: `npm --prefix dashboard run dev`
-   - VPS production: `npm --prefix dashboard run build` then `npm --prefix dashboard run start`
+   ```bash
+   # Local development
+   npm --prefix dashboard run dev
+
+   # VPS production
+   npm --prefix dashboard run build
+   npm --prefix dashboard run start
+   ```
 5. Open setup:
-   - local: `http://localhost:3000/setup`
-   - VPS: `https://your-vps-dashboard-domain.com/setup`
+   ```text
+   http://localhost:3000/setup
+   https://your-vps-dashboard-domain.com/setup
+   ```
 6. Complete setup in the browser.
 7. Start or restart the bot after setup is complete:
-   - `npm start`
+   ```bash
+   npm start
+   ```
 
 Use this path when you want the dashboard setup UI to own configuration.
 
@@ -176,27 +199,41 @@ State source:
 - `OWNER_DISCORD_ID` mirrors setup-state `ownerDiscordId`.
 
 Required cloud env:
-- `SETUP_COMPLETE=true`
-- `OWNER_DISCORD_ID`
-- `SELECTED_GUILD_ID`
-- `LOG_CHANNEL_ID`
-- `DISCORD_TOKEN`
-- `DISCORD_CLIENT_ID`
-- `DISCORD_CLIENT_SECRET`
-- `DATABASE_URL`
-- `NEXTAUTH_URL`
-- `NEXTAUTH_SECRET`
+
+```env
+SETUP_COMPLETE=true
+OWNER_DISCORD_ID=your_discord_user_id
+SELECTED_GUILD_ID=your_discord_server_id
+LOG_CHANNEL_ID=your_log_text_channel_id
+DISCORD_TOKEN=your_discord_bot_token
+DISCORD_CLIENT_ID=your_discord_application_client_id
+DISCORD_CLIENT_SECRET=your_discord_application_client_secret
+DATABASE_URL=postgresql://postgres.project-ref:password@aws-region.pooler.supabase.com:6543/postgres?sslmode=require
+NEXTAUTH_URL=https://your-dashboard.vercel.app
+NEXTAUTH_SECRET=replace_with_a_long_random_string
+```
 
 Optional cloud env:
-- `LFG_CHANNEL_ID`
-- `DISCORD_BOT_TOKEN` as fallback if `DISCORD_TOKEN` is not set
-- `POSTGRES_POOL_MAX=1` for Supabase session-mode pooler
-- `DEBUG=true`
+
+```env
+LFG_CHANNEL_ID=your_lfg_text_channel_id
+DISCORD_BOT_TOKEN=your_discord_bot_token
+POSTGRES_POOL_MAX=1
+DEBUG=true
+```
+
+Use `DISCORD_BOT_TOKEN` only as a fallback if `DISCORD_TOKEN` is not set. Use `POSTGRES_POOL_MAX=1` for Supabase session-mode pooler.
 
 Postgres/Supabase SSL env:
-- `PG_SSL_MODE=require`
-- `PG_SSL_REJECT_UNAUTHORIZED=false` when using Supabase pooler with `sslmode=require`
-- `PG_SSL_CA` or `PG_SSL_CA_BASE64` only when using CA verification
+
+```env
+PG_SSL_MODE=require
+PG_SSL_REJECT_UNAUTHORIZED=false
+# PG_SSL_CA=...
+# PG_SSL_CA_BASE64=...
+```
+
+Use `PG_SSL_CA` or `PG_SSL_CA_BASE64` only when using CA verification.
 
 Steps:
 1. Create the Discord application and bot manually.
@@ -222,23 +259,29 @@ Use the Cloud Env section above if you are deploying to Vercel/serverless.
 
 Root commands:
 
-- Start bot: `npm start`
-- Deploy checks: `npm run deploy`
-- Deploy slash commands: `npm run deploy:commands`
-- Verify DB indexes: `npm run db:verify-indexes`
-- Benchmark voice queries: `npm run perf:voice-queries`
+```bash
+npm start
+npm run deploy
+npm run deploy:commands
+npm run db:verify-indexes
+npm run perf:voice-queries
+```
 
 Dashboard commands:
 
-- Dev: `npm --prefix dashboard run dev`
-- Build: `npm --prefix dashboard run build`
-- Start: `npm --prefix dashboard run start`
+```bash
+npm --prefix dashboard run dev
+npm --prefix dashboard run build
+npm --prefix dashboard run start
+```
 
 Landing commands:
 
-- Dev: `npm run landing:dev`
-- Build: `npm run landing:build`
-- Start: `npm run landing:start`
+```bash
+npm run landing:dev
+npm run landing:build
+npm run landing:start
+```
 
 ## Discord Intents and Permissions
 
