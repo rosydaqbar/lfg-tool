@@ -328,7 +328,12 @@ function hasSetupStateFallback() {
   }
 }
 
+function canWriteSetupStateFallback() {
+  return process.env.VERCEL !== "1" && process.env.VERCEL !== "true";
+}
+
 function writeSetupStateFallback(nextState: Record<string, unknown>) {
+  if (!canWriteSetupStateFallback()) return;
   fs.writeFileSync(
     SETUP_STATE_FALLBACK_PATH,
     JSON.stringify(nextState, null, 2),
@@ -337,6 +342,7 @@ function writeSetupStateFallback(nextState: Record<string, unknown>) {
 }
 
 function mergeSetupStateFallback(fields: Record<string, unknown>) {
+  if (!canWriteSetupStateFallback()) return;
   const now = new Date().toISOString();
   const current = readSetupStateFallback();
   const next: Record<string, unknown> = {
@@ -690,6 +696,7 @@ function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupStat
 
 async function ensureSetupRow() {
   if (!DATABASE_URL) {
+    if (!canWriteSetupStateFallback()) return;
     const current = readSetupStateFallback();
     if (!current.id) {
       writeSetupStateFallback({
