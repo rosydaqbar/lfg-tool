@@ -5,62 +5,82 @@
 
 Join-to-Create Discord voice bot with LFG flow, voice-session logging, global stats, and a Next.js dashboard with setup wizard and guild-scoped management.
 
+In plain terms: users join a lobby voice channel, the bot creates a private temporary voice room for them, and the dashboard lets server admins manage settings without editing files by hand.
+
+## Table of Contents
+
+- [What It Does Now](#what-it-does-now)
+- [Data Safety Notes](#data-safety-notes)
+- [Recent Changelog](#recent-changelog)
+- [Screenshots](#screenshots)
+- [Project Structure](#project-structure)
+- [How Setup Is Saved](#how-setup-is-saved)
+- [Requirements](#requirements)
+- [Dashboard Setup Options](#dashboard-setup-options)
+  - [Option A: Local/VPS Dashboard Setup](#option-a-localvps-dashboard-setup)
+  - [Option B: Cloud Env Setup (Vercel/Serverless)](#option-b-cloud-env-setup-vercelserverless)
+- [Environment Variables You May Need](#environment-variables-you-may-need)
+- [Commands](#commands)
+- [Discord Permissions Needed](#discord-permissions-needed)
+- [Notes](#notes)
+- [License](#license)
+
 ## What It Does Now
 
 - Discord bot features
-  - Join-to-Create lobbies (create per-user temp channels, auto-delete when empty)
-  - Temp voice panel controls (rename, lock, transfer owner, claim, region, size)
-  - LFG modal + post flow from temp channels
-  - Persistent LFG message refresh loop
-  - Manual voice channel logging (in-channel panel + leave session logs)
-  - Voice stats commands (`/stats me`, `/stats user`, `/stats leaderboard`)
-  - In-panel buttons for `My Stats` and `Leaderboard`
-- Dashboard features
-  - First-run setup wizard (`/setup`) with resumable state
-  - Setup stores runtime state in root `.setup-state.json`
-  - Guild config management (log channel, optional LFG channel)
-  - Join-to-Create lobby management
-  - Voice Log channel settings (manual channel include/exclude)
-  - Active Temp Channels tab
-  - Voice Log history (`/voice-log`) and paginated leaderboard
-  - Bot status card checked via Discord API (token + selected guild membership)
-  - Role-based dashboard access (guild owner or Administrator role)
+  - Join a lobby voice channel to create your own temporary voice channel.
+  - Temporary channels are deleted automatically when empty.
+  - Channel owners can rename, lock, transfer, claim, change region, and set user limits from a Discord panel.
+  - Players can post LFG messages from their temporary voice channel.
+  - The bot keeps an LFG message up to date so users can quickly find open voice rooms.
+  - Voice time is logged for selected voice channels.
+  - Users can check voice stats with `/stats me`, `/stats user`, and `/stats leaderboard`.
+  - Voice panels include quick buttons for `My Stats` and `Leaderboard`.
+- Web dashboard features
+  - First-time setup page at `/setup`.
+  - Setup can be paused and continued later.
+  - Manage the Discord server settings, log channel, and optional LFG channel.
+  - Add or remove Join-to-Create lobby channels.
+  - Choose which normal voice channels should track voice time.
+  - View currently active temporary voice channels.
+  - View voice log history and leaderboard pages.
+  - Check whether the bot token works and whether the bot is in the selected Discord server.
+  - Only the configured owner or Discord users with Administrator permission can use the dashboard.
 
 ## Data Safety Notes
 
-- `Reset settings` is now non-destructive for database rows.
-  - It resets setup state only.
-  - It does not delete guild records/tables.
-- Setup save paths were hardened to avoid accidental config wiping.
-  - Existing guild voice settings are preserved when setup channels are updated.
+- `Reset settings` only resets the setup flow.
+  - It does not delete the saved Discord server settings from the database.
+- Updating setup channels should not wipe existing voice settings.
+- Do not share `.setup-state.json`, `.env`, bot tokens, database URLs, or Discord client secrets.
 
 ## Recent Changelog
 
 - Temp channel controls and checks
-  - Added `/voicecheck` with Administrator-only access.
-  - Added in-command cleanup action for temp channels in `Not found` or `Empty` state.
-  - Dashboard `Active Temp Channels` now validates channel existence from live Discord state (not DB only), including `Exists`/`Empty`/`Not found` status.
+  - Added `/voicecheck` for Discord Administrators.
+  - Added cleanup for temporary channels that are missing or empty.
+  - Dashboard `Active Temp Channels` now checks live Discord state, so it can show `Exists`, `Empty`, or `Not found`.
 - Voice owner/admin behavior
-  - Added setup-owner/admin override support for owner-gated voice actions.
-  - Added explicit override notice text when admin override is used.
+  - The setup owner and Discord Administrators can help manage owner-only voice actions.
+  - The bot now shows a clear notice when an admin override is used.
 - Join-to-Create prompt reliability
-  - Persisted Join-to-Create prompt message ID to DB so updates edit the same message.
-  - Tightened prompt message targeting to the correct channel panel (avoid editing unrelated `jtc_*` messages).
-  - Added refresh retries after voice state changes to reduce race-condition stale panels.
+  - The bot remembers the Join-to-Create prompt message, so updates edit the right message.
+  - Prompt updates now target the correct channel panel.
+  - Added retries after voice changes to reduce stale panels.
 - Voice Log data correctness
-  - `Voice Log` panel refresh now validates active users against live Discord voice membership before render.
-  - Added stale/missing activity row repair for temp voice activity during refresh.
-  - Applied the same live-membership real-check and stale-row cleanup to manual Voice Log channel panels.
+  - Voice panels now check who is actually in voice before showing active users.
+  - Added cleanup for stale voice tracking records.
+  - Manual voice log panels use the same live Discord checks.
 - Logging and keepalive improvements
-  - Added dedupe/lock safeguards to reduce duplicate "Temp Voice Channel Deleted" and "Manual Voice Session Leave" logs.
-  - Updated keepalive workflow to request root URL (`/`) and print response body in GitHub Actions logs.
-  - Health server now detects and logs keepalive pings (with forwarded client IP) for easier Koyeb verification.
+  - Reduced duplicate delete and leave logs.
+  - Keepalive checks now hit `/` and print the response for easier troubleshooting.
+  - Health logs now show keepalive pings for easier Koyeb checks.
 
 ## Screenshots
 
-Store all screenshots under root `screenshots/`.
+Put screenshots in the root `screenshots/` folder.
 
-Example structure:
+Example files:
 
 - `screenshots/bot-join-to-create-prompt.png`
 - `screenshots/bot-voice-settings-panel.png`
@@ -75,75 +95,78 @@ Example structure:
 
 ## Project Structure
 
-- Bot runtime
-  - Entry: `src/index.js`
-  - Data layer: `src/config-store.js`
-  - LFG modules: `src/bot/lfg/*`
-  - Stats module: `src/bot/stats.js`
-  - Health server: `src/bot/health-server.js`
-- Dashboard (Next.js App Router)
-  - App/API: `dashboard/src/app/*`
-  - Components: `dashboard/src/components/*`
-  - Dashboard DB/runtime helpers: `dashboard/src/lib/*`
-- Landing page (separate app)
+This is where the main parts of the project live.
+
+- Bot code
+  - Main start file: `src/index.js`
+  - Database and saved settings: `src/config-store.js`
+  - LFG feature files: `src/bot/lfg/*`
+  - Voice stats: `src/bot/stats.js`
+  - Health check server: `src/bot/health-server.js`
+- Dashboard code
+  - Pages and API routes: `dashboard/src/app/*`
+  - UI components: `dashboard/src/components/*`
+  - Dashboard helpers: `dashboard/src/lib/*`
+- Landing page code
   - `landing/*`
 - Scripts
-  - Command deploy: `scripts/deploy-commands.js`
-  - Schema/index/perf helpers: `scripts/*`
+  - Deploy Discord slash commands: `scripts/deploy-commands.js`
+  - Database and performance helper scripts: `scripts/*`
 
-## Runtime and Storage Model
+## How Setup Is Saved
 
-- There are two supported setup modes:
-  - Local dashboard setup: use `/setup`; the dashboard writes root `.setup-state.json` and/or DB `setup_state`.
-  - Hosted/env setup: skip `/setup`; provide the equivalent setup values as environment variables, useful for Vercel/serverless where local setup files are not persistent.
-- Setup source priority is:
-  1. `.setup-state.json` from dashboard setup, when present
-  2. DB `setup_state`, when configured
-  3. Env-backed setup, only when `SETUP_COMPLETE=true`
-- Owner identity follows the same model:
-  - Dashboard setup stores `ownerDiscordId`.
-  - Env-backed setup uses `OWNER_DISCORD_ID` as the equivalent fallback.
-  - Owner is the configured user only. Admin means any other user in the configured guild with Discord Administrator permission.
-- Database source priority in dashboard data access is:
+- There are two ways to set up the dashboard:
+  - Local/VPS setup: open `/setup` in the dashboard and fill in the setup form.
+  - Cloud setup: set the values as environment variables instead of using `/setup`. This is best for Vercel or other platforms where files do not stay saved between deploys.
+- The app reads setup information in this order:
+  1. `.setup-state.json`, if dashboard setup created it
+  2. `setup_state` table in the database, if available
+  3. Environment variables, only when `SETUP_COMPLETE=true`
+- Dashboard access works like this:
+  - The owner is the Discord user saved during setup as `ownerDiscordId`.
+  - For cloud setup, the owner is set with `OWNER_DISCORD_ID`.
+  - Other Discord users can access the dashboard only if they have Administrator permission in the selected server.
+- The dashboard finds the database connection in this order:
   1. `DATABASE_URL` env
-  2. setup-state database URL
-- Supported setup DB providers:
+  2. Database URL saved during setup
+- Supported database provider:
   - `supabase`
 
 ## Requirements
 
 - Node.js 18+
-- Discord bot token + app credentials
-- Supabase Postgres database
+- Discord bot token
+- Discord app client ID and client secret
+- Supabase Postgres database URL
 
-## Dashboard Setup Paths
+## Dashboard Setup Options
 
-Choose one setup path based on where the dashboard runs.
+Choose one setup path based on where you host the dashboard.
 
 ### Option A: Local/VPS Dashboard Setup
 
-Use this when the dashboard runs on your machine or VPS and can persist files/state.
+Use this when the dashboard runs on your own computer or VPS and can save setup files.
 
-State source:
-- `/setup` writes the setup state.
-- `.setup-state.json` is the highest-priority setup source when present.
-- The owner is claimed in the setup wizard and saved as `ownerDiscordId`.
+How setup is saved:
+- `/setup` saves your setup information.
+- `.setup-state.json` is used first when it exists.
+- The owner is selected during setup and saved as `ownerDiscordId`.
 
-Required local/VPS env before opening setup:
+Required local/VPS values before opening `/setup`:
 
 ```env
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=replace_with_a_long_random_string
 ```
 
-These two values are only for dashboard login/session runtime. They are not bot, guild, owner, channel, or database setup values.
+These two values are only for dashboard login. You will enter the bot token, Discord server ID, owner ID, channel IDs, and database URL later in the setup page.
 
-The setup wizard collects:
-- Discord OAuth client ID/secret
+The setup page asks for:
+- Discord OAuth client ID and secret
 - Discord bot token
-- owner Discord user ID through owner claim
-- selected guild ID
-- log/LFG channels
+- owner Discord user ID
+- selected Discord server ID
+- log and LFG channels
 - Supabase database URL
 
 Steps:
@@ -152,11 +175,11 @@ Steps:
    npm install
    npm --prefix dashboard install
    ```
-2. Create a minimal env file for dashboard auth runtime:
+2. Create a small env file for dashboard login:
    ```bash
    cp .env.example .env
    ```
-3. Set only these local/VPS auth values:
+3. Set only these local/VPS login values:
    ```env
    # Local development
    NEXTAUTH_URL=http://localhost:3000
@@ -180,23 +203,23 @@ Steps:
    http://localhost:3000/setup
    https://your-vps-dashboard-domain.com/setup
    ```
-6. Complete setup in the browser.
+6. Finish setup in the browser.
 7. Start or restart the bot after setup is complete:
    ```bash
    npm start
    ```
 
-Use this path when you want the dashboard setup UI to own configuration.
+Use this path when you want the dashboard setup page to save the configuration for you.
 
 ### Option B: Cloud Env Setup (Vercel/Serverless)
 
-Use this when the dashboard runs somewhere like Vercel and you do not want to rely on dashboard setup state files.
+Use this when the dashboard runs on Vercel or another cloud host where local files are not reliable.
 
-State source:
+How setup is saved:
 - Do not deploy `.setup-state.json`.
-- Set env vars directly.
-- `SETUP_COMPLETE=true` tells the dashboard to treat env vars as completed setup.
-- `OWNER_DISCORD_ID` mirrors setup-state `ownerDiscordId`.
+- Put the setup values directly into your hosting provider environment variable settings.
+- `SETUP_COMPLETE=true` tells the dashboard that setup is already finished.
+- `OWNER_DISCORD_ID` is the env version of setup owner `ownerDiscordId`.
 
 Required cloud env:
 
@@ -218,11 +241,12 @@ Optional cloud env:
 ```env
 LFG_CHANNEL_ID=your_lfg_text_channel_id
 DISCORD_BOT_TOKEN=your_discord_bot_token
+BOT_POSTGRES_POOL_MAX=2
 POSTGRES_POOL_MAX=1
 DEBUG=true
 ```
 
-Use `DISCORD_BOT_TOKEN` only as a fallback if `DISCORD_TOKEN` is not set. Use `POSTGRES_POOL_MAX=1` for Supabase session-mode pooler.
+Use `DISCORD_BOT_TOKEN` only if `DISCORD_TOKEN` is not set. Use `BOT_POSTGRES_POOL_MAX=2` for the bot and `POSTGRES_POOL_MAX=1` for the dashboard when using the Supabase session-mode pooler. This helps avoid too many database connections.
 
 Postgres/Supabase SSL env:
 
@@ -233,27 +257,27 @@ PG_SSL_REJECT_UNAUTHORIZED=false
 # PG_SSL_CA_BASE64=...
 ```
 
-Use `PG_SSL_CA` or `PG_SSL_CA_BASE64` only when using CA verification.
+Use `PG_SSL_CA` or `PG_SSL_CA_BASE64` only if your database provider gives you a CA certificate and asks you to verify it.
 
 Steps:
-1. Create the Discord application and bot manually.
-2. Invite the bot to the target guild with required permissions.
-3. Create Supabase Postgres and use the Transaction Pooler URL on port `6543` with `sslmode=require`.
-4. Set all required cloud env vars in the hosting provider.
+1. Create the Discord application and bot in the Discord Developer Portal.
+2. Invite the bot to your Discord server with the required permissions.
+3. Create a Supabase Postgres database and use the Transaction Pooler URL on port `6543` with `sslmode=require`.
+4. Add all required cloud env vars in your hosting provider.
 5. Deploy the dashboard.
 6. Sign in with Discord.
 
-Expected access behavior:
-- The user whose ID equals `OWNER_DISCORD_ID` is shown as `Owner` and can reset setup.
-- Other users with Discord Administrator permission in `SELECTED_GUILD_ID` are shown as `Admin` and can manage dashboard settings.
-- Users without Administrator permission in the configured guild are denied.
+Who can access the dashboard:
+- The user whose Discord ID equals `OWNER_DISCORD_ID` is shown as `Owner` and can reset setup.
+- Other users with Discord Administrator permission in `SELECTED_GUILD_ID` are shown as `Admin` and can manage settings.
+- Users without Administrator permission in that Discord server cannot access the dashboard.
 
-## Environment Variables
+## Environment Variables You May Need
 
-Root `.env` is used by the bot and also by dashboard runtime.
+Root `.env` is used by both the bot and the dashboard.
 
-Use the Local/VPS section above if you are using `/setup`.
-Use the Cloud Env section above if you are deploying to Vercel/serverless.
+Use the Local/VPS section if you are setting up through `/setup`.
+Use the Cloud Env section if you are deploying to Vercel or another cloud host.
 
 ## Commands
 
@@ -283,29 +307,29 @@ npm run landing:build
 npm run landing:start
 ```
 
-## Discord Intents and Permissions
+## Discord Permissions Needed
 
-Gateway intents:
+Enable these Discord bot intents in the Discord Developer Portal:
 
 - `Guilds`
 - `GuildVoiceStates`
 
-Minimum bot permissions:
+Give the bot these permissions when inviting it to your server:
 
 - `View Channel`
 - `Send Messages`
 - `Manage Channels`
 - `Move Members`
 
-Optional depending on setup:
+Optional, depending on your setup:
 
 - `Manage Roles`
 
 ## Notes
 
-- Dashboard bot status now verifies via Discord API, so remote-hosted bot setups are supported.
-- Keep `.setup-state.json` private; it contains sensitive setup/runtime secrets.
-- This repository evolves quickly; review recent commits before production deployment.
+- Dashboard bot status checks Discord directly, so it works even when the bot is hosted somewhere else.
+- Keep `.setup-state.json` private. It can contain sensitive values like tokens and database URLs.
+- This repository changes quickly. Review recent commits before using it in production.
 
 ## License
 
