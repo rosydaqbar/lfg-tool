@@ -305,10 +305,30 @@ function createAutoRoleManager({ client, configStore }) {
     }
 
     if (request.status !== 'pending') {
-      await interaction.reply({
-        content: `Request ini sudah diproses (${request.status}).`,
-        flags: MessageFlags.Ephemeral,
-      }).catch(() => null);
+      const deleted = await interaction.message?.delete().then(() => true).catch(() => false);
+      if (deleted) {
+        await interaction.reply({
+          content: `Request ini sudah diproses (${request.status}); pesan approval lama sudah dihapus.`,
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => null);
+        return true;
+      }
+
+      await interaction.update({
+        content: '',
+        components: buildResolvedMessageContent({
+          status: request.status,
+          request,
+          adminId: request.decidedBy || interaction.user.id,
+        }),
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      }).catch(async () => {
+        await interaction.reply({
+          content: `Request ini sudah diproses (${request.status}).`,
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => null);
+      });
       return true;
     }
 

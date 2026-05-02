@@ -26,7 +26,13 @@ function formatDuration(totalMs: number) {
   return `${hours}h ${minutes}m`;
 }
 
-export function VoiceLogPageClient({ selectedGuildId }: { selectedGuildId: string }) {
+export function VoiceLogPageClient({
+  selectedGuildId,
+  embedded = false,
+}: {
+  selectedGuildId: string;
+  embedded?: boolean;
+}) {
   const [page, setPage] = useState(0);
   const [deleteLogs, setDeleteLogs] = useState<TempVoiceDeleteLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -71,20 +77,22 @@ export function VoiceLogPageClient({ selectedGuildId }: { selectedGuildId: strin
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-[var(--font-display)] text-3xl text-foreground">Voice Log</h1>
-          <p className="text-sm text-muted-foreground">
-            Riwayat gabungan temp channel terhapus dan sesi manual voice channel.
-          </p>
+      {!embedded ? (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-[var(--font-display)] text-3xl text-foreground">Voice Log</h1>
+            <p className="text-sm text-muted-foreground">
+              Riwayat gabungan temp channel terhapus dan sesi manual voice channel.
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/">
+              <ArrowLeft className="h-4 w-4" />
+              Kembali ke Dashboard
+            </Link>
+          </Button>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/">
-            <ArrowLeft className="h-4 w-4" />
-            Kembali ke Dashboard
-          </Link>
-        </Button>
-      </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">

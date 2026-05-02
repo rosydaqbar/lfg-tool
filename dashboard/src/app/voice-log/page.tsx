@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { Button } from "@/components/ui/button";
-import { authOptions } from "@/lib/auth";
 import { VoiceLogPageClient } from "@/components/dashboard/voice-log-page-client";
+import { authOptions } from "@/lib/auth";
 
 const GUILD_ID = "670147766839803924";
 

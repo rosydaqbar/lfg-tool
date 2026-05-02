@@ -367,7 +367,8 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
         createdChannel.id,
         member.id,
         lobbyRoleId,
-        lobbyLfgEnabled
+        lobbyLfgEnabled,
+        createdChannel.name
       );
 
       debugTiming('jtc.persist_temp_channel', {

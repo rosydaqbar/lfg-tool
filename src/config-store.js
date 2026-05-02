@@ -29,6 +29,7 @@ async function query(text, params) {
 let lfgEnabledColumnEnsured = false;
 let tempVoiceLfgEnabledColumnEnsured = false;
 let tempVoicePromptMessageColumnEnsured = false;
+let tempVoiceChannelNameColumnEnsured = false;
 let tempVoiceOwnerLookupIndexEnsured = false;
 let tempVoiceActivityEnsured = false;
 let tempVoiceDeleteLogsEnsured = false;
@@ -135,6 +136,18 @@ async function ensureTempVoicePromptMessageColumn() {
     tempVoicePromptMessageColumnEnsured = true;
   } catch (error) {
     console.error('Failed to ensure temp_voice_channels.prompt_message_id column:', error);
+  }
+}
+
+async function ensureTempVoiceChannelNameColumn() {
+  if (tempVoiceChannelNameColumnEnsured) return;
+  try {
+    await query(
+      'ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS channel_name TEXT'
+    );
+    tempVoiceChannelNameColumnEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure temp_voice_channels.channel_name column:', error);
   }
 }
 
@@ -750,30 +763,34 @@ async function addTempChannel(
   channelId,
   ownerId,
   roleId = null,
-  lfgEnabled = true
+  lfgEnabled = true,
+  channelName = null
 ) {
   await ensureTempVoiceLfgEnabledColumn();
   await ensureTempVoicePromptMessageColumn();
+  await ensureTempVoiceChannelNameColumn();
   await ensureTempVoiceOwnerLookupIndex();
   await query(
     `
       INSERT INTO temp_voice_channels (
         guild_id,
         channel_id,
+        channel_name,
         owner_id,
         created_at,
         role_id,
         lfg_enabled
       )
-      VALUES ($1, $2, $3, NOW(), $4, $5)
+      VALUES ($1, $2, $3, $4, NOW(), $5, $6)
       ON CONFLICT(channel_id) DO UPDATE SET
         guild_id = EXCLUDED.guild_id,
+        channel_name = EXCLUDED.channel_name,
         owner_id = EXCLUDED.owner_id,
         created_at = EXCLUDED.created_at,
         role_id = EXCLUDED.role_id,
         lfg_enabled = EXCLUDED.lfg_enabled
     `,
-    [guildId, channelId, ownerId, roleId, lfgEnabled]
+    [guildId, channelId, channelName, ownerId, roleId, lfgEnabled]
   );
   setTempOwnerCache(guildId, ownerId, channelId);
 }

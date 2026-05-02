@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getTempVoiceDeleteLeaderboard,
   getTempVoiceDeleteLogs,
+  getVoiceLogTodayCount,
 } from "@/lib/db";
 import { resolveGuildUsernames } from "@/lib/discord-usernames";
 import { requireDashboardGuildAccess } from "@/lib/session";
@@ -22,6 +23,7 @@ export async function GET(
   const limit = Number.parseInt(searchParams.get("limit") || "100", 10);
   const offset = Number.parseInt(searchParams.get("offset") || "0", 10);
   const includeLeaderboard = searchParams.get("includeLeaderboard") === "1";
+  const includeSummary = searchParams.get("summary") === "1";
   const leaderboardLimit = Number.parseInt(
     searchParams.get("leaderboardLimit") || "20",
     10
@@ -71,5 +73,11 @@ export async function GET(
       ...row,
       userName: names.get(row.userId) ?? null,
     })),
+    summary: includeSummary
+      ? {
+          todayCount: await getVoiceLogTodayCount(id),
+          timezone: "Asia/Jakarta",
+        }
+      : undefined,
   });
 }

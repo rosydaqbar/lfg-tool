@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   deleteVoiceLeaderboardEntry,
   getTempVoiceDeleteLeaderboard,
+  getVoiceLeaderboardSummary,
   upsertVoiceLeaderboardEntry,
 } from "@/lib/db";
 import { resolveGuildUsernames } from "@/lib/discord-usernames";
@@ -20,8 +21,29 @@ export async function GET(
   }
 
   const { searchParams } = new URL(request.url);
+  const includeSummary = searchParams.get("summary") === "1";
   const limit = Number.parseInt(searchParams.get("limit") || "20", 10);
   const offset = Number.parseInt(searchParams.get("offset") || "0", 10);
+
+  if (includeSummary) {
+    const summary = await getVoiceLeaderboardSummary(id);
+    const names = await resolveGuildUsernames(
+      id,
+      summary.top.map((row) => row.userId)
+    );
+
+    return NextResponse.json({
+      summary: {
+        totalUsers: summary.totalUsers,
+        totalMs: summary.totalMs,
+        totalSessions: summary.totalSessions,
+        top: summary.top.map((row) => ({
+          ...row,
+          userName: names.get(row.userId) ?? null,
+        })),
+      },
+    });
+  }
 
   const rows = await getTempVoiceDeleteLeaderboard(
     id,

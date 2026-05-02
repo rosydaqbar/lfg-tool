@@ -140,6 +140,10 @@ export type SetupState = {
 };
 
 const DATABASE_URL = process.env.DATABASE_URL;
+const POSTGRES_POOL_MAX = Math.max(
+  1,
+  Math.min(5, Number.parseInt(process.env.POSTGRES_POOL_MAX || "3", 10) || 3)
+);
 const DASHBOARD_DIR_NAME = "dashboard";
 const workspaceRoot = path.basename(process.cwd()).toLowerCase() === DASHBOARD_DIR_NAME
   ? path.resolve(process.cwd(), "..")
@@ -150,12 +154,24 @@ const SQLITE_PATH = path.isAbsolute(sqlitePathInput)
   ? sqlitePathInput
   : path.resolve(workspaceRoot, sqlitePathInput);
 
+const globalForPg = globalThis as typeof globalThis & {
+  __lfgDashboardPgPool?: Pool | null;
+};
+
 const pool = DATABASE_URL
-  ? new Pool({
+  ? globalForPg.__lfgDashboardPgPool ??
+    new Pool({
       connectionString: DATABASE_URL,
       ssl: buildPgSslConfig(),
+      max: POSTGRES_POOL_MAX,
+      idleTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 10_000,
     })
   : null;
+
+if (DATABASE_URL && !globalForPg.__lfgDashboardPgPool) {
+  globalForPg.__lfgDashboardPgPool = pool;
+}
 
 type SqliteStatement = {
   get: (...args: unknown[]) => unknown;
@@ -710,6 +726,18 @@ export async function getSetupState(): Promise<SetupState> {
 
   const res = await query(`SELECT * FROM setup_state WHERE id = 1`);
   let state = parseSetupStateRow(res.rows[0]);
+  const envOwnerDiscordId = envValue("ADMIN_DISCORD_USER_ID", "OWNER_DISCORD_ID");
+
+  if (state.setupComplete && !state.ownerDiscordId && envOwnerDiscordId) {
+    state = {
+      ...state,
+      ownerDiscordId: envOwnerDiscordId,
+      steps: {
+        ...state.steps,
+        ownerClaimed: true,
+      },
+    };
+  }
 
   if (!state.setupComplete && envSetupState) {
     state = parseSetupStateRow(envSetupState);
@@ -1532,6 +1560,7 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
         CREATE TABLE IF NOT EXISTS temp_voice_channels (
           channel_id TEXT PRIMARY KEY,
           guild_id TEXT NOT NULL,
+          channel_name TEXT,
           owner_id TEXT NOT NULL,
           created_at TIMESTAMPTZ NOT NULL,
           lfg_channel_id TEXT,
@@ -1541,6 +1570,9 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
         )
       `
     );
+    await client.query(
+      "ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS channel_name TEXT"
+    );
 
     let res;
     try {
@@ -1548,6 +1580,7 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
         `
           SELECT
             tc.channel_id,
+            tc.channel_name,
             tc.owner_id,
             tc.created_at,
             tc.lfg_channel_id,
@@ -1564,7 +1597,7 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
             ON ta.channel_id = tc.channel_id
            AND ta.is_active = TRUE
           WHERE tc.guild_id = $1
-          GROUP BY tc.channel_id, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
+          GROUP BY tc.channel_id, tc.channel_name, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
           ORDER BY tc.created_at DESC
         `,
         [guildId]
@@ -1578,6 +1611,7 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
         `
           SELECT
             channel_id,
+            channel_name,
             owner_id,
             created_at,
             lfg_channel_id,
@@ -1593,6 +1627,7 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
 
     return res.rows as {
       channel_id: string;
+      channel_name: string | null;
       owner_id: string;
       created_at: string;
       lfg_channel_id: string | null;
@@ -1613,6 +1648,11 @@ export async function getTempChannels(guildId: string) {
     }
 
     const db = getSqliteDb();
+    try {
+      db.prepare("ALTER TABLE temp_voice_channels ADD COLUMN channel_name TEXT").run();
+    } catch {
+      // Column already exists or the local table has not been created yet.
+    }
     let rows;
     try {
       rows = db
@@ -1620,6 +1660,7 @@ export async function getTempChannels(guildId: string) {
           `
             SELECT
               tc.channel_id,
+              tc.channel_name,
               tc.owner_id,
               tc.created_at,
               tc.lfg_channel_id,
@@ -1638,12 +1679,13 @@ export async function getTempChannels(guildId: string) {
               ON ta.channel_id = tc.channel_id
              AND ta.is_active = 1
             WHERE tc.guild_id = ?
-            GROUP BY tc.channel_id, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
+            GROUP BY tc.channel_id, tc.channel_name, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
             ORDER BY tc.created_at DESC
           `
         )
         .all(guildId) as {
         channel_id: string;
+        channel_name: string | null;
         owner_id: string;
         created_at: string;
         lfg_channel_id: string | null;
@@ -1656,6 +1698,7 @@ export async function getTempChannels(guildId: string) {
           `
             SELECT
               channel_id,
+              channel_name,
               owner_id,
               created_at,
               lfg_channel_id,
@@ -1668,6 +1711,7 @@ export async function getTempChannels(guildId: string) {
         )
         .all(guildId) as {
         channel_id: string;
+        channel_name: string | null;
         owner_id: string;
         created_at: string;
         lfg_channel_id: string | null;
@@ -1678,10 +1722,14 @@ export async function getTempChannels(guildId: string) {
     return rows;
   }
 
+  await query(
+    "ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS channel_name TEXT"
+  );
   const res = await query(
     `
       SELECT
         tc.channel_id,
+        tc.channel_name,
         tc.owner_id,
         tc.created_at,
         tc.lfg_channel_id,
@@ -1698,13 +1746,14 @@ export async function getTempChannels(guildId: string) {
         ON ta.channel_id = tc.channel_id
        AND ta.is_active = TRUE
       WHERE tc.guild_id = $1
-      GROUP BY tc.channel_id, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
+      GROUP BY tc.channel_id, tc.channel_name, tc.owner_id, tc.created_at, tc.lfg_channel_id, tc.lfg_message_id
       ORDER BY tc.created_at DESC
     `,
     [guildId]
   );
   return res.rows as {
     channel_id: string;
+    channel_name: string | null;
     owner_id: string;
     created_at: string;
     lfg_channel_id: string | null;
@@ -2170,7 +2219,7 @@ export async function getTempVoiceDeleteLeaderboard(
   offset = 0
 ) {
   const safeLimit = Number.isFinite(limit)
-    ? Math.min(200, Math.max(1, Math.floor(limit)))
+    ? Math.min(10000, Math.max(1, Math.floor(limit)))
     : 20;
   const safeOffset = Number.isFinite(offset)
     ? Math.max(0, Math.floor(offset))
@@ -2424,6 +2473,149 @@ export async function getTempVoiceDeleteLeaderboard(
   return merged.slice(safeOffset, safeOffset + safeLimit);
 }
 
+export async function getVoiceLeaderboardSummary(guildId: string) {
+  const rows = await getTempVoiceDeleteLeaderboard(guildId, 10000, 0);
+  return {
+    totalUsers: rows.length,
+    totalMs: rows.reduce((sum, row) => sum + Math.max(0, Number(row.totalMs) || 0), 0),
+    totalSessions: rows.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.sessions) || 0),
+      0
+    ),
+    top: rows.slice(0, 10),
+  };
+}
+
+function getJakartaDayRange(now = new Date()) {
+  const jakartaOffsetMs = 7 * 60 * 60 * 1000;
+  const jakartaNow = new Date(now.getTime() + jakartaOffsetMs);
+  const startUtcMs = Date.UTC(
+    jakartaNow.getUTCFullYear(),
+    jakartaNow.getUTCMonth(),
+    jakartaNow.getUTCDate(),
+    0,
+    0,
+    0,
+    0
+  ) - jakartaOffsetMs;
+  return {
+    start: new Date(startUtcMs),
+    end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+  };
+}
+
+export async function getVoiceLogTodayCount(guildId: string) {
+  const { start, end } = getJakartaDayRange();
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS temp_voice_delete_logs (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              channel_name TEXT,
+              owner_id TEXT NOT NULL,
+              deleted_at TIMESTAMPTZ NOT NULL,
+              history_json JSONB NOT NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+          `
+        );
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS manual_voice_session_logs (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              channel_name TEXT,
+              owner_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              joined_at TIMESTAMPTZ NOT NULL,
+              left_at TIMESTAMPTZ NOT NULL,
+              total_ms BIGINT NOT NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+          `
+        );
+        const res = await client.query(
+          `
+            SELECT COUNT(*)::bigint AS count
+            FROM (
+              SELECT deleted_at AS event_at
+              FROM temp_voice_delete_logs
+              WHERE guild_id = $1
+              UNION ALL
+              SELECT left_at AS event_at
+              FROM manual_voice_session_logs
+              WHERE guild_id = $1
+            ) combined
+            WHERE event_at >= $2::timestamptz
+              AND event_at < $3::timestamptz
+          `,
+          [guildId, start.toISOString(), end.toISOString()]
+        );
+        return Number(res.rows[0]?.count ?? 0);
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    const row = db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM (
+            SELECT deleted_at AS event_at
+            FROM temp_voice_delete_logs
+            WHERE guild_id = ?
+            UNION ALL
+            SELECT left_at AS event_at
+            FROM manual_voice_session_logs
+            WHERE guild_id = ?
+          ) combined
+          WHERE datetime(event_at) >= datetime(?)
+            AND datetime(event_at) < datetime(?)
+        `
+      )
+      .get(guildId, guildId, start.toISOString(), end.toISOString()) as
+      | { count?: number }
+      | undefined;
+    return Number(row?.count ?? 0);
+  }
+
+  await ensureTempVoiceDeleteLogsTable();
+  await ensureManualVoiceSessionLogsTable();
+  const res = await query(
+    `
+      SELECT COUNT(*)::bigint AS count
+      FROM (
+        SELECT deleted_at AS event_at
+        FROM temp_voice_delete_logs
+        WHERE guild_id = $1
+        UNION ALL
+        SELECT left_at AS event_at
+        FROM manual_voice_session_logs
+        WHERE guild_id = $1
+      ) combined
+      WHERE event_at >= $2::timestamptz
+        AND event_at < $3::timestamptz
+    `,
+    [guildId, start.toISOString(), end.toISOString()]
+  );
+  return Number(res.rows[0]?.count ?? 0);
+}
+
 export async function upsertVoiceLeaderboardEntry(
   guildId: string,
   userId: string,
@@ -2662,6 +2854,169 @@ function mapAutoRoleRequestRow(row: AutoRoleRequestRow) {
   };
 }
 
+export async function getVoiceAutoRoleRequestById(guildId: string, id: number) {
+  const safeId = Math.floor(id);
+  if (!Number.isFinite(safeId) || safeId <= 0) return null;
+
+  const selectSql = `
+    SELECT
+      id,
+      guild_id,
+      user_id,
+      role_id,
+      rule_key,
+      status,
+      total_ms,
+      message_channel_id,
+      message_id,
+      decided_by,
+      decided_at,
+      created_at,
+      updated_at
+    FROM voice_auto_role_requests
+    WHERE guild_id = $1 AND id = $2
+    LIMIT 1
+  `;
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              role_id TEXT NOT NULL,
+              rule_key TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              total_ms BIGINT NOT NULL DEFAULT 0,
+              message_channel_id TEXT,
+              message_id TEXT,
+              decided_by TEXT,
+              decided_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              UNIQUE (guild_id, user_id, role_id, rule_key)
+            )
+          `
+        );
+        const res = await client.query(selectSql, [guildId, safeId]);
+        const row = res.rows[0] as AutoRoleRequestRow | undefined;
+        return row ? mapAutoRoleRequestRow(row) : null;
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    const row = db
+      .prepare(selectSql.replace("$1", "?").replace("$2", "?"))
+      .get(guildId, safeId) as AutoRoleRequestRow | undefined;
+    return row ? mapAutoRoleRequestRow(row) : null;
+  }
+
+  await ensureVoiceAutoRoleRequestsTable();
+  const res = await query(selectSql, [guildId, safeId]);
+  const row = res.rows[0] as AutoRoleRequestRow | undefined;
+  return row ? mapAutoRoleRequestRow(row) : null;
+}
+
+export async function updateVoiceAutoRoleRequestStatus(
+  guildId: string,
+  id: number,
+  status: "approved" | "denied",
+  decidedBy: string | null
+) {
+  const safeId = Math.floor(id);
+  if (!Number.isFinite(safeId) || safeId <= 0) return false;
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              role_id TEXT NOT NULL,
+              rule_key TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              total_ms BIGINT NOT NULL DEFAULT 0,
+              message_channel_id TEXT,
+              message_id TEXT,
+              decided_by TEXT,
+              decided_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              UNIQUE (guild_id, user_id, role_id, rule_key)
+            )
+          `
+        );
+        const res = await client.query(
+          `
+            UPDATE voice_auto_role_requests
+            SET status = $1,
+                decided_by = $2,
+                decided_at = NOW(),
+                updated_at = NOW()
+            WHERE guild_id = $3 AND id = $4 AND status = 'pending'
+          `,
+          [status, decidedBy, guildId, safeId]
+        );
+        return (res.rowCount || 0) > 0;
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    const now = new Date().toISOString();
+    const result = db
+      .prepare(
+        `
+          UPDATE voice_auto_role_requests
+          SET status = ?,
+              decided_by = ?,
+              decided_at = ?,
+              updated_at = ?
+          WHERE guild_id = ? AND id = ? AND status = 'pending'
+        `
+      )
+      .run(status, decidedBy, now, now, guildId, safeId) as { changes?: number };
+    return Number(result?.changes || 0) > 0;
+  }
+
+  await ensureVoiceAutoRoleRequestsTable();
+  const res = await query(
+    `
+      UPDATE voice_auto_role_requests
+      SET status = $1,
+          decided_by = $2,
+          decided_at = NOW(),
+          updated_at = NOW()
+      WHERE guild_id = $3 AND id = $4 AND status = 'pending'
+    `,
+    [status, decidedBy, guildId, safeId]
+  );
+  return (res.rowCount || 0) > 0;
+}
+
 export async function getVoiceAutoRoleRequests(
   guildId: string,
   limit = 100,
@@ -2801,6 +3156,97 @@ export async function getVoiceAutoRoleRequests(
   );
 
   return (res.rows as AutoRoleRequestRow[]).map(mapAutoRoleRequestRow);
+}
+
+export async function getVoiceAutoRoleRequestCounts(guildId: string) {
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: setupDatabaseUrl,
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              role_id TEXT NOT NULL,
+              rule_key TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              total_ms BIGINT NOT NULL DEFAULT 0,
+              message_channel_id TEXT,
+              message_id TEXT,
+              decided_by TEXT,
+              decided_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              UNIQUE (guild_id, user_id, role_id, rule_key)
+            )
+          `
+        );
+        const res = await client.query(
+          `
+            SELECT status, COUNT(*)::bigint AS count
+            FROM voice_auto_role_requests
+            WHERE guild_id = $1
+            GROUP BY status
+          `,
+          [guildId]
+        );
+        return (res.rows as { status: string; count: string | number }[]).reduce(
+          (counts, row) => ({
+            ...counts,
+            [row.status]: Number(row.count ?? 0),
+          }),
+          { pending: 0, approved: 0, denied: 0 }
+        );
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    const rows = db
+      .prepare(
+        `
+          SELECT status, COUNT(*) AS count
+          FROM voice_auto_role_requests
+          WHERE guild_id = ?
+          GROUP BY status
+        `
+      )
+      .all(guildId) as { status: string; count: number }[];
+    return rows.reduce(
+      (counts, row) => ({
+        ...counts,
+        [row.status]: Number(row.count ?? 0),
+      }),
+      { pending: 0, approved: 0, denied: 0 }
+    );
+  }
+
+  await ensureVoiceAutoRoleRequestsTable();
+  const res = await query(
+    `
+      SELECT status, COUNT(*)::bigint AS count
+      FROM voice_auto_role_requests
+      WHERE guild_id = $1
+      GROUP BY status
+    `,
+    [guildId]
+  );
+  return (res.rows as { status: string; count: string | number }[]).reduce(
+    (counts, row) => ({
+      ...counts,
+      [row.status]: Number(row.count ?? 0),
+    }),
+    { pending: 0, approved: 0, denied: 0 }
+  );
 }
 
 export async function deleteVoiceAutoRoleRequest(guildId: string, id: number) {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, LayoutDashboard, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -11,9 +12,10 @@ import { VoiceSettingsSection } from "@/components/dashboard/voice-settings-sect
 import { AutoRoleSection } from "@/components/dashboard/auto-role-section";
 import { AutoRoleRequestsCard } from "@/components/dashboard/auto-role-requests-card";
 import { ActiveTempChannelsCard } from "@/components/dashboard/active-temp-channels-card";
-import { VoiceLogDeletedCard } from "@/components/dashboard/voice-log-deleted-card";
 import { VoiceLeaderboardCard } from "@/components/dashboard/voice-leaderboard-card";
 import { ResetSettingsSection } from "@/components/dashboard/reset-settings-section";
+import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
+import { VoiceLogPageClient } from "@/components/dashboard/voice-log-page-client";
 import type {
   ChannelsResponse,
   Channel,
@@ -92,9 +94,10 @@ export default function DashboardClient({
   selectedGuildId: string;
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<
-    "settings" | "active-temp" | "voice-log" | "auto-role-log"
-  >("settings");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "settings">("dashboard");
+  const [detailView, setDetailView] = useState<
+    "active-temp" | "voice-log" | "leaderboard" | "auto-role" | null
+  >(null);
   const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
   const [textChannels, setTextChannels] = useState<Channel[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -326,37 +329,65 @@ export default function DashboardClient({
       <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 backdrop-blur">
         <Button
           type="button"
-          variant={activeTab === "settings" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("settings")}
+          variant={activeTab === "dashboard" ? "default" : "ghost"}
+          size="lg"
+          onClick={() => {
+            setActiveTab("dashboard");
+            setDetailView(null);
+          }}
         >
+          <LayoutDashboard className="h-4 w-4" />
+          Dashboard
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === "settings" ? "default" : "ghost"}
+          size="lg"
+          onClick={() => {
+            setActiveTab("settings");
+            setDetailView(null);
+          }}
+        >
+          <Settings className="h-4 w-4" />
           Settings
         </Button>
-        <Button
-          type="button"
-          variant={activeTab === "active-temp" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("active-temp")}
-        >
-          Active temp channels
-        </Button>
-        <Button
-          type="button"
-          variant={activeTab === "voice-log" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("voice-log")}
-        >
-          Voice Log
-        </Button>
-        <Button
-          type="button"
-          variant={activeTab === "auto-role-log" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("auto-role-log")}
-        >
-          Auto Role Log
-        </Button>
       </div>
+
+      {activeTab === "dashboard" && !detailView ? (
+        <DashboardOverview selectedGuildId={selectedGuildId} onOpenDetail={setDetailView} />
+      ) : null}
+
+      {activeTab === "dashboard" && detailView ? (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between gap-4">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDetailView(null)}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </Button>
+          </div>
+
+          {detailView === "active-temp" ? (
+            <ActiveTempChannelsCard selectedGuildId={selectedGuildId} />
+          ) : null}
+
+          {detailView === "voice-log" ? (
+            <VoiceLogPageClient selectedGuildId={selectedGuildId} embedded />
+          ) : null}
+
+          {detailView === "leaderboard" ? (
+            <VoiceLeaderboardCard selectedGuildId={selectedGuildId} />
+          ) : null}
+
+          {detailView === "auto-role" ? (
+            <AutoRoleRequestsCard selectedGuildId={selectedGuildId} />
+          ) : null}
+        </div>
+      ) : null}
 
       {activeTab === "settings" ? (
         <>
@@ -403,20 +434,6 @@ export default function DashboardClient({
         </>
       ) : null}
 
-      {activeTab === "active-temp" ? (
-        <ActiveTempChannelsCard selectedGuildId={selectedGuildId} />
-      ) : null}
-
-      {activeTab === "voice-log" ? (
-        <>
-          <VoiceLogDeletedCard selectedGuildId={selectedGuildId} />
-          <VoiceLeaderboardCard selectedGuildId={selectedGuildId} />
-        </>
-      ) : null}
-
-      {activeTab === "auto-role-log" ? (
-        <AutoRoleRequestsCard selectedGuildId={selectedGuildId} />
-      ) : null}
     </div>
   );
 }
