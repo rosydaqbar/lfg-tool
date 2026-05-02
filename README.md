@@ -89,68 +89,134 @@ Example structure:
   - `landing/*`
 - Scripts
   - Command deploy: `scripts/deploy-commands.js`
-  - SQLite -> Postgres migration: `scripts/migrate-sqlite-to-postgres.js`
   - Schema/index/perf helpers: `scripts/*`
 
 ## Runtime and Storage Model
 
-- Bot + dashboard share setup/runtime state from root `.setup-state.json`.
+- There are two supported setup modes:
+  - Local dashboard setup: use `/setup`; the dashboard writes root `.setup-state.json` and/or DB `setup_state`.
+  - Hosted/env setup: skip `/setup`; provide the equivalent setup values as environment variables, useful for Vercel/serverless where local setup files are not persistent.
+- Setup source priority is:
+  1. `.setup-state.json` from dashboard setup, when present
+  2. DB `setup_state`, when configured
+  3. Env-backed setup, only when `SETUP_COMPLETE=true`
+- Owner identity follows the same model:
+  - Dashboard setup stores `ownerDiscordId`.
+  - Env-backed setup uses `OWNER_DISCORD_ID` as the equivalent fallback.
+  - Owner is the configured user only. Admin means any other user in the configured guild with Discord Administrator permission.
 - Database source priority in dashboard data access is:
   1. `DATABASE_URL` env
   2. setup-state database URL
-  3. SQLite fallback
 - Supported setup DB providers:
   - `supabase`
-  - `local_postgres`
-  - `local_sqlite`
 
 ## Requirements
 
 - Node.js 18+
 - Discord bot token + app credentials
-- Database (Postgres recommended; SQLite supported)
+- Supabase Postgres database
+
+## Dashboard Setup Paths
+
+Choose one setup path based on where the dashboard runs.
+
+### Option A: Local/VPS Dashboard Setup
+
+Use this when the dashboard runs on your machine or VPS and can persist files/state.
+
+State source:
+- `/setup` writes the setup state.
+- `.setup-state.json` is the highest-priority setup source when present.
+- The owner is claimed in the setup wizard and saved as `ownerDiscordId`.
+
+Required local/VPS env before opening setup:
+- `NEXTAUTH_URL`
+- `NEXTAUTH_SECRET`
+
+These two values are only for dashboard login/session runtime. They are not bot, guild, owner, channel, or database setup values.
+
+The setup wizard collects:
+- Discord OAuth client ID/secret
+- Discord bot token
+- owner Discord user ID through owner claim
+- selected guild ID
+- log/LFG channels
+- Supabase database URL
+
+Steps:
+1. Install dependencies:
+   - `npm install`
+   - `npm --prefix dashboard install`
+2. Create a minimal env file for dashboard auth runtime:
+   - `cp .env.example .env`
+3. Set only these local/VPS auth values:
+   - `NEXTAUTH_URL=http://localhost:3000` for local development
+   - `NEXTAUTH_URL=https://your-vps-dashboard-domain.com` for VPS hosting
+   - `NEXTAUTH_SECRET=replace_with_a_long_random_string`
+4. Run dashboard:
+   - local: `npm --prefix dashboard run dev`
+   - VPS production: `npm --prefix dashboard run build` then `npm --prefix dashboard run start`
+5. Open setup:
+   - local: `http://localhost:3000/setup`
+   - VPS: `https://your-vps-dashboard-domain.com/setup`
+6. Complete setup in the browser.
+7. Start or restart the bot after setup is complete:
+   - `npm start`
+
+Use this path when you want the dashboard setup UI to own configuration.
+
+### Option B: Cloud Env Setup (Vercel/Serverless)
+
+Use this when the dashboard runs somewhere like Vercel and you do not want to rely on dashboard setup state files.
+
+State source:
+- Do not deploy `.setup-state.json`.
+- Set env vars directly.
+- `SETUP_COMPLETE=true` tells the dashboard to treat env vars as completed setup.
+- `OWNER_DISCORD_ID` mirrors setup-state `ownerDiscordId`.
+
+Required cloud env:
+- `SETUP_COMPLETE=true`
+- `OWNER_DISCORD_ID`
+- `SELECTED_GUILD_ID`
+- `LOG_CHANNEL_ID`
+- `DISCORD_TOKEN`
+- `DISCORD_CLIENT_ID`
+- `DISCORD_CLIENT_SECRET`
+- `DATABASE_URL`
+- `NEXTAUTH_URL`
+- `NEXTAUTH_SECRET`
+
+Optional cloud env:
+- `LFG_CHANNEL_ID`
+- `DISCORD_BOT_TOKEN` as fallback if `DISCORD_TOKEN` is not set
+- `POSTGRES_POOL_MAX=1` for Supabase session-mode pooler
+- `DEBUG=true`
+
+Postgres/Supabase SSL env:
+- `PG_SSL_MODE=require`
+- `PG_SSL_REJECT_UNAUTHORIZED=false` when using Supabase pooler with `sslmode=require`
+- `PG_SSL_CA` or `PG_SSL_CA_BASE64` only when using CA verification
+
+Steps:
+1. Create the Discord application and bot manually.
+2. Invite the bot to the target guild with required permissions.
+3. Create Supabase Postgres and use the Transaction Pooler URL on port `6543` with `sslmode=require`.
+4. Set all required cloud env vars in the hosting provider.
+5. Deploy the dashboard.
+6. Sign in with Discord.
+
+Expected access behavior:
+- The user whose ID equals `OWNER_DISCORD_ID` is shown as `Owner` and can reset setup.
+- Other users with Discord Administrator permission in `SELECTED_GUILD_ID` are shown as `Admin` and can manage dashboard settings.
+- Users without Administrator permission in the configured guild are denied.
 
 ## Environment Variables
 
 Root `.env` is used by the bot and also by dashboard runtime.
 
-Common required values:
-
-- `DISCORD_TOKEN`
-- `DATABASE_URL` (recommended for direct runtime)
-- `DISCORD_CLIENT_ID`
-- `DISCORD_CLIENT_SECRET`
-- `NEXTAUTH_SECRET`
-
-Common optional values:
-
-- `DISCORD_BOT_TOKEN` (dashboard fallback if `DISCORD_TOKEN` not set)
-- `NEXTAUTH_URL` (e.g. `http://localhost:3000`)
-- `ADMIN_DISCORD_USER_ID` (optional; owner fallback from setup is supported)
-- `SQLITE_PATH` (default `./data/discord.db`)
-- `LOG_CHANNEL_ID` (legacy fallback)
-- `VOICE_CHANNEL_ID` (legacy fallback)
-- `DEBUG=true`
-
-Postgres SSL controls:
-
-- `PG_SSL_MODE` (default `require`)
-- `PG_SSL_REJECT_UNAUTHORIZED` (default `true`)
-- `PG_SSL_CA` or `PG_SSL_CA_BASE64` (optional CA)
-
-## Quick Start
-
-1. Install root dependencies:
-   - `npm install`
-2. Create env file:
-   - `cp .env.example .env`
-3. Start bot:
-   - `npm start`
-4. Run dashboard in another terminal:
-   - `npm --prefix dashboard install`
-   - `npm --prefix dashboard run dev`
-5. Open dashboard and finish setup wizard:
-   - `http://localhost:3000/setup`
+Use the Local/VPS section above if you are using `/setup`.
+Use the Cloud Env section above if you are deploying to Vercel/serverless.
 
 ## Commands
 
@@ -159,7 +225,6 @@ Root commands:
 - Start bot: `npm start`
 - Deploy checks: `npm run deploy`
 - Deploy slash commands: `npm run deploy:commands`
-- SQLite -> Postgres migration: `npm run migrate:postgres`
 - Verify DB indexes: `npm run db:verify-indexes`
 - Benchmark voice queries: `npm run perf:voice-queries`
 

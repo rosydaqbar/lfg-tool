@@ -240,14 +240,12 @@ export async function requireDashboardGuildAccess(
   }
 }
 
-export async function requireAdminSession() {
+export async function requireOwnerSession() {
   const session = await getSafeServerSession();
-  let adminId = process.env.ADMIN_DISCORD_USER_ID;
-  if (!adminId) {
-    const setup = await getSetupState();
-    adminId = setup.ownerDiscordId ?? adminId;
-  }
-  if (!session || !adminId || session.user?.id !== adminId) {
+  const setup = await getSetupState();
+  const ownerId = setup.ownerDiscordId?.trim();
+
+  if (!session?.user?.id || !ownerId || session.user.id !== ownerId) {
     return null;
   }
   return session;

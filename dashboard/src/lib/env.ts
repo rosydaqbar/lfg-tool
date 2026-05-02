@@ -35,7 +35,7 @@ function hydrateFromSetupState() {
     const raw = fs.readFileSync(setupStatePath, "utf8");
     const setup = JSON.parse(raw) as {
       ownerDiscordId?: string | null;
-      databaseProvider?: "local_sqlite" | "local_postgres" | "supabase" | null;
+      databaseProvider?: "supabase" | null;
       databaseUrl?: string | null;
       databaseUrlEncrypted?: string | null;
       discordClientId?: string | null;
@@ -45,8 +45,11 @@ function hydrateFromSetupState() {
       botTokenEncrypted?: string | null;
     };
 
-    if (!process.env.ADMIN_DISCORD_USER_ID && setup.ownerDiscordId) {
-      process.env.ADMIN_DISCORD_USER_ID = setup.ownerDiscordId;
+    if (
+      !process.env.OWNER_DISCORD_ID &&
+      setup.ownerDiscordId
+    ) {
+      process.env.OWNER_DISCORD_ID = setup.ownerDiscordId;
     }
 
     if (!process.env.DISCORD_CLIENT_ID && setup.discordClientId) {
@@ -69,7 +72,7 @@ function hydrateFromSetupState() {
       }
     }
 
-    if (!process.env.DATABASE_URL && setup.databaseProvider !== "local_sqlite") {
+    if (!process.env.DATABASE_URL) {
       if (setup.databaseUrl && setup.databaseUrl.trim()) {
         process.env.DATABASE_URL = setup.databaseUrl.trim();
       } else if (setup.databaseUrlEncrypted) {

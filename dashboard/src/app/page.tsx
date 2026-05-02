@@ -17,6 +17,7 @@ import { requireDashboardGuildAccess } from "@/lib/session";
 export default async function Home() {
   const setup = await getSetupState();
   const session = await getSafeServerSession();
+  const ownerId = setup.ownerDiscordId?.trim();
 
   const hasDiscordOAuthBootstrap =
     Boolean(setup.discordClientId) && Boolean(setup.discordClientSecretSet);
@@ -61,7 +62,7 @@ export default async function Home() {
                   Discord OAuth
                 </span>
                 <span className="rounded-full border border-border bg-card px-3 py-1">
-                  SQLite config
+                  Supabase config
                 </span>
                 <span className="rounded-full border border-border bg-card px-3 py-1">
                   Bot-safe updates
@@ -135,6 +136,7 @@ export default async function Home() {
           <DashboardClient
             userName={session.user?.name ?? "Admin"}
             selectedGuildId={setup.selectedGuildId ?? ""}
+            accessLabel={session.user?.id && ownerId === session.user.id ? "Owner" : "Admin"}
           />
         )}
       </main>

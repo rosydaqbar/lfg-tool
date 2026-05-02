@@ -89,9 +89,11 @@ function normalizeAutoRoleConfig(
 export default function DashboardClient({
   userName,
   selectedGuildId,
+  accessLabel,
 }: {
   userName: string;
   selectedGuildId: string;
+  accessLabel: "Owner" | "Admin";
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"dashboard" | "settings">("dashboard");
@@ -318,7 +320,11 @@ export default function DashboardClient({
 
   return (
     <div className="flex flex-col gap-10">
-      <HeaderSection userName={userName} selectedGuildId={selectedGuildId} />
+      <HeaderSection
+        userName={userName}
+        selectedGuildId={selectedGuildId}
+        accessLabel={accessLabel}
+      />
 
       {error ? (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">

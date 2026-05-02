@@ -181,8 +181,8 @@ Risk:
 - During first-run setup on a public deployment, the first user to authenticate can claim ownership.
 
 Recommended fix:
-- Require `ADMIN_DISCORD_USER_ID` or a setup bootstrap token before owner claim on internet-exposed deployments.
-- If `ADMIN_DISCORD_USER_ID` is configured, only that Discord user should be able to claim owner.
+- Require `OWNER_DISCORD_ID` or a setup bootstrap token before owner claim on internet-exposed deployments.
+- If `OWNER_DISCORD_ID` is configured, only that Discord user should be able to claim owner.
 - Display a prominent warning when setup is incomplete and no owner allowlist is configured.
 
 Priority:

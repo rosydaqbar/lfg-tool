@@ -7,9 +7,14 @@ import { SignOutButton } from "@/components/sign-out-button";
 type HeaderSectionProps = {
   userName: string;
   selectedGuildId: string;
+  accessLabel: "Owner" | "Admin";
 };
 
-function HeaderSectionComponent({ userName, selectedGuildId }: HeaderSectionProps) {
+function HeaderSectionComponent({
+  userName,
+  selectedGuildId,
+  accessLabel,
+}: HeaderSectionProps) {
   return (
     <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between animate-in fade-in-0 slide-in-from-bottom-4 duration-700">
       <div className="space-y-3">
@@ -30,7 +35,7 @@ function HeaderSectionComponent({ userName, selectedGuildId }: HeaderSectionProp
         <ThemeToggle />
         <Badge variant="secondary" className="gap-2 rounded-full px-4 py-1">
           <BadgeCheck className="h-3.5 w-3.5" />
-          Admin
+          {accessLabel}
         </Badge>
         <SignOutButton />
       </div>

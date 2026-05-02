@@ -120,7 +120,7 @@ export type SetupState = {
   selectedGuildId: string | null;
   logChannelId: string | null;
   lfgChannelId: string | null;
-  databaseProvider: "local_postgres" | "local_sqlite" | "supabase" | null;
+  databaseProvider: "supabase" | null;
   databaseValidatedAt: string | null;
   botTokenSet: boolean;
   botDisplayName: string | null;
@@ -376,6 +376,10 @@ function envValue(...keys: string[]) {
   return null;
 }
 
+function getOwnerDiscordIdFromEnv() {
+  return envValue("OWNER_DISCORD_ID");
+}
+
 function isEnvSetupCompleteEnabled() {
   return ["true", "1", "yes", "on"].includes(
     (process.env.SETUP_COMPLETE || "").trim().toLowerCase()
@@ -385,7 +389,7 @@ function isEnvSetupCompleteEnabled() {
 function getEnvSetupStateRow(): Record<string, unknown> | null {
   if (!isEnvSetupCompleteEnabled()) return null;
 
-  const ownerDiscordId = envValue("ADMIN_DISCORD_USER_ID", "OWNER_DISCORD_ID");
+  const ownerDiscordId = getOwnerDiscordIdFromEnv();
   const selectedGuildId = envValue("SELECTED_GUILD_ID", "GUILD_ID", "DISCORD_GUILD_ID");
   const logChannelId = envValue("LOG_CHANNEL_ID");
   const lfgChannelId = envValue("LFG_CHANNEL_ID");
@@ -659,10 +663,8 @@ function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupStat
     logChannelId: (value("log_channel_id", "logChannelId") as string | null) ?? null,
     lfgChannelId: (value("lfg_channel_id", "lfgChannelId") as string | null) ?? null,
     databaseProvider:
-      value("database_provider", "databaseProvider") === "local_postgres" ||
-      value("database_provider", "databaseProvider") === "local_sqlite" ||
       value("database_provider", "databaseProvider") === "supabase"
-        ? (value("database_provider", "databaseProvider") as "local_postgres" | "local_sqlite" | "supabase")
+        ? "supabase"
         : null,
     databaseValidatedAt:
       asIsoString(value("database_validated_at", "databaseValidatedAt")),
@@ -725,19 +727,8 @@ export async function getSetupState(): Promise<SetupState> {
   }
 
   const res = await query(`SELECT * FROM setup_state WHERE id = 1`);
-  let state = parseSetupStateRow(res.rows[0]);
-  const envOwnerDiscordId = envValue("ADMIN_DISCORD_USER_ID", "OWNER_DISCORD_ID");
-
-  if (state.setupComplete && !state.ownerDiscordId && envOwnerDiscordId) {
-    state = {
-      ...state,
-      ownerDiscordId: envOwnerDiscordId,
-      steps: {
-        ...state.steps,
-        ownerClaimed: true,
-      },
-    };
-  }
+  const rawState = res.rows[0] ?? {};
+  let state = parseSetupStateRow(rawState);
 
   if (!state.setupComplete && envSetupState) {
     state = parseSetupStateRow(envSetupState);
@@ -766,7 +757,7 @@ export async function getSetupState(): Promise<SetupState> {
     if (existing?.guild_id) {
       await updateSetupState({
         setupComplete: true,
-        ownerDiscordId: process.env.ADMIN_DISCORD_USER_ID || null,
+        ownerDiscordId: getOwnerDiscordIdFromEnv(),
         selectedGuildId: existing.guild_id,
         logChannelId: existing.log_channel_id,
         lfgChannelId: existing.lfg_channel_id,
@@ -791,7 +782,7 @@ export async function updateSetupState(fields: {
   discordClientId?: string | null;
   discordClientSecretEncrypted?: string | null;
   discordClientSecret?: string | null;
-  databaseProvider?: "local_postgres" | "local_sqlite" | "supabase" | null;
+  databaseProvider?: "supabase" | null;
   databaseUrlEncrypted?: string | null;
   databaseUrl?: string | null;
   databaseValidatedAt?: string | null;
@@ -941,7 +932,7 @@ function getSetupDatabaseUrlFallback() {
   if (DATABASE_URL) return null;
   const fallback = readSetupStateFallback();
   const provider = fallback.databaseProvider;
-  if (provider !== "supabase" && provider !== "local_postgres") {
+  if (provider !== "supabase") {
     return null;
   }
 

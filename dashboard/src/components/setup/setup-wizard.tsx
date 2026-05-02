@@ -13,7 +13,7 @@ type SetupState = {
   selectedGuildId: string | null;
   logChannelId: string | null;
   lfgChannelId: string | null;
-  databaseProvider: "local_postgres" | "local_sqlite" | "supabase" | null;
+  databaseProvider: "supabase" | null;
   databaseValidatedAt: string | null;
   botTokenSet: boolean;
   botDisplayName: string | null;

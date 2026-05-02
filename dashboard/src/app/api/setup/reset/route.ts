@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSetupState, resetSetupDraft } from "@/lib/db";
-import { requireAdminSession } from "@/lib/session";
+import { requireOwnerSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requireOwnerSession();
 
   const body = (await request.json().catch(() => null)) as
     | { guildIdConfirm?: string }
