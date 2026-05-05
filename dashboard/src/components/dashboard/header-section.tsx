@@ -37,17 +37,17 @@ function HeaderSectionComponent({
     status === "ready" ? "Ready" : status === "needs_setup" ? "Needs setup" : "Invite bot";
   const statusClass = (status: ManageableGuild["status"]) => {
     if (status === "ready") {
-      return "border-emerald-500/35 bg-emerald-500/15 text-emerald-200";
+      return "border-neutral-400/35 bg-neutral-500/15 text-neutral-100";
     }
     if (status === "needs_setup") {
       return "border-amber-500/35 bg-amber-500/15 text-amber-200";
     }
-    return "border-sky-500/35 bg-sky-500/15 text-sky-200";
+    return "border-neutral-500/35 bg-neutral-600/20 text-neutral-300";
   };
   const statusDotClass = (status: ManageableGuild["status"]) => {
-    if (status === "ready") return "bg-emerald-300";
+    if (status === "ready") return "bg-neutral-100";
     if (status === "needs_setup") return "bg-amber-300";
-    return "bg-sky-300";
+    return "bg-neutral-400";
   };
 
   return (
