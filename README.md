@@ -25,7 +25,7 @@ In plain terms: users join a lobby voice channel, the bot creates a private temp
 - [Notes](#notes)
 - [License](#license)
 
-## What It Does Now
+## What It Does
 
 - Discord bot features
   - Join a lobby voice channel to create your own temporary voice channel.
@@ -47,51 +47,37 @@ In plain terms: users join a lobby voice channel, the bot creates a private temp
   - Check whether the bot token works and whether the bot is in the selected Discord server.
   - Only the configured owner or Discord users with Administrator permission can use the dashboard.
 
-## Data Safety Notes
+## Screenshots and functions
+### Discord bot
+#### Sticky Join-to-Create prompt 
+<img width="628" height="528" alt="image" src="https://github.com/user-attachments/assets/e9ca3cf9-8afa-4ba3-a942-fcda2483fc02" />
 
-- `Reset settings` only resets the setup flow.
-  - It does not delete the saved Discord server settings from the database.
-- Updating setup channels should not wipe existing voice settings.
-- Do not share `.setup-state.json`, `.env`, bot tokens, database URLs, or Discord client secrets.
+#### LFG Post Method, Self-Voice Control, and voice log.
+<img width="640" height="874" alt="image" src="https://github.com/user-attachments/assets/edaf1999-9d5e-4a0c-9a98-d11acd444f5a" />
 
-## Recent Changelog
+#### LFG Mention Post
+<img width="557" height="354" alt="image" src="https://github.com/user-attachments/assets/b9a9c6c8-dae6-4c9b-a865-ad05ec6410d8" />
 
-- Temp channel controls and checks
-  - Added `/voicecheck` for Discord Administrators.
-  - Added cleanup for temporary channels that are missing or empty.
-  - Dashboard `Active Temp Channels` now checks live Discord state, so it can show `Exists`, `Empty`, or `Not found`.
-- Voice owner/admin behavior
-  - The setup owner and Discord Administrators can help manage owner-only voice actions.
-  - The bot now shows a clear notice when an admin override is used.
-- Join-to-Create prompt reliability
-  - The bot remembers the Join-to-Create prompt message, so updates edit the right message.
-  - Prompt updates now target the correct channel panel.
-  - Added retries after voice changes to reduce stale panels.
-- Voice Log data correctness
-  - Voice panels now check who is actually in voice before showing active users.
-  - Added cleanup for stale voice tracking records.
-  - Manual voice log panels use the same live Discord checks.
-- Logging and keepalive improvements
-  - Reduced duplicate delete and leave logs.
-  - Keepalive checks now hit `/` and print the response for easier troubleshooting.
-  - Health logs now show keepalive pings for easier Koyeb checks.
+### Dashboard 
+#### Dashboard admin log activities
+<img width="1157" height="1257" alt="image" src="https://github.com/user-attachments/assets/f2a23f51-0046-4dd1-87c2-ec8f604c32a0" />
 
-## Screenshots
+#### Guild Setting (Soon!), Voice Log Channel, and LFG Message channel
+Multiple LFG text channel are in the works, so each game will have their own LFG message channel.
+<img width="1055" height="487" alt="image" src="https://github.com/user-attachments/assets/438f3134-d343-4ae6-aad9-21518ea2d833" />
 
-Put screenshots in the root `screenshots/` folder.
+#### Create Join-to-create Lobbies
+1. Select voice channel
+2. Pick Role (For LFG Message Mentioning)
+3. Enable LFG for Sending LFG Message
+<img width="1108" height="493" alt="image" src="https://github.com/user-attachments/assets/9e3755c0-58ee-4f86-a3bd-72621ac7b634" />
 
-Example files:
+#### Voice log lobbies
+Log any other voice channels that are not part of Join-to-create Lobbies
+<img width="1032" height="841" alt="image" src="https://github.com/user-attachments/assets/7d26a3bd-42d7-4b09-a5c4-5a4a5720f81f" />
 
-- `screenshots/bot-join-to-create-prompt.png`
-- `screenshots/bot-voice-settings-panel.png`
-- `screenshots/bot-lfg-modal.png`
-- `screenshots/bot-lfg-post.png`
-- `screenshots/bot-manual-voice-log-panel.png`
-- `screenshots/bot-stats-leaderboard.png`
-- `screenshots/dashboard-settings.png`
-- `screenshots/dashboard-jtc-lobbies.png`
-- `screenshots/dashboard-voice-log-channels.png`
-- `screenshots/dashboard-voice-log-page.png`
+#### Auto role based on voice time
+<img width="1041" height="777" alt="image" src="https://github.com/user-attachments/assets/b81444c8-540b-4bf3-a323-585d432ac70e" />
 
 ## Project Structure
 
@@ -330,6 +316,35 @@ Optional, depending on your setup:
 - Dashboard bot status checks Discord directly, so it works even when the bot is hosted somewhere else.
 - Keep `.setup-state.json` private. It can contain sensitive values like tokens and database URLs.
 - This repository changes quickly. Review recent commits before using it in production.
+
+## Data Safety Notes
+
+- `Reset settings` only resets the setup flow.
+  - It does not delete the saved Discord server settings from the database.
+- Updating setup channels should not wipe existing voice settings.
+- Do not share `.setup-state.json`, `.env`, bot tokens, database URLs, or Discord client secrets.
+
+## Recent Changelog
+
+- Temp channel controls and checks
+  - Added `/voicecheck` for Discord Administrators.
+  - Added cleanup for temporary channels that are missing or empty.
+  - Dashboard `Active Temp Channels` now checks live Discord state, so it can show `Exists`, `Empty`, or `Not found`.
+- Voice owner/admin behavior
+  - The setup owner and Discord Administrators can help manage owner-only voice actions.
+  - The bot now shows a clear notice when an admin override is used.
+- Join-to-Create prompt reliability
+  - The bot remembers the Join-to-Create prompt message, so updates edit the right message.
+  - Prompt updates now target the correct channel panel.
+  - Added retries after voice changes to reduce stale panels.
+- Voice Log data correctness
+  - Voice panels now check who is actually in voice before showing active users.
+  - Added cleanup for stale voice tracking records.
+  - Manual voice log panels use the same live Discord checks.
+- Logging and keepalive improvements
+  - Reduced duplicate delete and leave logs.
+  - Keepalive checks now hit `/` and print the response for easier troubleshooting.
+  - Health logs now show keepalive pings for easier Koyeb checks.
 
 ## License
 
