@@ -30,12 +30,6 @@ export default async function Home() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 left-[-10%] h-[420px] w-[420px] rounded-full bg-[rgba(20,125,140,0.2)] blur-[140px]" />
-        <div className="absolute top-12 right-[-6%] h-[360px] w-[360px] rounded-full bg-[rgba(242,190,120,0.3)] blur-[140px]" />
-        <div className="absolute bottom-[-18%] left-[25%] h-[420px] w-[420px] rounded-full bg-[rgba(12,74,110,0.12)] blur-[160px]" />
-      </div>
-
       <main className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-16">
         {!session ? (
           <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">

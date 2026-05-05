@@ -35,6 +35,20 @@ function HeaderSectionComponent({
   const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
   const statusLabel = (status: ManageableGuild["status"]) =>
     status === "ready" ? "Ready" : status === "needs_setup" ? "Needs setup" : "Invite bot";
+  const statusClass = (status: ManageableGuild["status"]) => {
+    if (status === "ready") {
+      return "border-emerald-500/35 bg-emerald-500/15 text-emerald-200";
+    }
+    if (status === "needs_setup") {
+      return "border-amber-500/35 bg-amber-500/15 text-amber-200";
+    }
+    return "border-sky-500/35 bg-sky-500/15 text-sky-200";
+  };
+  const statusDotClass = (status: ManageableGuild["status"]) => {
+    if (status === "ready") return "bg-emerald-300";
+    if (status === "needs_setup") return "bg-amber-300";
+    return "bg-sky-300";
+  };
 
   return (
     <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between animate-in fade-in-0 slide-in-from-bottom-4 duration-700">
@@ -58,7 +72,8 @@ function HeaderSectionComponent({
                 <SelectItem key={guild.id} value={guild.id}>
                   <span className="flex w-full items-center justify-between gap-4">
                     <span className="truncate">{guild.name}</span>
-                    <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
+                    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusClass(guild.status)}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(guild.status)}`} />
                       {statusLabel(guild.status)}
                     </span>
                   </span>
@@ -67,7 +82,8 @@ function HeaderSectionComponent({
             </SelectContent>
           </Select>
           {selectedGuild ? (
-            <Badge variant={selectedGuild.configured ? "secondary" : "outline"} className="rounded-full px-3 py-1">
+            <Badge variant="outline" className={`gap-1.5 rounded-full px-3 py-1 ${statusClass(selectedGuild.status)}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(selectedGuild.status)}`} />
               {statusLabel(selectedGuild.status)}
             </Badge>
           ) : null}
