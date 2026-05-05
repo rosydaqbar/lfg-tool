@@ -130,6 +130,9 @@ function getSupabaseUrlProblem(databaseUrl: string) {
 
 function getDatabaseErrorHint(details: string) {
   const lower = details.toLowerCase();
+  if (lower.includes("self-signed certificate") || lower.includes("certificate chain")) {
+    return "Supabase Transaction Pooler with sslmode=require needs encrypted SSL without CA verification. Set PG_SSL_MODE=require and PG_SSL_REJECT_UNAUTHORIZED=false, or keep using the setup wizard which applies that mode for validation.";
+  }
   if (lower.includes("tenant") || lower.includes("user") || lower.includes("enotfound")) {
     return "Check that the pooler username and host belong to the same Supabase project. The username should be postgres.<project-ref>, and the host should be the Transaction Pooler host from that same project.";
   }
@@ -140,6 +143,15 @@ function getDatabaseErrorHint(details: string) {
     return "Check that you are using the Supabase Transaction Pooler URL on port 6543 and that your network can reach Supabase.";
   }
   return "For Supabase, use the Transaction Pooler URL (port 6543) and include sslmode=require.";
+}
+
+function buildSetupPgSslConfig(databaseUrl: string) {
+  const parsed = new URL(databaseUrl);
+  const sslMode = parsed.searchParams.get("sslmode")?.toLowerCase();
+  if (sslMode === "require") {
+    return { rejectUnauthorized: false };
+  }
+  return buildPgSslConfig();
 }
 
 export async function POST(request: Request) {
@@ -182,7 +194,7 @@ export async function POST(request: Request) {
 
   const pool = new Pool({
     connectionString: databaseUrl,
-    ssl: buildPgSslConfig(),
+    ssl: buildSetupPgSslConfig(databaseUrl),
     max: 1,
     connectionTimeoutMillis: 8_000,
   });
