@@ -36,6 +36,8 @@ type SetupGuild = {
   icon: string | null;
   accessLabel: "Owner" | "Admin";
   botInstalled: boolean;
+  configured: boolean;
+  status: "ready" | "needs_setup" | "invite_bot";
   inviteUrl: string | null;
 };
 type SetupPhase = "A" | "B" | "C" | "FINAL";
@@ -354,7 +356,7 @@ export function SetupWizard({
         if (setup?.selectedGuildId && guilds.some((guild) => guild.id === setup.selectedGuildId)) {
           return setup.selectedGuildId;
         }
-        return guilds[0]?.id ?? "";
+        return "";
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Discord servers");
@@ -547,8 +549,9 @@ export function SetupWizard({
   const discordStep4Done = Boolean(setup?.botTokenSet);
   const guildStep1Done = Boolean(setup?.selectedGuildId);
   const selectedSetupGuild = setupGuilds.find((guild) => guild.id === (setup?.selectedGuildId || guildIdInput));
+  const selectedGuildSaved = Boolean(setup?.selectedGuildId && selectedSetupGuild?.id === setup.selectedGuildId);
   const guildStep2Done = Boolean(
-    selectedSetupGuild?.botInstalled || alreadyInvited === true
+    selectedGuildSaved && (selectedSetupGuild?.botInstalled || alreadyInvited === true)
   );
   const guildStep3Done = Boolean(setup?.logChannelId);
   const hasLoadedTextChannels = textChannels.length > 0;
@@ -557,6 +560,18 @@ export function SetupWizard({
     ? createBotInviteUrl(setup.discordClientId, inviteGuildId)
     : null;
   const activeInviteUrl = inviteUrl || directInviteUrl;
+  const statusLabel = (status: SetupGuild["status"]) =>
+    status === "ready" ? "Ready" : status === "needs_setup" ? "Needs setup" : "Invite bot";
+  const statusClass = (status: SetupGuild["status"]) => {
+    if (status === "ready") return "border-neutral-400/35 bg-neutral-500/15 text-neutral-100";
+    if (status === "needs_setup") return "border-amber-500/35 bg-amber-500/15 text-amber-200";
+    return "border-neutral-500/35 bg-neutral-600/20 text-neutral-300";
+  };
+  const statusDotClass = (status: SetupGuild["status"]) => {
+    if (status === "ready") return "bg-neutral-100";
+    if (status === "needs_setup") return "bg-amber-300";
+    return "bg-neutral-400";
+  };
   const channelSelectClass = `w-full appearance-none rounded-md border border-border bg-background px-3 py-2 pr-10 text-sm leading-6 transition focus:outline-none focus:ring-2 focus:ring-primary/40 ${
     hasLoadedTextChannels ? "text-foreground" : "cursor-not-allowed text-muted-foreground opacity-50"
   }`;
@@ -1271,6 +1286,11 @@ export function SetupWizard({
                         setInviteUrl(null);
                         setAlreadyInvited(null);
                         setInviteCheckFeedback(null);
+                        if (value !== setup?.selectedGuildId) {
+                          setTextChannels([]);
+                          setLogChannelId("");
+                          setLfgChannelId("");
+                        }
                       }}
                     >
                       <SelectTrigger className="h-11 min-w-[320px] data-[size=default]:h-11">
@@ -1281,8 +1301,9 @@ export function SetupWizard({
                           <SelectItem key={guild.id} value={guild.id}>
                             <span className="flex w-full items-center justify-between gap-4">
                               <span className="truncate">{guild.name}</span>
-                              <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
-                                {guild.botInstalled ? "Bot installed" : "Invite bot"}
+                              <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusClass(guild.status)}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(guild.status)}`} />
+                                {statusLabel(guild.status)}
                               </span>
                             </span>
                           </SelectItem>
@@ -1299,9 +1320,13 @@ export function SetupWizard({
                     </div>
                   ) : null}
                   {selectedSetupGuild ? (
-                    <p className="text-xs text-muted-foreground">
-                      Selected: {selectedSetupGuild.name} ({selectedSetupGuild.accessLabel}) · ID {selectedSetupGuild.id}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>Selected: {selectedSetupGuild.name} ({selectedSetupGuild.accessLabel}) · ID {selectedSetupGuild.id}</span>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium ${statusClass(selectedSetupGuild.status)}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(selectedSetupGuild.status)}`} />
+                        {statusLabel(selectedSetupGuild.status)}
+                      </span>
+                    </div>
                   ) : null}
                 </div>
                 <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>

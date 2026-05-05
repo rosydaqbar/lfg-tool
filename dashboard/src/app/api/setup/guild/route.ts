@@ -90,12 +90,23 @@ export async function GET() {
 
   for (const guild of manageableGuilds) {
     const botInstalled = await isBotInstalled(guild.id, botToken);
+    let configured = false;
+    if (botInstalled) {
+      try {
+        const config = await getGuildConfig(guild.id);
+        configured = Boolean(config.logChannelId);
+      } catch {
+        configured = false;
+      }
+    }
     guilds.push({
       id: guild.id,
       name: guild.name,
       icon: guild.icon ?? null,
       accessLabel: guild.owner === true ? "Owner" : "Admin",
       botInstalled,
+      configured,
+      status: !botInstalled ? "invite_bot" : configured ? "ready" : "needs_setup",
       inviteUrl: !botInstalled && clientId ? createBotInviteUrl(clientId, guild.id) : null,
     });
   }
