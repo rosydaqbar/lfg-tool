@@ -12,7 +12,7 @@ In plain terms: users join a lobby voice channel, the bot creates a private temp
 - [What It Does Now](#what-it-does-now)
 - [Data Safety Notes](#data-safety-notes)
 - [Recent Changelog](#recent-changelog)
-- [Screenshots](#screenshots)
+- [Screenshots](#screenshots-and-functions)
 - [Project Structure](#project-structure)
 - [How Setup Is Saved](#how-setup-is-saved)
 - [Requirements](#requirements)
