@@ -1,7 +1,8 @@
 import { memo } from "react";
-import { BadgeCheck } from "lucide-react";
+import { BadgeCheck, RefreshCw } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -17,7 +18,9 @@ type HeaderSectionProps = {
   selectedGuildId: string;
   guilds: ManageableGuild[];
   accessLabel: "Owner" | "Admin";
+  refreshingGuilds: boolean;
   onGuildChange: (guildId: string) => void;
+  onRefreshGuilds: () => void;
 };
 
 function HeaderSectionComponent({
@@ -25,7 +28,9 @@ function HeaderSectionComponent({
   selectedGuildId,
   guilds,
   accessLabel,
+  refreshingGuilds,
   onGuildChange,
+  onRefreshGuilds,
 }: HeaderSectionProps) {
   const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
   const statusLabel = (status: ManageableGuild["status"]) =>
@@ -66,6 +71,18 @@ function HeaderSectionComponent({
               {statusLabel(selectedGuild.status)}
             </Badge>
           ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 rounded-full px-3 text-xs"
+            onClick={onRefreshGuilds}
+            disabled={refreshingGuilds}
+            title="Refresh bot status"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshingGuilds ? "animate-spin" : ""}`} />
+            Refresh status
+          </Button>
           <span className="font-mono text-xs text-muted-foreground">
             {selectedGuildId}
           </span>

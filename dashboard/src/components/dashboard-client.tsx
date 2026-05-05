@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LayoutDashboard, Settings } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, RefreshCw, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -115,6 +115,7 @@ export default function DashboardClient({
     DEFAULT_AUTO_ROLE_CONFIG
   );
   const [loadingGuilds, setLoadingGuilds] = useState(true);
+  const [refreshingGuilds, setRefreshingGuilds] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +124,7 @@ export default function DashboardClient({
     let active = true;
     setLoadingGuilds(true);
 
-    fetch("/api/guilds")
+    fetch("/api/guilds", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) {
           const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -370,6 +371,36 @@ export default function DashboardClient({
     selectedGuildId,
   ]);
 
+  const handleRefreshGuilds = useCallback(async () => {
+    setRefreshingGuilds(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/guilds", { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || "Failed to refresh guild status");
+      }
+
+      const payload = (await response.json()) as GuildsResponse;
+      const nextGuilds = payload.guilds ?? [];
+      setGuilds(nextGuilds);
+      setSelectedGuildId((current) => {
+        if (current && nextGuilds.some((guild) => guild.id === current)) return current;
+        if (initialSelectedGuildId && nextGuilds.some((guild) => guild.id === initialSelectedGuildId)) {
+          return initialSelectedGuildId;
+        }
+        return nextGuilds.find((guild) => guild.status === "ready")?.id ?? nextGuilds[0]?.id ?? "";
+      });
+      toast.success("Bot status refreshed");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to refresh guild status";
+      setError(message);
+      toast.error("Refresh failed", { description: message });
+    } finally {
+      setRefreshingGuilds(false);
+    }
+  }, [initialSelectedGuildId]);
+
   const memoVoiceChannels = useMemo(() => voiceChannels, [voiceChannels]);
   const memoTextChannels = useMemo(() => textChannels, [textChannels]);
   const memoRoles = useMemo(() => roles, [roles]);
@@ -395,11 +426,13 @@ export default function DashboardClient({
         selectedGuildId={selectedGuildId}
         guilds={guilds}
         accessLabel={accessLabel}
+        refreshingGuilds={loadingGuilds || refreshingGuilds}
         onGuildChange={(guildId) => {
           setSelectedGuildId(guildId);
           setActiveTab("dashboard");
           setDetailView(null);
         }}
+        onRefreshGuilds={handleRefreshGuilds}
       />
 
       {loadingGuilds ? (
@@ -420,13 +453,24 @@ export default function DashboardClient({
           <p className="mt-2 text-sm text-muted-foreground">
             You can manage this Discord server, but the bot is not installed there yet. Invite the bot before opening logs or settings for this guild.
           </p>
-          {selectedGuild.inviteUrl ? (
-            <Button asChild className="mt-4">
-              <a href={selectedGuild.inviteUrl} target="_blank" rel="noreferrer">
-                Invite Bot
-              </a>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {selectedGuild.inviteUrl ? (
+              <Button asChild>
+                <a href={selectedGuild.inviteUrl} target="_blank" rel="noreferrer">
+                  Invite Bot
+                </a>
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRefreshGuilds}
+              disabled={refreshingGuilds}
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshingGuilds ? "animate-spin" : ""}`} />
+              Refresh Status
             </Button>
-          ) : null}
+          </div>
         </div>
       ) : null}
 
