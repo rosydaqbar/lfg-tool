@@ -88,6 +88,60 @@ const BASELINE_SCHEMA = [
   `,
 ];
 
+function getSupabaseUrlProblem(databaseUrl: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    return "Use a full Postgres connection string, for example postgresql://postgres.project-ref:password@aws-0-region.pooler.supabase.com:6543/postgres?sslmode=require.";
+  }
+
+  if (parsed.protocol !== "postgresql:" && parsed.protocol !== "postgres:") {
+    return "Database URL must start with postgresql://.";
+  }
+
+  if (!parsed.hostname.includes("pooler.supabase.com")) {
+    return "Use the Supabase Transaction Pooler host. It should end with pooler.supabase.com.";
+  }
+
+  if (parsed.port !== "6543") {
+    return "Use the Supabase Transaction Pooler URL on port 6543, not the direct database URL or session pooler port.";
+  }
+
+  if (parsed.pathname !== "/postgres") {
+    return "The database path should be /postgres.";
+  }
+
+  if (parsed.searchParams.get("sslmode") !== "require") {
+    return "Add sslmode=require to the URL query string.";
+  }
+
+  const username = decodeURIComponent(parsed.username || "");
+  if (!username.startsWith("postgres.")) {
+    return "For Supabase pooler URLs, the username should look like postgres.project-ref, not just postgres.";
+  }
+
+  if (!parsed.password) {
+    return "Database password is missing. If your password contains special characters, URL-encode it before pasting the URL.";
+  }
+
+  return null;
+}
+
+function getDatabaseErrorHint(details: string) {
+  const lower = details.toLowerCase();
+  if (lower.includes("tenant") || lower.includes("user") || lower.includes("enotfound")) {
+    return "Check that the pooler username and host belong to the same Supabase project. The username should be postgres.<project-ref>, and the host should be the Transaction Pooler host from that same project.";
+  }
+  if (lower.includes("password") || lower.includes("authentication")) {
+    return "Check the database password. If it contains characters like @, #, :, /, or %, URL-encode the password in the connection string.";
+  }
+  if (lower.includes("timeout") || lower.includes("econnrefused")) {
+    return "Check that you are using the Supabase Transaction Pooler URL on port 6543 and that your network can reach Supabase.";
+  }
+  return "For Supabase, use the Transaction Pooler URL (port 6543) and include sslmode=require.";
+}
+
 export async function POST(request: Request) {
   const auth = await requireSetupSession();
   if (!auth) {
@@ -114,9 +168,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "databaseUrl is required" }, { status: 400 });
   }
 
+  const supabaseUrlProblem = getSupabaseUrlProblem(databaseUrl);
+  if (supabaseUrlProblem) {
+    return NextResponse.json(
+      {
+        error: "Invalid Supabase database URL.",
+        details: supabaseUrlProblem,
+        hint: "Copy the Transaction Pooler connection string from Supabase Project Settings > Database > Connection string > Transaction pooler.",
+      },
+      { status: 400 }
+    );
+  }
+
   const pool = new Pool({
     connectionString: databaseUrl,
     ssl: buildPgSslConfig(),
+    max: 1,
+    connectionTimeoutMillis: 8_000,
   });
 
   try {
@@ -128,9 +196,7 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     const details = error instanceof Error ? error.message : "Unknown database error";
-    const hint = provider === "supabase"
-      ? "For Supabase, use the Transaction pooler URL (port 6543) and include sslmode=require."
-      : null;
+    const hint = getDatabaseErrorHint(details);
     return NextResponse.json(
       {
         error: "Failed to connect to database. Verify URL and SSL settings.",
