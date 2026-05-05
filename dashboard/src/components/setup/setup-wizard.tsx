@@ -5,6 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
 
 type SetupState = {
@@ -23,6 +30,14 @@ type SetupState = {
 };
 
 type TextChannel = { id: string; name: string };
+type SetupGuild = {
+  id: string;
+  name: string;
+  icon: string | null;
+  accessLabel: "Owner" | "Admin";
+  botInstalled: boolean;
+  inviteUrl: string | null;
+};
 type SetupPhase = "A" | "B" | "C" | "FINAL";
 
 const BOT_INVITE_PERMISSIONS = "288427024";
@@ -61,6 +76,8 @@ export function SetupWizard({
 
   const [tokenInput, setTokenInput] = useState("");
   const [guildIdInput, setGuildIdInput] = useState("");
+  const [setupGuilds, setSetupGuilds] = useState<SetupGuild[]>([]);
+  const [guildsLoading, setGuildsLoading] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [alreadyInvited, setAlreadyInvited] = useState<boolean | null>(null);
   const [guildValidateSuccess, setGuildValidateSuccess] = useState(false);
@@ -321,6 +338,31 @@ export function SetupWizard({
     }
   }
 
+  async function loadSetupGuilds() {
+    setGuildsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/setup/guild", { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; guilds?: SetupGuild[] }
+        | null;
+      if (!response.ok) throw new Error(payload?.error || "Failed to load Discord servers");
+      const guilds = payload?.guilds ?? [];
+      setSetupGuilds(guilds);
+      setGuildIdInput((current) => {
+        if (current && guilds.some((guild) => guild.id === current)) return current;
+        if (setup?.selectedGuildId && guilds.some((guild) => guild.id === setup.selectedGuildId)) {
+          return setup.selectedGuildId;
+        }
+        return guilds[0]?.id ?? "";
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load Discord servers");
+    } finally {
+      setGuildsLoading(false);
+    }
+  }
+
   async function checkInvite() {
     setBusyKey("invite");
     setError(null);
@@ -504,7 +546,10 @@ export function SetupWizard({
   const discordStep3Done = ownerClaimedByCurrentUser;
   const discordStep4Done = Boolean(setup?.botTokenSet);
   const guildStep1Done = Boolean(setup?.selectedGuildId);
-  const guildStep2Done = true;
+  const selectedSetupGuild = setupGuilds.find((guild) => guild.id === (setup?.selectedGuildId || guildIdInput));
+  const guildStep2Done = Boolean(
+    selectedSetupGuild?.botInstalled || alreadyInvited === true
+  );
   const guildStep3Done = Boolean(setup?.logChannelId);
   const hasLoadedTextChannels = textChannels.length > 0;
   const inviteGuildId = setup?.selectedGuildId || guildIdInput.trim() || null;
@@ -619,6 +664,9 @@ export function SetupWizard({
 
   useEffect(() => {
     if (phase !== "C") return;
+    if (isDatabaseReady && isDiscordReady && setupGuilds.length === 0 && !guildsLoading) {
+      loadSetupGuilds().catch(() => null);
+    }
     if (!guildStep1Done) {
       setGuildSubstep(1);
       return;
@@ -627,7 +675,7 @@ export function SetupWizard({
       setGuildSubstep(3);
       return;
     }
-  }, [phase, guildStep1Done, guildStep3Done]);
+  }, [phase, guildStep1Done, guildStep3Done, guildsLoading, isDatabaseReady, isDiscordReady, setupGuilds.length]);
 
   if (loading && !setup) {
     return <div className="text-sm text-muted-foreground">Loading setup wizard...</div>;
@@ -793,8 +841,8 @@ export function SetupWizard({
       ready: guildStep1Done,
       detail: guildStep1Done
         ? `Configured server ID: ${setup?.selectedGuildId}.`
-        : "No Discord server ID is configured.",
-      issue: guildStep1Done ? null : "Validate the Guild ID in Step 3.",
+        : "No Discord server is selected.",
+      issue: guildStep1Done ? null : "Select a Discord server in Step 3.",
     },
     {
       title: "Channels",
@@ -807,7 +855,7 @@ export function SetupWizard({
   ];
 
   const finalPotentialIssues = [
-    ...(alreadyInvited === true
+    ...(guildStep2Done
       ? []
       : [
           alreadyInvited === false
@@ -1206,29 +1254,63 @@ export function SetupWizard({
             <div className="setup-step-panel space-y-3">
               <GuildSubstepCard
                 step={1}
-                title="Add Guild ID"
+                title="Select Guild"
                 done={guildStep1Done}
               >
-                <label htmlFor="guild-id" className="text-sm font-medium">Guild ID</label>
-                <Input
-                  id="guild-id"
-                  value={guildIdInput}
-                  onChange={(event) => {
-                    setGuildIdInput(event.target.value);
-                    setGuildValidateSuccess(false);
-                    setInviteUrl(null);
-                    setAlreadyInvited(null);
-                    setInviteCheckFeedback(null);
-                  }}
-                  placeholder="670147766839803924"
-                />
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Discord Server</label>
+                  <p className="text-xs text-muted-foreground">
+                    Choose a server where you are the owner or have Discord Administrator permission.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Select
+                      value={guildIdInput}
+                      onValueChange={(value) => {
+                        setGuildIdInput(value);
+                        setGuildValidateSuccess(false);
+                        setInviteUrl(null);
+                        setAlreadyInvited(null);
+                        setInviteCheckFeedback(null);
+                      }}
+                    >
+                      <SelectTrigger className="h-11 min-w-[320px] data-[size=default]:h-11">
+                        <SelectValue placeholder={guildsLoading ? "Loading servers..." : "Select server"} />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72 min-w-[320px] overflow-auto">
+                        {setupGuilds.map((guild) => (
+                          <SelectItem key={guild.id} value={guild.id}>
+                            <span className="flex w-full items-center justify-between gap-4">
+                              <span className="truncate">{guild.name}</span>
+                              <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
+                                {guild.botInstalled ? "Bot installed" : "Invite bot"}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" onClick={loadSetupGuilds} disabled={guildsLoading}>
+                      {guildsLoading ? "Loading..." : "Refresh Servers"}
+                    </Button>
+                  </div>
+                  {setupGuilds.length === 0 && !guildsLoading ? (
+                    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                      No manageable Discord servers found. Sign in with an account that owns a server or has Administrator permission.
+                    </div>
+                  ) : null}
+                  {selectedSetupGuild ? (
+                    <p className="text-xs text-muted-foreground">
+                      Selected: {selectedSetupGuild.name} ({selectedSetupGuild.accessLabel}) · ID {selectedSetupGuild.id}
+                    </p>
+                  ) : null}
+                </div>
                 <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>
-                  {busyKey === "guild" ? "Validating..." : guildStep1Done ? "Revalidate Guild" : "Validate Guild"}
+                  {busyKey === "guild" ? "Saving..." : guildStep1Done ? "Update Guild" : "Save Guild"}
                 </Button>
                 {guildValidateSuccess ? (
                   <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 shadow-sm shadow-emerald-500/10 animate-pulse">
                     <CheckCircle2 className="h-4 w-4" />
-                    Guild ID validated successfully. Continue with the bot invite check.
+                    Guild saved successfully. Continue with the bot invite check.
                   </div>
                 ) : null}
               </GuildSubstepCard>
