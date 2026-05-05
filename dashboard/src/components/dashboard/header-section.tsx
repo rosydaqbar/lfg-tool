@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SignOutButton } from "@/components/sign-out-button";
+import { StatusBadge, guildStatusLabel, guildStatusTone } from "@/components/status-badge";
 import type { ManageableGuild } from "@/components/dashboard/types";
 
 type HeaderSectionProps = {
@@ -33,22 +34,6 @@ function HeaderSectionComponent({
   onRefreshGuilds,
 }: HeaderSectionProps) {
   const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
-  const statusLabel = (status: ManageableGuild["status"]) =>
-    status === "ready" ? "Ready" : status === "needs_setup" ? "Needs setup" : "Invite bot";
-  const statusClass = (status: ManageableGuild["status"]) => {
-    if (status === "ready") {
-      return "border-neutral-400/35 bg-neutral-500/15 text-neutral-100";
-    }
-    if (status === "needs_setup") {
-      return "border-amber-500/35 bg-amber-500/15 text-amber-200";
-    }
-    return "border-neutral-500/35 bg-neutral-600/20 text-neutral-300";
-  };
-  const statusDotClass = (status: ManageableGuild["status"]) => {
-    if (status === "ready") return "bg-neutral-100";
-    if (status === "needs_setup") return "bg-amber-300";
-    return "bg-neutral-400";
-  };
 
   return (
     <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between animate-in fade-in-0 slide-in-from-bottom-4 duration-700">
@@ -72,20 +57,18 @@ function HeaderSectionComponent({
                 <SelectItem key={guild.id} value={guild.id}>
                   <span className="flex w-full items-center justify-between gap-4">
                     <span className="truncate">{guild.name}</span>
-                    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusClass(guild.status)}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(guild.status)}`} />
-                      {statusLabel(guild.status)}
-                    </span>
+                    <StatusBadge tone={guildStatusTone(guild.status)} className="shrink-0 text-[11px]" dot>
+                      {guildStatusLabel(guild.status)}
+                    </StatusBadge>
                   </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {selectedGuild ? (
-            <Badge variant="outline" className={`gap-1.5 rounded-full px-3 py-1 ${statusClass(selectedGuild.status)}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(selectedGuild.status)}`} />
-              {statusLabel(selectedGuild.status)}
-            </Badge>
+            <StatusBadge tone={guildStatusTone(selectedGuild.status)} className="px-3 py-1" dot>
+              {guildStatusLabel(selectedGuild.status)}
+            </StatusBadge>
           ) : null}
           <Button
             type="button"

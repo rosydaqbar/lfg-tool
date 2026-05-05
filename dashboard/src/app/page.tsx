@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import DashboardClient from "@/components/dashboard-client";
+import { dashboardCard } from "@/components/ui/patterns";
 import { getSetupState } from "@/lib/db";
 import { getSafeServerSession } from "@/lib/safe-session";
 
@@ -57,7 +58,7 @@ export default async function Home() {
               </div>
             </div>
 
-            <Card className="border-border/70 bg-card/80 shadow-xl shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-150">
+            <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-150`}>
               <CardHeader>
                 <CardTitle className="text-2xl">
                   {requiresSetup ? "Setup required" : "Sign in to continue"}

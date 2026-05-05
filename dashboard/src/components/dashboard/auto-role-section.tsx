@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { dashboardCard, dashboardPanel } from "@/components/ui/patterns";
 import { cn } from "@/lib/utils";
 import type { AutoRoleCondition, AutoRoleConfig, Channel, Role } from "./types";
 
@@ -208,7 +209,7 @@ function AutoRoleSectionComponent({
   const needsApprovalChannel = value.requireAdminApproval && !value.approvalChannelId;
 
   return (
-    <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300">
+    <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300`}>
       <CardHeader className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -235,7 +236,7 @@ function AutoRoleSectionComponent({
         <Separator />
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+        <div className={`space-y-4 ${dashboardPanel}`}>
           <div>
             <div className="text-sm font-medium">Global role required to apply</div>
             <div className="text-xs text-muted-foreground">
@@ -368,7 +369,7 @@ function AutoRoleSectionComponent({
           ) : null}
         </div>
 
-        <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+        <div className={`space-y-4 ${dashboardPanel}`}>
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium">Time logic rules</div>
             <Button
@@ -411,7 +412,7 @@ function AutoRoleSectionComponent({
               {value.rules.map((rule) => (
                 <div
                   key={rule.id}
-                  className="grid gap-2 rounded-lg border border-border/70 bg-background/60 p-3 md:grid-cols-[1fr_170px_120px_1fr_auto]"
+                  className="grid gap-2 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-[1fr_170px_120px_1fr_auto]"
                 >
                   <SearchableSelect
                     value={
@@ -537,7 +538,7 @@ function AutoRoleSectionComponent({
           )}
         </div>
 
-        <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+        <div className={`space-y-4 ${dashboardPanel}`}>
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium">Require admin permission</div>

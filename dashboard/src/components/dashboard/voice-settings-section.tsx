@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { dashboardCard, dashboardEmpty, dashboardInset, dashboardPanel } from "@/components/ui/patterns";
 import {
   Table,
   TableBody,
@@ -119,7 +120,7 @@ function VoiceSettingsSectionComponent({
   );
 
   return (
-    <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200">
+    <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200`}>
       <CardHeader className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -151,7 +152,7 @@ function VoiceSettingsSectionComponent({
           </div>
         ) : voiceChannels.length ? (
           <div className="space-y-6">
-            <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+            <div className={`space-y-4 ${dashboardPanel}`}>
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium">Join-to-Create lobbies</div>
                 <Badge variant="secondary" className="rounded-full px-3 py-1">
@@ -350,14 +351,14 @@ function VoiceSettingsSectionComponent({
               </div>
             </div>
 
-            <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+            <div className={`space-y-4 ${dashboardPanel}`}>
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium">Voice Log channels</div>
                 <Badge variant="secondary" className="rounded-full px-3 py-1">
                   Manual {enabledVoiceChannelIds.length}
                 </Badge>
               </div>
-              <div className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
+              <div className={`${dashboardInset} text-xs text-muted-foreground`}>
                 Temp voice channels are logged automatically. Add manual channels here for
                 log-only tracking (no voice settings panel).
               </div>
@@ -487,7 +488,7 @@ function VoiceSettingsSectionComponent({
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className={dashboardEmpty}>
             No voice channels were found for this guild.
           </div>
         )}

@@ -7,6 +7,8 @@ import { getSetupState, resetSetupDraft, type SetupState } from "@/lib/db";
 import { SetupBootstrapDiscordApp } from "@/components/setup/setup-bootstrap-discord";
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
 import { SetupWizard } from "@/components/setup/setup-wizard";
+import { StatusBadge } from "@/components/status-badge";
+import { dashboardCard, dashboardInset, dashboardWarning } from "@/components/ui/patterns";
 import { getSafeServerSession } from "@/lib/safe-session";
 
 function hasIncompleteSetupDraft(setup: SetupState) {
@@ -57,12 +59,12 @@ function SetupOnboardingPage({
 
   return (
     <main className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-6xl items-center px-6 py-10 lg:py-16">
-      <Card className="w-full overflow-hidden border-border/80 bg-card/80 shadow-2xl shadow-cyan-950/10">
+      <Card className={`w-full overflow-hidden ${dashboardCard}`}>
         <div className="grid lg:grid-cols-[1.05fr_0.95fr]">
           <section className="relative overflow-hidden p-8 sm:p-10 lg:p-12">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(99,102,241,0.16),transparent_34%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.06),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.04),transparent_34%)]" />
             <div className="relative space-y-8">
-              <Badge variant="outline" className="border-cyan-400/40 bg-cyan-400/10 text-cyan-700 dark:text-cyan-100">
+              <Badge variant="outline" className="border-border bg-muted/40 text-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
                 {isSetupLocked ? "Dashboard ready" : "First-time onboarding"}
               </Badge>
@@ -82,7 +84,7 @@ function SetupOnboardingPage({
                 {onboardingSteps.map((step, index) => {
                   const Icon = step.icon;
                   return (
-                    <div key={step.title} className="flex gap-4 rounded-2xl border border-border/70 bg-background/40 p-4">
+                    <div key={step.title} className={`flex gap-4 ${dashboardInset}`}>
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                         <Icon className="h-5 w-5" />
                       </div>
@@ -117,7 +119,7 @@ function SetupOnboardingPage({
                 </div>
 
                 {isSetupLocked && forceConfigureDiscord ? (
-                  <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+                  <div className={dashboardWarning}>
                     OAuth recovery mode is active. Update the Discord Client ID/Secret, then sign in again.
                   </div>
                 ) : null}
@@ -125,7 +127,7 @@ function SetupOnboardingPage({
                 <SetupBootstrapDiscordApp />
 
                 {discordCredentialsReady ? (
-                  <div className="rounded-xl border border-border bg-muted/30 p-4">
+                  <div className={dashboardInset}>
                     <p className="text-sm font-medium text-foreground">Already have saved credentials?</p>
                     <div className="mt-3">
                       <SetupResetDiscordButton endpoint="/api/setup/bootstrap-discord-app" />
@@ -135,10 +137,10 @@ function SetupOnboardingPage({
               </div>
             ) : isSetupLocked ? (
               <div className="flex h-full flex-col justify-center space-y-6">
-                <Badge variant="outline" className="w-fit border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                <StatusBadge tone="success" className="w-fit" dot>
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Setup complete
-                </Badge>
+                </StatusBadge>
                 <div className="space-y-3">
                   <h2 className="text-3xl font-semibold tracking-tight text-foreground">Your dashboard is already configured.</h2>
                   <p className="text-sm leading-6 text-muted-foreground">
@@ -154,17 +156,17 @@ function SetupOnboardingPage({
               </div>
             ) : (
               <div className="flex h-full flex-col justify-center space-y-6">
-                <Badge variant="outline" className="w-fit border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                <StatusBadge tone="success" className="w-fit" dot>
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Discord login ready
-                </Badge>
+                </StatusBadge>
                 <div className="space-y-3">
                   <h2 className="text-3xl font-semibold tracking-tight text-foreground">Continue with Discord</h2>
                   <p className="text-sm leading-6 text-muted-foreground">
                     OAuth credentials are saved. Sign in to claim the setup owner account and continue the guided setup wizard.
                   </p>
                 </div>
-                <div className="rounded-2xl border border-border bg-muted/30 p-4 text-sm">
+                <div className={`${dashboardInset} text-sm`}>
                   <p className="font-medium text-foreground">Saved Client ID</p>
                   <p className="mt-1 break-all text-muted-foreground">{setup.discordClientId}</p>
                 </div>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { dashboardError, dashboardInset } from "@/components/ui/patterns";
 
 export function SetupBootstrapDiscordApp() {
   const [clientId, setClientId] = useState("");
@@ -37,7 +38,7 @@ export function SetupBootstrapDiscordApp() {
   return (
     <div className="space-y-4">
       {error ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className={`${dashboardError} px-3 py-2`}>
           {error}
         </div>
       ) : null}
@@ -67,7 +68,7 @@ export function SetupBootstrapDiscordApp() {
         />
       </div>
 
-      <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+      <div className={`space-y-1 text-xs text-muted-foreground ${dashboardInset}`}>
         <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
         <code className="block rounded bg-background px-2 py-1 break-all">
           http://localhost:3000/api/auth/callback/discord

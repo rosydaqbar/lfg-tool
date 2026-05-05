@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, LayoutDashboard, RefreshCw, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { dashboardCard, dashboardError, dashboardInset, dashboardWarning } from "@/components/ui/patterns";
 
 import { ChannelConfigCards } from "@/components/dashboard/channel-config-cards";
 import { HeaderSection } from "@/components/dashboard/header-section";
@@ -436,19 +437,19 @@ export default function DashboardClient({
       />
 
       {loadingGuilds ? (
-        <div className="rounded-xl border border-border bg-card/70 px-4 py-3 text-sm text-muted-foreground">
+        <div className={`${dashboardInset} text-sm text-muted-foreground`}>
           Loading your manageable Discord servers...
         </div>
       ) : null}
 
       {error ? (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className={dashboardError}>
           {error}
         </div>
       ) : null}
 
       {selectedGuild?.status === "invite_bot" ? (
-        <div className="rounded-xl border border-border bg-card/70 p-6 shadow-sm">
+        <div className={`${dashboardCard} rounded-lg p-6`}>
           <h2 className="text-lg font-semibold text-foreground">Invite the bot to {selectedGuild.name}</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             You can manage this Discord server, but the bot is not installed there yet. Invite the bot before opening logs or settings for this guild.
@@ -475,7 +476,7 @@ export default function DashboardClient({
       ) : null}
 
       {selectedGuild?.status === "needs_setup" ? (
-        <div className="rounded-xl border border-amber-300/40 bg-amber-500/10 p-6 shadow-sm">
+        <div className={`${dashboardWarning} p-6`}>
           <h2 className="text-lg font-semibold text-foreground">Finish guild setup for {selectedGuild.name}</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             Pick a log channel in Settings, then save. After that, this guild dashboard can show logs, stats, and live activity.
@@ -486,7 +487,7 @@ export default function DashboardClient({
         </div>
       ) : null}
 
-      <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 backdrop-blur">
+      <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card/80 p-2 backdrop-blur">
         <Button
           type="button"
           variant={activeTab === "dashboard" ? "default" : "ghost"}

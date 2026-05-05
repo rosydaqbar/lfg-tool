@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { dashboardCard, dashboardEmpty, dashboardError, dashboardInset } from "@/components/ui/patterns";
 import type { TempVoiceDeleteLog } from "@/components/dashboard/types";
 
 const PAGE_SIZE = 25;
@@ -95,12 +96,12 @@ export function VoiceLogPageClient({
       ) : null}
 
       {error ? (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className={dashboardError}>
           {error}
         </div>
       ) : null}
 
-      <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur">
+      <Card className={dashboardCard}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Volume2 className="h-4 w-4" />
@@ -122,7 +123,7 @@ export function VoiceLogPageClient({
               {deleteLogs.map((log) => (
                 <div
                   key={log.id}
-                  className="rounded-xl border border-border bg-muted/30 p-4"
+                  className={dashboardInset}
                 >
                   <div className="mb-3 flex flex-wrap items-center gap-3">
                     <Badge variant="outline" className="rounded-full px-3 py-1">
@@ -171,7 +172,7 @@ export function VoiceLogPageClient({
               ))}
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+            <div className={dashboardEmpty}>
               Tidak ada data untuk halaman ini.
             </div>
           )}

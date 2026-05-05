@@ -1,0 +1,12 @@
+export const dashboardCard = "border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur";
+export const dashboardCardStrong = "border-border/70 bg-card/95 shadow-lg shadow-black/5";
+export const dashboardPanel = "rounded-lg border border-border/70 bg-muted/20 p-4";
+export const dashboardInset = "rounded-lg border border-border/70 bg-muted/30 p-3";
+export const dashboardEmpty = "rounded-lg border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground";
+export const dashboardEmptyCompact = "rounded-lg border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground";
+export const dashboardError = "rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive";
+export const dashboardWarning = "rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200";
+export const dashboardWarningCard = "border-amber-500/40 bg-amber-500/10 shadow-lg shadow-black/5";
+export const dashboardSuccess = "rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300";
+export const dashboardCodeBlock = "rounded-lg border border-border/70 bg-muted/30 px-3 py-2 font-mono text-xs text-foreground";
+export const dashboardStepper = "overflow-hidden rounded-lg border border-border/70 bg-card/70 divide-y divide-border/60 shadow-sm";

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
+import { dashboardCard } from "@/components/ui/patterns";
 import { cn } from "@/lib/utils";
 import type { Channel } from "./types";
 
@@ -64,7 +65,7 @@ function ChannelConfigCardsComponent({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr_0.9fr]">
-      <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-100">
+      <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-100`}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Building2 className="h-4 w-4" />
@@ -87,7 +88,7 @@ function ChannelConfigCardsComponent({
         </CardContent>
       </Card>
 
-      <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-150">
+      <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-150`}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <MessageSquareText className="h-4 w-4" />
@@ -160,7 +161,7 @@ function ChannelConfigCardsComponent({
         </CardContent>
       </Card>
 
-      <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200">
+      <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200`}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <MessageSquareText className="h-4 w-4" />

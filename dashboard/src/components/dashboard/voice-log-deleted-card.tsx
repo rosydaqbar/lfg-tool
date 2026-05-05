@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { dashboardCard, dashboardEmpty, dashboardError, dashboardInset } from "@/components/ui/patterns";
 import type { TempVoiceDeleteLog } from "./types";
 import { useAdaptivePolling } from "./use-adaptive-polling";
 
@@ -63,7 +64,7 @@ function VoiceLogDeletedCardComponent({
   );
 
   return (
-    <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-[400ms]">
+    <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-[400ms]`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <Volume2 className="h-4 w-4" />
@@ -75,7 +76,7 @@ function VoiceLogDeletedCardComponent({
       </CardHeader>
       <CardContent className="space-y-4">
         {loadError ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className={dashboardError}>
             {loadError}
           </div>
         ) : null}
@@ -90,7 +91,7 @@ function VoiceLogDeletedCardComponent({
             {deleteLogs.map((log) => (
               <div
                 key={log.id}
-                className="rounded-xl border border-border bg-muted/30 p-4"
+                className={dashboardInset}
               >
                 <div className="mb-3 flex flex-wrap items-center gap-3">
                   <Badge variant="outline" className="rounded-full px-3 py-1">
@@ -146,7 +147,7 @@ function VoiceLogDeletedCardComponent({
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className={dashboardEmpty}>
             Belum ada data voice log.
           </div>
         )}
