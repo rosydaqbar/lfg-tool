@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
-import { buildPgSslConfig } from "@/lib/pg-ssl";
+import { buildPgSslConfig, sanitizePgConnectionString } from "@/lib/pg-ssl";
 import { getGuildConfig, getSetupState, updateSetupState } from "@/lib/db";
 import { encryptSetupValue } from "@/lib/setup-crypto";
 import { requireSetupSession } from "@/lib/setup-session";
@@ -193,7 +193,7 @@ export async function POST(request: Request) {
   }
 
   const pool = new Pool({
-    connectionString: databaseUrl,
+    connectionString: sanitizePgConnectionString(databaseUrl),
     ssl: buildSetupPgSslConfig(databaseUrl),
     max: 1,
     connectionTimeoutMillis: 8_000,

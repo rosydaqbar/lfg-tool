@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const { buildPgSslConfig } = require('./lib/pg-ssl');
+const { buildPgSslConfig, sanitizePgConnectionString } = require('./lib/pg-ssl');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const POSTGRES_POOL_MAX = Number.parseInt(
@@ -13,7 +13,7 @@ if (!DATABASE_URL) {
 
 const pool = DATABASE_URL
   ? new Pool({
-      connectionString: DATABASE_URL,
+      connectionString: sanitizePgConnectionString(DATABASE_URL),
       ssl: buildPgSslConfig(),
       max: Number.isFinite(POSTGRES_POOL_MAX) && POSTGRES_POOL_MAX > 0
         ? POSTGRES_POOL_MAX

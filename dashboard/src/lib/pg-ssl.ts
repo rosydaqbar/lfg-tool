@@ -51,3 +51,17 @@ export function buildPgSslConfig() {
   }
   return ssl;
 }
+
+export function sanitizePgConnectionString(connectionString: string) {
+  try {
+    const parsed = new URL(connectionString);
+    parsed.searchParams.delete("sslmode");
+    parsed.searchParams.delete("ssl");
+    parsed.searchParams.delete("sslcert");
+    parsed.searchParams.delete("sslkey");
+    parsed.searchParams.delete("sslrootcert");
+    return parsed.toString();
+  } catch {
+    return connectionString;
+  }
+}

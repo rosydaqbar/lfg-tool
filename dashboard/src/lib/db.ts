@@ -2,7 +2,7 @@ import "./env";
 import fs from "fs";
 import path from "path";
 import { Pool } from "pg";
-import { buildPgSslConfig } from "@/lib/pg-ssl";
+import { buildPgSslConfig, sanitizePgConnectionString } from "@/lib/pg-ssl";
 
 type GuildConfig = {
   logChannelId: string | null;
@@ -161,7 +161,7 @@ const globalForPg = globalThis as typeof globalThis & {
 const pool = DATABASE_URL
   ? globalForPg.__lfgDashboardPgPool ??
     new Pool({
-      connectionString: DATABASE_URL,
+      connectionString: sanitizePgConnectionString(DATABASE_URL),
       ssl: buildPgSslConfig(),
       max: POSTGRES_POOL_MAX,
       idleTimeoutMillis: 10_000,
@@ -955,7 +955,7 @@ function getSetupDatabaseUrlFallback() {
 
 async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: string): Promise<GuildConfig> {
   const scopedPool = new Pool({
-    connectionString: databaseUrl,
+    connectionString: sanitizePgConnectionString(databaseUrl),
     ssl: buildPgSslConfig(),
   });
 
@@ -1341,7 +1341,7 @@ export async function clearGuildSettings(guildId: string) {
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -1489,7 +1489,7 @@ export async function saveGuildConfigWithDatabaseUrl(
   config: GuildConfig
 ) {
   const scopedPool = new Pool({
-    connectionString: databaseUrl,
+    connectionString: sanitizePgConnectionString(databaseUrl),
     ssl: buildPgSslConfig(),
   });
   const client = await scopedPool.connect();
@@ -1548,7 +1548,7 @@ export async function saveGuildConfigWithDatabaseUrl(
 
 async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: string) {
   const scopedPool = new Pool({
-    connectionString: databaseUrl,
+    connectionString: sanitizePgConnectionString(databaseUrl),
     ssl: buildPgSslConfig(),
   });
   const client = await scopedPool.connect();
@@ -1765,7 +1765,7 @@ export async function deleteTempChannelRecord(channelId: string) {
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -1833,7 +1833,7 @@ export async function getTempVoiceDeleteLogs(
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -2227,7 +2227,7 @@ export async function getTempVoiceDeleteLeaderboard(
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -2509,7 +2509,7 @@ export async function getVoiceLogTodayCount(guildId: string) {
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -2627,7 +2627,7 @@ export async function upsertVoiceLeaderboardEntry(
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -2725,7 +2725,7 @@ export async function deleteVoiceLeaderboardEntry(guildId: string, userId: strin
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -2880,7 +2880,7 @@ export async function getVoiceAutoRoleRequestById(guildId: string, id: number) {
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -2940,7 +2940,7 @@ export async function updateVoiceAutoRoleRequestStatus(
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -3036,7 +3036,7 @@ export async function getVoiceAutoRoleRequests(
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -3161,7 +3161,7 @@ export async function getVoiceAutoRoleRequestCounts(guildId: string) {
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
@@ -3257,7 +3257,7 @@ export async function deleteVoiceAutoRoleRequest(guildId: string, id: number) {
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
       const scopedPool = new Pool({
-        connectionString: setupDatabaseUrl,
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
         ssl: buildPgSslConfig(),
       });
       const client = await scopedPool.connect();
