@@ -33,13 +33,29 @@ export async function GET(
       },
       cache: "no-store",
     }
-  );
+  ).catch((error) => {
+    console.error("Failed to fetch Discord guild channels:", error);
+    return null;
+  });
+
+  if (!response) {
+    return NextResponse.json(
+      { error: "Discord channel lookup failed. Please retry." },
+      { status: 502 }
+    );
+  }
 
   if (!response.ok) {
-    const details = (await response.json().catch(() => null)) as { message?: string } | null;
+    const details = (await response.json().catch(() => null)) as { code?: number; message?: string } | null;
+    console.error("Discord guild channels error:", {
+      guildId: id,
+      status: response.status,
+      code: details?.code,
+      message: details?.message,
+    });
     return NextResponse.json(
-      { error: details?.message || "Failed to fetch channels" },
-      { status: response.status }
+      { error: details?.message || "Failed to fetch channels", code: details?.code ?? null },
+      { status: response.status >= 500 ? 502 : response.status }
     );
   }
 

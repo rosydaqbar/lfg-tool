@@ -24,6 +24,8 @@ import type {
   AutoRoleConfig,
   Role,
   RolesResponse,
+  GuildsResponse,
+  ManageableGuild,
 } from "@/components/dashboard/types";
 
 const DEFAULT_AUTO_ROLE_CONFIG: AutoRoleConfig = {
@@ -88,14 +90,14 @@ function normalizeAutoRoleConfig(
 
 export default function DashboardClient({
   userName,
-  selectedGuildId,
-  accessLabel,
+  initialSelectedGuildId,
 }: {
   userName: string;
-  selectedGuildId: string;
-  accessLabel: "Owner" | "Admin";
+  initialSelectedGuildId: string;
 }) {
   const router = useRouter();
+  const [guilds, setGuilds] = useState<ManageableGuild[]>([]);
+  const [selectedGuildId, setSelectedGuildId] = useState("");
   const [activeTab, setActiveTab] = useState<"dashboard" | "settings">("dashboard");
   const [detailView, setDetailView] = useState<
     "active-temp" | "voice-log" | "leaderboard" | "auto-role" | null
@@ -112,13 +114,69 @@ export default function DashboardClient({
   const [autoRoleConfig, setAutoRoleConfig] = useState<AutoRoleConfig>(
     DEFAULT_AUTO_ROLE_CONFIG
   );
+  const [loadingGuilds, setLoadingGuilds] = useState(true);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+    setLoadingGuilds(true);
+
+    fetch("/api/guilds")
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error || "Failed to load guilds");
+        }
+        return response.json() as Promise<GuildsResponse>;
+      })
+      .then((payload) => {
+        if (!active) return;
+        const nextGuilds = payload.guilds ?? [];
+        setGuilds(nextGuilds);
+        setSelectedGuildId((current) => {
+          if (current && nextGuilds.some((guild) => guild.id === current)) return current;
+          if (initialSelectedGuildId && nextGuilds.some((guild) => guild.id === initialSelectedGuildId)) {
+            return initialSelectedGuildId;
+          }
+          return nextGuilds.find((guild) => guild.status === "ready")?.id ?? nextGuilds[0]?.id ?? "";
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load guilds");
+      })
+      .finally(() => {
+        if (active) setLoadingGuilds(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [initialSelectedGuildId]);
+
+  useEffect(() => {
     if (!selectedGuildId) {
-      setError("No guild selected in setup. Open /setup and pick a guild.");
+      if (!loadingGuilds) setError("No manageable Discord guilds found for this account.");
+      return;
+    }
+    const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
+    if (selectedGuild && selectedGuild.status === "invite_bot") {
+      setError(null);
+      setVoiceChannels([]);
+      setTextChannels([]);
+      setRoles([]);
+      setEnabledVoiceIds([]);
+      setJoinToCreateLobbies([]);
+      setAutoRoleConfig(DEFAULT_AUTO_ROLE_CONFIG);
+      setLogChannelId("");
+      setLfgChannelId("");
+      setLoadingConfig(false);
+      return;
+    }
+    if (activeTab !== "settings") {
+      setLoadingConfig(false);
       return;
     }
     let active = true;
@@ -184,7 +242,7 @@ export default function DashboardClient({
     return () => {
       active = false;
     };
-  }, [selectedGuildId]);
+  }, [activeTab, guilds, loadingGuilds, selectedGuildId]);
 
   const handleAddLobbyChannel = useCallback((channelId: string, roleId: string) => {
     if (!channelId || !roleId) return;
@@ -288,6 +346,13 @@ export default function DashboardClient({
       toast.success("Configuration saved", {
         description: "The bot will pick up the new settings shortly.",
       });
+      setGuilds((prev) =>
+        prev.map((guild) =>
+          guild.id === trimmedGuildId
+            ? { ...guild, configured: true, status: "ready" as const }
+            : guild
+        )
+      );
     } catch (err) {
       toast.error("Save failed", {
         description:
@@ -318,17 +383,62 @@ export default function DashboardClient({
     router.refresh();
   }, [router]);
 
+  const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId) ?? null;
+  const accessLabel = selectedGuild?.accessLabel ?? "Admin";
+  const canOpenGuildDashboard = selectedGuild?.status === "ready";
+  const canOpenGuildSettings = selectedGuild?.status === "ready" || selectedGuild?.status === "needs_setup";
+
   return (
     <div className="flex flex-col gap-10">
       <HeaderSection
         userName={userName}
         selectedGuildId={selectedGuildId}
+        guilds={guilds}
         accessLabel={accessLabel}
+        onGuildChange={(guildId) => {
+          setSelectedGuildId(guildId);
+          setActiveTab("dashboard");
+          setDetailView(null);
+        }}
       />
+
+      {loadingGuilds ? (
+        <div className="rounded-xl border border-border bg-card/70 px-4 py-3 text-sm text-muted-foreground">
+          Loading your manageable Discord servers...
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      ) : null}
+
+      {selectedGuild?.status === "invite_bot" ? (
+        <div className="rounded-xl border border-border bg-card/70 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Invite the bot to {selectedGuild.name}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            You can manage this Discord server, but the bot is not installed there yet. Invite the bot before opening logs or settings for this guild.
+          </p>
+          {selectedGuild.inviteUrl ? (
+            <Button asChild className="mt-4">
+              <a href={selectedGuild.inviteUrl} target="_blank" rel="noreferrer">
+                Invite Bot
+              </a>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {selectedGuild?.status === "needs_setup" ? (
+        <div className="rounded-xl border border-amber-300/40 bg-amber-500/10 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Finish guild setup for {selectedGuild.name}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Pick a log channel in Settings, then save. After that, this guild dashboard can show logs, stats, and live activity.
+          </p>
+          <Button type="button" className="mt-4" onClick={() => setActiveTab("settings")}>
+            Open Settings
+          </Button>
         </div>
       ) : null}
 
@@ -359,11 +469,11 @@ export default function DashboardClient({
         </Button>
       </div>
 
-      {activeTab === "dashboard" && !detailView ? (
+      {activeTab === "dashboard" && !detailView && canOpenGuildDashboard ? (
         <DashboardOverview selectedGuildId={selectedGuildId} onOpenDetail={setDetailView} />
       ) : null}
 
-      {activeTab === "dashboard" && detailView ? (
+      {activeTab === "dashboard" && detailView && canOpenGuildDashboard ? (
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-4">
             <Button
@@ -395,7 +505,7 @@ export default function DashboardClient({
         </div>
       ) : null}
 
-      {activeTab === "settings" ? (
+      {activeTab === "settings" && canOpenGuildSettings ? (
         <>
           <ChannelConfigCards
             loadingConfig={loadingConfig}

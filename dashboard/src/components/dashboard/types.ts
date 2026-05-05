@@ -10,6 +10,21 @@ export type Role = {
   color: number;
 };
 
+export type ManageableGuild = {
+  id: string;
+  name: string;
+  icon: string | null;
+  accessLabel: "Owner" | "Admin";
+  botInstalled: boolean;
+  configured: boolean;
+  status: "ready" | "needs_setup" | "invite_bot";
+  inviteUrl: string | null;
+};
+
+export type GuildsResponse = {
+  guilds: ManageableGuild[];
+};
+
 export type JoinToCreateLobby = {
   channelId: string;
   roleId: string | null;
