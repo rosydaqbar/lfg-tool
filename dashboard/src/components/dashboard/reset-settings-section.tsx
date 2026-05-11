@@ -103,8 +103,12 @@ function ResetSettingsSectionComponent({
     async function loadBotStatus() {
       setStatusLoading(true);
       try {
-        const response = await fetch("/api/bot/status", { cache: "no-store" });
+        const params = new URLSearchParams({ guildId: trimmedGuildId });
+        const response = await fetch(`/api/bot/status?${params.toString()}`, { cache: "no-store" });
         const payload = (await response.json().catch(() => null)) as BotStatusResponse | null;
+        if (!response.ok) {
+          throw new Error(payload?.error || "Unable to check bot status right now.");
+        }
         if (!mounted) return;
         setBotStatus(payload);
       } catch {
@@ -121,11 +125,15 @@ function ResetSettingsSectionComponent({
       }
     }
 
-    loadBotStatus();
+    if (trimmedGuildId) {
+      loadBotStatus();
+    } else {
+      setStatusLoading(false);
+    }
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [trimmedGuildId]);
 
   async function handleReset() {
     if (!trimmedGuildId) {
