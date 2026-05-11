@@ -229,6 +229,8 @@ export default function DashboardClient({
             channelId: item.channelId,
             roleId: item.roleId,
             lfgEnabled: item.lfgEnabled ?? true,
+            lfgReminderEnabled: item.lfgReminderEnabled ?? false,
+            lfgReminderSeconds: item.lfgReminderSeconds ?? 30,
           }))
         );
         setAutoRoleConfig(normalizeAutoRoleConfig(config.autoRoleConfig));
@@ -259,7 +261,7 @@ export default function DashboardClient({
         };
         return next;
       }
-      return [...prev, { channelId, roleId, lfgEnabled: true }];
+      return [...prev, { channelId, roleId, lfgEnabled: true, lfgReminderEnabled: false, lfgReminderSeconds: 30 }];
     });
   }, []);
 
@@ -267,6 +269,25 @@ export default function DashboardClient({
     setJoinToCreateLobbies((prev) =>
       prev.map((item) =>
         item.channelId === channelId ? { ...item, lfgEnabled } : item
+      )
+    );
+  }, []);
+
+  const handleToggleLobbyReminder = useCallback((channelId: string, lfgReminderEnabled: boolean) => {
+    setJoinToCreateLobbies((prev) =>
+      prev.map((item) =>
+        item.channelId === channelId ? { ...item, lfgReminderEnabled } : item
+      )
+    );
+  }, []);
+
+  const handleLobbyReminderSecondsChange = useCallback((channelId: string, lfgReminderSeconds: number) => {
+    const safeSeconds = Number.isFinite(lfgReminderSeconds)
+      ? Math.max(5, Math.min(3600, Math.floor(lfgReminderSeconds)))
+      : 30;
+    setJoinToCreateLobbies((prev) =>
+      prev.map((item) =>
+        item.channelId === channelId ? { ...item, lfgReminderSeconds: safeSeconds } : item
       )
     );
   }, []);
@@ -323,6 +344,8 @@ export default function DashboardClient({
       channelId: item.channelId.trim(),
       roleId: (item.roleId ?? "").trim(),
       lfgEnabled: item.lfgEnabled ?? true,
+      lfgReminderEnabled: item.lfgReminderEnabled ?? false,
+      lfgReminderSeconds: Math.max(5, Math.min(3600, Math.floor(item.lfgReminderSeconds ?? 30))),
     }));
 
     try {
@@ -572,6 +595,8 @@ export default function DashboardClient({
             enabledVoiceChannelIds={enabledVoiceIds}
             onAddLobbyChannel={handleAddLobbyChannel}
             onToggleLobbyLfg={handleToggleLobbyLfg}
+            onToggleLobbyReminder={handleToggleLobbyReminder}
+            onLobbyReminderSecondsChange={handleLobbyReminderSecondsChange}
             onRemoveLobbyChannel={handleRemoveLobbyChannel}
             onAddEnabledVoiceChannel={handleAddEnabledVoiceChannel}
             onRemoveEnabledVoiceChannel={handleRemoveEnabledVoiceChannel}

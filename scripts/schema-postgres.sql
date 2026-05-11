@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS join_to_create_lobbies (
   lobby_channel_id TEXT NOT NULL,
   role_id TEXT,
   lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30,
   PRIMARY KEY (guild_id, lobby_channel_id)
 );
 
@@ -25,6 +27,12 @@ ALTER TABLE IF EXISTS join_to_create_lobbies
 
 ALTER TABLE IF EXISTS join_to_create_lobbies
   ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE IF EXISTS join_to_create_lobbies
+  ADD COLUMN IF NOT EXISTS lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE IF EXISTS join_to_create_lobbies
+  ADD COLUMN IF NOT EXISTS lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30;
 
 CREATE TABLE IF NOT EXISTS temp_voice_channels (
   guild_id TEXT NOT NULL,

@@ -29,6 +29,8 @@ export type JoinToCreateLobby = {
   channelId: string;
   roleId: string | null;
   lfgEnabled: boolean;
+  lfgReminderEnabled: boolean;
+  lfgReminderSeconds: number;
 };
 
 export type AutoRoleCondition = "more_than" | "less_than" | "equal_to";

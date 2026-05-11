@@ -5,12 +5,21 @@ const {
   CHANNEL_SIZE_INPUT_ID,
   CHANNEL_SIZE_MODAL_PREFIX,
   LFG_MODAL_PREFIX,
+  LFG_REMINDER_MODAL_PREFIX,
 } = require('../constants');
 const { handleLfgPostModal } = require('../lfg-post');
 
 async function handleModalInteraction(interaction, deps) {
-  const [prefix, channelId] = interaction.customId.split(':');
+  const [prefix, channelId, arg1] = interaction.customId.split(':');
   if (!channelId) return false;
+
+  if (prefix === LFG_REMINDER_MODAL_PREFIX) {
+    const guildId = channelId;
+    const targetChannelId = arg1;
+    if (!guildId || !targetChannelId) return false;
+    await handleLfgPostModal(interaction, deps, targetChannelId, { guildId });
+    return true;
+  }
 
   if (!interaction.guildId || !interaction.guild) {
     await interaction.reply({

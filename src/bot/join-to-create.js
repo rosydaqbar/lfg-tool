@@ -274,6 +274,10 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
     );
     const lobbyRoleId = lobbyEntry?.roleId ?? null;
     const lobbyLfgEnabled = lobbyEntry?.lfgEnabled ?? true;
+    const lobbyLfgReminderEnabled = lobbyEntry?.lfgReminderEnabled ?? false;
+    const lobbyLfgReminderSeconds = Number.isFinite(Number(lobbyEntry?.lfgReminderSeconds))
+      ? Math.max(5, Number(lobbyEntry.lfgReminderSeconds))
+      : 30;
     if (!lobbyRoleId) return;
 
     const member = newState.member;
@@ -409,6 +413,15 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
             console.error('Failed to send Join-to-Create prompt:', error);
           }),
       ];
+
+      if (lobbyLfgEnabled && lobbyLfgReminderEnabled && lfgChannelId) {
+        lfgManager.scheduleLfgReminder?.({
+          channel: createdChannel,
+          member,
+          lfgChannelId,
+          delayMs: lobbyLfgReminderSeconds * 1000,
+        });
+      }
 
       if (typeof targetPosition === 'number') {
         postMoveTasks.push(

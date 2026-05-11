@@ -5,6 +5,8 @@ const {
   buildChannelSizeRetryRow,
   buildClaimApprovalRow,
   buildLfgModal,
+  buildLfgReminderModal,
+  buildLfgReminderRows,
   buildRegionSelectRow,
   buildTransferMemberSelectRow,
   buildVoiceSettingsRows,
@@ -427,6 +429,8 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     buildChannelSizeRetryRow,
     buildClaimApprovalRow,
     buildLfgModal,
+    buildLfgReminderModal,
+    buildLfgReminderRows,
     buildRegionSelectRow,
     buildTransferMemberSelectRow,
     buildVoiceSettingsRows,
@@ -510,6 +514,39 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         }, error);
       }
     });
+  }
+
+  async function scheduleLfgReminder({ channel, member, lfgChannelId, delayMs }) {
+    if (!channel?.id || !member?.id || !lfgChannelId || !Number.isFinite(delayMs) || delayMs <= 0) {
+      return;
+    }
+
+    setTimeout(async () => {
+      try {
+        const tempInfo = await configStore.getTempChannelInfo(channel.id);
+        if (!tempInfo?.ownerId) return;
+        if (tempInfo.ownerId !== member.id) return;
+        if (tempInfo.lfgEnabled === false) return;
+        if (tempInfo.lfgMessageId) return;
+        if (!tempInfo.roleId) return;
+
+        const currentChannel = await channel.guild.channels.fetch(channel.id).catch(() => null);
+        if (!currentChannel || !currentChannel.isVoiceBased()) return;
+
+        const user = await client.users.fetch(member.id).catch(() => null);
+        if (!user) return;
+
+        await user.send({
+          content:
+            `Hi <@${member.id}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?\n` +
+            `LFG akan memention <@&${tempInfo.roleId}> sehingga kamu bisa mencari member squad member secara mudah.`,
+          components: buildLfgReminderRows(channel.guild.id, channel.id),
+          allowedMentions: { users: [member.id], roles: [tempInfo.roleId] },
+        });
+      } catch (error) {
+        console.error('Failed to send LFG reminder DM:', error);
+      }
+    }, delayMs);
   }
 
   async function editLfgDisbandedMessage(info) {
@@ -614,6 +651,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     handleInteraction,
     refreshJoinToCreatePrompt,
     sendJoinToCreatePrompt,
+    scheduleLfgReminder,
     startPersistentLoop: persistentManager.startPersistentLoop,
     startPromptReconcileLoop,
     stopPersistentLoop: persistentManager.stopPersistentLoop,

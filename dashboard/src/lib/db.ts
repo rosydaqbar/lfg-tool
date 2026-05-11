@@ -12,6 +12,8 @@ type GuildConfig = {
     channelId: string;
     roleId: string | null;
     lfgEnabled: boolean;
+    lfgReminderEnabled: boolean;
+    lfgReminderSeconds: number;
   }[];
   autoRoleConfig: AutoRoleConfig;
 };
@@ -222,7 +224,9 @@ function getSqliteDb() {
       guild_id TEXT NOT NULL,
       lobby_channel_id TEXT NOT NULL,
       role_id TEXT,
-      lfg_enabled INTEGER NOT NULL DEFAULT 1
+      lfg_enabled INTEGER NOT NULL DEFAULT 1,
+      lfg_reminder_enabled INTEGER NOT NULL DEFAULT 0,
+      lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30
     );
     CREATE TABLE IF NOT EXISTS voice_auto_role_config (
       guild_id TEXT PRIMARY KEY,
@@ -289,6 +293,8 @@ function getSqliteDb() {
   `);
   ensureColumn("join_to_create_lobbies", "role_id", "TEXT");
   ensureColumn("join_to_create_lobbies", "lfg_enabled", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn("join_to_create_lobbies", "lfg_reminder_enabled", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("join_to_create_lobbies", "lfg_reminder_seconds", "INTEGER NOT NULL DEFAULT 30");
   ensureColumn("temp_voice_channels", "role_id", "TEXT");
   ensureColumn("temp_voice_channels", "lfg_enabled", "INTEGER NOT NULL DEFAULT 1");
   sqliteDb = db;
@@ -486,7 +492,9 @@ async function ensureCoreConfigTables() {
           guild_id TEXT NOT NULL,
           lobby_channel_id TEXT NOT NULL,
           role_id TEXT,
-          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+          lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30
         )
       `
     );
@@ -692,6 +700,15 @@ function parseSetupStateRow(row: Record<string, unknown> | undefined): SetupStat
       asIsoString(value("setup_abandoned_at", "setupAbandonedAt")),
     steps,
   };
+}
+
+async function ensureJoinToCreateReminderColumns() {
+  await query(
+    "ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE"
+  );
+  await query(
+    "ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30"
+  );
 }
 
 async function ensureSetupRow() {
@@ -988,7 +1005,9 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
           guild_id TEXT NOT NULL,
           lobby_channel_id TEXT NOT NULL,
           role_id TEXT,
-          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+          lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30
         )
       `
     );
@@ -1020,7 +1039,7 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
     let lobbyRes;
     try {
       lobbyRes = await client.query(
-        "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = $1",
+        "SELECT lobby_channel_id, role_id, lfg_enabled, lfg_reminder_enabled, lfg_reminder_seconds FROM join_to_create_lobbies WHERE guild_id = $1",
         [guildId]
       );
     } catch (error) {
@@ -1042,6 +1061,8 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
         channelId: row.lobby_channel_id,
         roleId: row.role_id ?? null,
         lfgEnabled: row.lfg_enabled ?? true,
+        lfgReminderEnabled: row.lfg_reminder_enabled ?? false,
+        lfgReminderSeconds: row.lfg_reminder_seconds ?? 30,
       })),
       autoRoleConfig: normalizeAutoRoleConfig(autoRoleRes.rows[0]?.config_json),
     };
@@ -1078,9 +1099,9 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
 
     const lobbyRows = db
       .prepare(
-        "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = ?"
+        "SELECT lobby_channel_id, role_id, lfg_enabled, lfg_reminder_enabled, lfg_reminder_seconds FROM join_to_create_lobbies WHERE guild_id = ?"
       )
-      .all(guildId) as { lobby_channel_id: string; role_id?: string | null; lfg_enabled?: number }[];
+      .all(guildId) as { lobby_channel_id: string; role_id?: string | null; lfg_enabled?: number; lfg_reminder_enabled?: number; lfg_reminder_seconds?: number }[];
 
     let parsedAutoRoleConfig: unknown = null;
     if (autoRoleRow?.config_json) {
@@ -1099,6 +1120,8 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
         channelId: row.lobby_channel_id,
         roleId: row.role_id ?? null,
         lfgEnabled: row.lfg_enabled !== 0,
+        lfgReminderEnabled: row.lfg_reminder_enabled === 1,
+        lfgReminderSeconds: row.lfg_reminder_seconds ?? 30,
       })),
       autoRoleConfig: normalizeAutoRoleConfig(parsedAutoRoleConfig),
     };
@@ -1106,6 +1129,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
 
   await ensureCoreConfigTables();
   await ensureJoinToCreateLfgEnabledColumn();
+  await ensureJoinToCreateReminderColumns();
   const configRes = await query(
     "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1",
     [guildId]
@@ -1124,7 +1148,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
   let lobbyRes;
   try {
     lobbyRes = await query(
-      "SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = $1",
+      "SELECT lobby_channel_id, role_id, lfg_enabled, lfg_reminder_enabled, lfg_reminder_seconds FROM join_to_create_lobbies WHERE guild_id = $1",
       [guildId]
     );
   } catch (error) {
@@ -1146,6 +1170,8 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
       channelId: row.lobby_channel_id,
       roleId: row.role_id ?? null,
       lfgEnabled: row.lfg_enabled ?? true,
+      lfgReminderEnabled: row.lfg_reminder_enabled ?? false,
+      lfgReminderSeconds: row.lfg_reminder_seconds ?? 30,
     })),
     autoRoleConfig: normalizeAutoRoleConfig(autoRoleRes.rows[0]?.config_json),
   };
@@ -1215,17 +1241,15 @@ async function saveGuildConfigWithClient(
     throw new Error("joinToCreateLobbies requires a role for each lobby");
   }
 
-  const lfgEnabledColumnRes = await client.query(
-    `
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_name = 'join_to_create_lobbies'
-          AND column_name = 'lfg_enabled'
-      ) AS has_lfg_enabled
-    `
+  await client.query(
+    "ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE"
   );
-  const hasLfgEnabledColumn = lfgEnabledColumnRes.rows[0]?.has_lfg_enabled === true;
+  await client.query(
+    "ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE"
+  );
+  await client.query(
+    "ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30"
+  );
 
   await client.query(
     `
@@ -1249,17 +1273,17 @@ async function saveGuildConfigWithClient(
 
   await client.query("DELETE FROM join_to_create_lobbies WHERE guild_id = $1", [guildId]);
   for (const lobby of config.joinToCreateLobbies) {
-    if (hasLfgEnabledColumn) {
-      await client.query(
-        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES ($1, $2, $3, $4)",
-        [guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ?? true]
-      );
-    } else {
-      await client.query(
-        "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id) VALUES ($1, $2, $3)",
-        [guildId, lobby.channelId, lobby.roleId]
-      );
-    }
+    await client.query(
+      "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled, lfg_reminder_enabled, lfg_reminder_seconds) VALUES ($1, $2, $3, $4, $5, $6)",
+      [
+        guildId,
+        lobby.channelId,
+        lobby.roleId,
+        lobby.lfgEnabled ?? true,
+        lobby.lfgReminderEnabled ?? false,
+        lobby.lfgReminderSeconds ?? 30,
+      ]
+    );
   }
 
   await client.query(
@@ -1444,8 +1468,15 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
       db.prepare("DELETE FROM join_to_create_lobbies WHERE guild_id = ?").run(guildId);
       for (const lobby of config.joinToCreateLobbies) {
         db.prepare(
-          "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled) VALUES (?, ?, ?, ?)"
-        ).run(guildId, lobby.channelId, lobby.roleId, lobby.lfgEnabled ? 1 : 0);
+          "INSERT INTO join_to_create_lobbies (guild_id, lobby_channel_id, role_id, lfg_enabled, lfg_reminder_enabled, lfg_reminder_seconds) VALUES (?, ?, ?, ?, ?, ?)"
+        ).run(
+          guildId,
+          lobby.channelId,
+          lobby.roleId,
+          lobby.lfgEnabled ? 1 : 0,
+          lobby.lfgReminderEnabled ? 1 : 0,
+          lobby.lfgReminderSeconds ?? 30
+        );
       }
 
       db.prepare(

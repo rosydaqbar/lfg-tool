@@ -30,6 +30,8 @@ const {
   CLAIM_PREFIX,
   LFG_MESSAGE_INPUT_ID,
   LFG_MODAL_PREFIX,
+  LFG_REMINDER_MODAL_PREFIX,
+  LFG_REMINDER_SEND_PREFIX,
   LFG_SEND_PREFIX,
   LEADERBOARD_PREFIX,
   MY_STATS_PREFIX,
@@ -179,6 +181,23 @@ function buildVoiceActivityContainer(channelId, activity, refreshedAtTimestamp) 
         `-# Last update: <t:${refreshedAtTimestamp}:F>`
       )
     );
+}
+
+function buildLfgReminderRows(guildId, channelId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${LFG_REMINDER_SEND_PREFIX}:${guildId}:${channelId}`)
+        .setLabel('Kirim LFG Post')
+        .setStyle(ButtonStyle.Primary)
+    ),
+  ];
+}
+
+function buildLfgReminderModal(guildId, channelId) {
+  const modal = buildLfgModal(channelId);
+  modal.setCustomId(`${LFG_REMINDER_MODAL_PREFIX}:${guildId}:${channelId}`);
+  return modal;
 }
 
 function buildJoinToCreatePromptPayload({
@@ -387,6 +406,8 @@ module.exports = {
   buildChannelSizeRetryRow,
   buildClaimApprovalRow,
   buildLfgModal,
+  buildLfgReminderModal,
+  buildLfgReminderRows,
   buildLfgPromptRows,
   buildJoinToCreatePromptPayload,
   buildPersistentLfgEmbed,

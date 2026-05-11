@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, Loader2, Plus, Radio, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -43,6 +44,8 @@ type VoiceSettingsSectionProps = {
   enabledVoiceChannelIds: string[];
   onAddLobbyChannel: (channelId: string, roleId: string) => void;
   onToggleLobbyLfg: (channelId: string, lfgEnabled: boolean) => void;
+  onToggleLobbyReminder: (channelId: string, lfgReminderEnabled: boolean) => void;
+  onLobbyReminderSecondsChange: (channelId: string, lfgReminderSeconds: number) => void;
   onRemoveLobbyChannel: (channelId: string) => void;
   onAddEnabledVoiceChannel: (channelId: string) => void;
   onRemoveEnabledVoiceChannel: (channelId: string) => void;
@@ -59,6 +62,8 @@ function VoiceSettingsSectionComponent({
   enabledVoiceChannelIds,
   onAddLobbyChannel,
   onToggleLobbyLfg,
+  onToggleLobbyReminder,
+  onLobbyReminderSecondsChange,
   onRemoveLobbyChannel,
   onAddEnabledVoiceChannel,
   onRemoveEnabledVoiceChannel,
@@ -278,6 +283,8 @@ function VoiceSettingsSectionComponent({
                     <TableHead>Lobby channel</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead>Enable LFG</TableHead>
+                    <TableHead>Enable Reminder</TableHead>
+                    <TableHead>Reminder Time</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -319,6 +326,38 @@ function VoiceSettingsSectionComponent({
                             <span className="text-xs text-muted-foreground">
                               {lobby.lfgEnabled ? "Enabled" : "Disabled"}
                             </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={lobby.lfgReminderEnabled}
+                              disabled={!lobby.lfgEnabled}
+                              onCheckedChange={(checked) =>
+                                onToggleLobbyReminder(lobby.channelId, checked)
+                              }
+                              aria-label={`Enable LFG reminder for ${channel?.name ?? lobby.channelId}`}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {lobby.lfgReminderEnabled ? "Enabled" : "Disabled"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={5}
+                              max={3600}
+                              value={lobby.lfgReminderSeconds ?? 30}
+                              disabled={!lobby.lfgEnabled || !lobby.lfgReminderEnabled}
+                              onChange={(event) =>
+                                onLobbyReminderSecondsChange(lobby.channelId, Number(event.target.value))
+                              }
+                              className="h-8 w-24"
+                              aria-label={`Reminder time for ${channel?.name ?? lobby.channelId}`}
+                            />
+                            <span className="text-xs text-muted-foreground">sec</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">

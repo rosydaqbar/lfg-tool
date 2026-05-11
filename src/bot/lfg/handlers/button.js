@@ -11,6 +11,7 @@ const {
   CLAIM_PREFIX,
   LEADERBOARD_PREFIX,
   LFG_SEND_PREFIX,
+  LFG_REMINDER_SEND_PREFIX,
   LFG_SETTINGS_PREFIX,
   MY_STATS_PREFIX,
   REGION_PREFIX,
@@ -26,6 +27,7 @@ async function handleButtonInteraction(interaction, deps) {
     buildChannelSizeModal,
     buildClaimApprovalRow,
     buildLfgModal,
+    buildLfgReminderModal,
     buildRegionSelectRow,
     buildTransferMemberSelectRow,
     buildVoiceSettingsRows,
@@ -38,6 +40,55 @@ async function handleButtonInteraction(interaction, deps) {
     userIsInVoiceChannel,
     refreshJoinToCreatePrompt,
   } = deps;
+
+  if (prefix === LFG_REMINDER_SEND_PREFIX) {
+    const guildId = channelId;
+    const targetChannelId = arg1;
+    if (!guildId || !targetChannelId) return false;
+
+    const tempInfo = await deps.configStore.getTempChannelInfo(targetChannelId);
+    if (!tempInfo?.ownerId) {
+      await interaction.reply({
+        content: 'Channel squad sudah tidak aktif.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+    if (!isOwner(tempInfo, interaction.user.id)) {
+      await interaction.reply({
+        content: 'Hanya pemilik Voice yang bisa mengirim pesan LFG',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+    if (tempInfo.lfgEnabled === false) {
+      await interaction.reply({
+        content: 'Fitur Send LFG Post dinonaktifkan untuk lobby ini.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    const remaining = getCooldownRemainingMs(guildId, interaction.user.id);
+    if (remaining > 0) {
+      await interaction.reply({
+        content: `Please wait ${formatCooldown(remaining)} before sending another LFG post.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    try {
+      await interaction.showModal(buildLfgReminderModal(guildId, targetChannelId));
+    } catch (error) {
+      console.error('Failed to show LFG reminder modal:', error);
+      await interaction.reply({
+        content: 'Unable to open the LFG form right now.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    return true;
+  }
 
   const guildId = interaction.guildId;
   if (!guildId || !interaction.guild) {
