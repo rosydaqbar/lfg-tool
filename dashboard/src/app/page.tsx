@@ -36,7 +36,7 @@ export default async function Home() {
           <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-700">
               <Badge variant="secondary" className="rounded-full px-4 py-1">
-                Admin-only access
+                Discord server admin access
               </Badge>
               <h1 className="font-[var(--font-display)] text-4xl leading-tight text-foreground md:text-5xl">
                 Voice Log Control Room
@@ -82,9 +82,6 @@ export default async function Home() {
                       <Button asChild className="w-full">
                         <Link href="/api/auth/signin/discord">Sign in with Discord</Link>
                       </Button>
-                      <Button asChild variant="outline" className="w-full">
-                        <Link href="/setup">Open Setup</Link>
-                      </Button>
                     </>
                   )}
                 </div>
@@ -92,7 +89,7 @@ export default async function Home() {
                   {requiresSetup
                     ? "First-run setup required before dashboard access."
                     : setup.setupComplete || hasDiscordOAuthBootstrap
-                    ? "Only the admin Discord user is allowed to access the dashboard."
+                    ? "Discord server owners and admins can sign in to manage servers where the bot is installed."
                     : "First-run setup required before dashboard access."}
                 </p>
               </CardContent>

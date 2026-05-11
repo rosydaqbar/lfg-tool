@@ -91,7 +91,7 @@ function HeaderSectionComponent({
         <ThemeToggle />
         <Badge variant="secondary" className="gap-2 rounded-full px-4 py-1">
           <BadgeCheck className="h-3.5 w-3.5" />
-          {accessLabel}
+          {accessLabel === "Owner" ? "Server owner" : "Server admin"}
         </Badge>
         <SignOutButton />
       </div>

@@ -1310,7 +1310,9 @@ export function SetupWizard({
                   ) : null}
                   {selectedSetupGuild ? (
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span>Selected: {selectedSetupGuild.name} ({selectedSetupGuild.accessLabel}) · ID {selectedSetupGuild.id}</span>
+                      <span>
+                        Selected: {selectedSetupGuild.name} ({selectedSetupGuild.accessLabel === "Owner" ? "Server owner" : "Server admin"}) · ID {selectedSetupGuild.id}
+                      </span>
                       <StatusBadge tone={guildStatusTone(selectedSetupGuild.status)} dot>
                         {guildStatusLabel(selectedSetupGuild.status)}
                       </StatusBadge>
