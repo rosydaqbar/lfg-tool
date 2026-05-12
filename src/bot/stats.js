@@ -296,6 +296,24 @@ async function buildUserStatsReplyPayload({
 }
 
 function createStatsManager({ client, configStore }) {
+  async function deleteReminderDm(info) {
+    if (!info?.ownerId || !info?.reminderDmMessageId) return;
+    try {
+      const user = await client.users.fetch(info.ownerId).catch(() => null);
+      const dmChannel = await user?.createDM().catch(() => null);
+      const message = await dmChannel?.messages
+        .fetch(info.reminderDmMessageId)
+        .catch(() => null);
+      await message?.delete().catch((error) => {
+        const rawCode = error?.code || error?.rawError?.code || error?.data?.code || null;
+        if (rawCode === 10008) return;
+        throw error;
+      });
+    } catch (error) {
+      console.error('Failed to delete LFG reminder DM from voicecheck cleanup:', error);
+    }
+  }
+
   async function registerCommands() {
     const statsCommand = buildStatsCommand();
     const voicecheckCommand = buildVoicecheckCommand();
@@ -410,6 +428,8 @@ function createStatsManager({ client, configStore }) {
           });
       }
 
+      const info = await configStore.getTempChannelInfo(channelId).catch(() => null);
+      await deleteReminderDm(info);
       await configStore.removeTempChannel(channelId);
 
       const refreshed = await getVoicecheckSnapshot(configStore, interaction.guild);

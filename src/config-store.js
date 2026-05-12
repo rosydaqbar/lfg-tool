@@ -39,6 +39,7 @@ let lfgEnabledColumnEnsured = false;
 let lfgReminderColumnsEnsured = false;
 let tempVoiceLfgEnabledColumnEnsured = false;
 let tempVoicePromptMessageColumnEnsured = false;
+let tempVoiceReminderMessageColumnEnsured = false;
 let tempVoiceChannelNameColumnEnsured = false;
 let tempVoiceOwnerLookupIndexEnsured = false;
 let tempVoiceActivityEnsured = false;
@@ -161,6 +162,18 @@ async function ensureTempVoicePromptMessageColumn() {
     tempVoicePromptMessageColumnEnsured = true;
   } catch (error) {
     console.error('Failed to ensure temp_voice_channels.prompt_message_id column:', error);
+  }
+}
+
+async function ensureTempVoiceReminderMessageColumn() {
+  if (tempVoiceReminderMessageColumnEnsured) return;
+  try {
+    await query(
+      'ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS reminder_dm_message_id TEXT'
+    );
+    tempVoiceReminderMessageColumnEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure temp_voice_channels.reminder_dm_message_id column:', error);
   }
 }
 
@@ -796,6 +809,7 @@ async function addTempChannel(
 ) {
   await ensureTempVoiceLfgEnabledColumn();
   await ensureTempVoicePromptMessageColumn();
+  await ensureTempVoiceReminderMessageColumn();
   await ensureTempVoiceChannelNameColumn();
   await ensureTempVoiceOwnerLookupIndex();
   await query(
@@ -997,10 +1011,11 @@ async function getTempChannelOwner(channelId) {
 async function getTempChannelInfo(channelId) {
   await ensureTempVoiceLfgEnabledColumn();
   await ensureTempVoicePromptMessageColumn();
+  await ensureTempVoiceReminderMessageColumn();
   let res;
   try {
     res = await query(
-      'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id, lfg_enabled, prompt_message_id FROM temp_voice_channels WHERE channel_id = $1',
+      'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id, lfg_enabled, prompt_message_id, reminder_dm_message_id FROM temp_voice_channels WHERE channel_id = $1',
       [channelId]
     );
   } catch (error) {
@@ -1017,6 +1032,7 @@ async function getTempChannelInfo(channelId) {
     lfgChannelId: row.lfg_channel_id ?? null,
     lfgMessageId: row.lfg_message_id ?? null,
     promptMessageId: row.prompt_message_id ?? null,
+    reminderDmMessageId: row.reminder_dm_message_id ?? null,
     roleId: row.role_id ?? null,
     lfgEnabled: row.lfg_enabled ?? true,
   };
@@ -1056,6 +1072,14 @@ async function updateTempChannelPromptMessage(channelId, promptMessageId) {
   await query(
     'UPDATE temp_voice_channels SET prompt_message_id = $1 WHERE channel_id = $2',
     [promptMessageId, channelId]
+  );
+}
+
+async function updateTempChannelReminderDmMessage(channelId, messageId) {
+  await ensureTempVoiceReminderMessageColumn();
+  await query(
+    'UPDATE temp_voice_channels SET reminder_dm_message_id = $1 WHERE channel_id = $2',
+    [messageId, channelId]
   );
 }
 
@@ -1554,6 +1578,7 @@ module.exports = {
   updateTempChannelMessage,
   updateTempChannelOwner,
   updateTempChannelPromptMessage,
+  updateTempChannelReminderDmMessage,
   clearVoiceActivity,
   addTempVoiceDeleteLog,
   finalizeManualVoiceSession,

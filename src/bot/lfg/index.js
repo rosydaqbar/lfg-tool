@@ -536,17 +536,47 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         const user = await client.users.fetch(member.id).catch(() => null);
         if (!user) return;
 
-        await user.send({
+        const reminderMessage = await user.send({
           content:
             `Hi <@${member.id}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?\n` +
             'LFG akan membantumu mention member, sehingga kamu bisa mencari member squad member secara mudah.',
           components: buildLfgReminderRows(channel.guild.id, channel.id),
           allowedMentions: { users: [member.id] },
         });
+        await configStore
+          .updateTempChannelReminderDmMessage(channel.id, reminderMessage.id)
+          .catch((error) => {
+            console.error('Failed to save LFG reminder DM message id:', error);
+          });
       } catch (error) {
         console.error('Failed to send LFG reminder DM:', error);
       }
     }, delayMs);
+  }
+
+  async function deleteLfgReminderMessage(info) {
+    if (!info?.ownerId || !info?.reminderDmMessageId) return;
+
+    try {
+      const user = await client.users.fetch(info.ownerId).catch(() => null);
+      if (!user) return;
+
+      const dmChannel = await user.createDM().catch(() => null);
+      if (!dmChannel) return;
+
+      const message = await dmChannel.messages
+        .fetch(info.reminderDmMessageId)
+        .catch(() => null);
+      if (!message) return;
+
+      await message.delete().catch((error) => {
+        const rawCode = error?.code || error?.rawError?.code || error?.data?.code || null;
+        if (rawCode === 10008) return;
+        throw error;
+      });
+    } catch (error) {
+      console.error('Failed to delete LFG reminder DM:', error);
+    }
   }
 
   async function editLfgDisbandedMessage(info) {
@@ -652,6 +682,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     refreshJoinToCreatePrompt,
     sendJoinToCreatePrompt,
     scheduleLfgReminder,
+    deleteLfgReminderMessage,
     startPersistentLoop: persistentManager.startPersistentLoop,
     startPromptReconcileLoop,
     stopPersistentLoop: persistentManager.stopPersistentLoop,

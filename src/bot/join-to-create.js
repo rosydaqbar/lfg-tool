@@ -225,6 +225,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
           ownerId: info.ownerId,
         });
         await lfgManager.editLfgDisbandedMessage(info);
+        await lfgManager.deleteLfgReminderMessage?.(info);
         await configStore.removeTempChannel(oldChannelId);
         return;
       }
@@ -247,6 +248,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
           ownerId: info.ownerId,
         });
         await lfgManager.editLfgDisbandedMessage(info);
+        await lfgManager.deleteLfgReminderMessage?.(info);
         await configStore.removeTempChannel(oldChannelId);
       }
     } catch (error) {
@@ -329,6 +331,10 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
             totalMs: Date.now() - startedAtMs,
           });
           return;
+        }
+        const existingInfo = await configStore.getTempChannelInfo(existingTempId).catch(() => null);
+        if (existingInfo) {
+          await lfgManager.deleteLfgReminderMessage?.(existingInfo);
         }
         await configStore.removeTempChannel(existingTempId);
       }

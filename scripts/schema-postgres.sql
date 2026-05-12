@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS temp_voice_channels (
   lfg_channel_id TEXT,
   lfg_message_id TEXT,
   prompt_message_id TEXT,
+  reminder_dm_message_id TEXT,
   role_id TEXT,
   lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
 );
@@ -54,6 +55,9 @@ ALTER TABLE IF EXISTS temp_voice_channels
 
 ALTER TABLE IF EXISTS temp_voice_channels
   ADD COLUMN IF NOT EXISTS prompt_message_id TEXT;
+
+ALTER TABLE IF EXISTS temp_voice_channels
+  ADD COLUMN IF NOT EXISTS reminder_dm_message_id TEXT;
 
 CREATE TABLE IF NOT EXISTS lfg_persistent_message (
   guild_id TEXT PRIMARY KEY,

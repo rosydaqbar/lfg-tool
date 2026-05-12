@@ -266,6 +266,8 @@ function getSqliteDb() {
       created_at TEXT NOT NULL,
       lfg_channel_id TEXT,
       lfg_message_id TEXT,
+      prompt_message_id TEXT,
+      reminder_dm_message_id TEXT,
       role_id TEXT,
       lfg_enabled INTEGER NOT NULL DEFAULT 1
     );
@@ -297,6 +299,8 @@ function getSqliteDb() {
   ensureColumn("join_to_create_lobbies", "lfg_reminder_seconds", "INTEGER NOT NULL DEFAULT 30");
   ensureColumn("temp_voice_channels", "role_id", "TEXT");
   ensureColumn("temp_voice_channels", "lfg_enabled", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn("temp_voice_channels", "prompt_message_id", "TEXT");
+  ensureColumn("temp_voice_channels", "reminder_dm_message_id", "TEXT");
   sqliteDb = db;
   return db;
 }
@@ -1594,6 +1598,8 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
           created_at TIMESTAMPTZ NOT NULL,
           lfg_channel_id TEXT,
           lfg_message_id TEXT,
+          prompt_message_id TEXT,
+          reminder_dm_message_id TEXT,
           role_id TEXT,
           lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
         )
@@ -1601,6 +1607,12 @@ async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: stri
     );
     await client.query(
       "ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS channel_name TEXT"
+    );
+    await client.query(
+      "ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS prompt_message_id TEXT"
+    );
+    await client.query(
+      "ALTER TABLE IF EXISTS temp_voice_channels ADD COLUMN IF NOT EXISTS reminder_dm_message_id TEXT"
     );
 
     let res;
