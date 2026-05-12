@@ -33,8 +33,6 @@ function HeaderSectionComponent({
   onGuildChange,
   onRefreshGuilds,
 }: HeaderSectionProps) {
-  const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
-
   return (
     <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between animate-in fade-in-0 slide-in-from-bottom-4 duration-700">
       <div className="space-y-3">
@@ -65,11 +63,6 @@ function HeaderSectionComponent({
               ))}
             </SelectContent>
           </Select>
-          {selectedGuild ? (
-            <StatusBadge tone={guildStatusTone(selectedGuild.status)} className="px-3 py-1" dot>
-              {guildStatusLabel(selectedGuild.status)}
-            </StatusBadge>
-          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -87,7 +80,7 @@ function HeaderSectionComponent({
           </span>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex shrink-0 flex-nowrap items-center justify-end gap-3">
         <ThemeToggle />
         <Badge variant="secondary" className="gap-2 rounded-full px-4 py-1">
           <BadgeCheck className="h-3.5 w-3.5" />
