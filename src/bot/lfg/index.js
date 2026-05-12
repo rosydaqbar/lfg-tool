@@ -539,9 +539,9 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         await user.send({
           content:
             `Hi <@${member.id}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?\n` +
-            `LFG akan memention <@&${tempInfo.roleId}> sehingga kamu bisa mencari member squad member secara mudah.`,
+            'LFG akan membantumu mention member, sehingga kamu bisa mencari member squad member secara mudah.',
           components: buildLfgReminderRows(channel.guild.id, channel.id),
-          allowedMentions: { users: [member.id], roles: [tempInfo.roleId] },
+          allowedMentions: { users: [member.id] },
         });
       } catch (error) {
         console.error('Failed to send LFG reminder DM:', error);
