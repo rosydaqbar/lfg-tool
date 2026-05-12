@@ -111,14 +111,15 @@ function ResetSettingsSectionComponent({
         }
         if (!mounted) return;
         setBotStatus(payload);
-      } catch {
+      } catch (error) {
         if (!mounted) return;
+        const message = error instanceof Error ? error.message : "Unable to check bot status right now.";
         setBotStatus({
           online: null,
           status: "unverified",
           source: "discord_api",
           checkedAt: new Date().toISOString(),
-          error: "Unable to check bot status right now.",
+          error: message,
         });
       } finally {
         if (mounted) setStatusLoading(false);
@@ -216,7 +217,7 @@ function ResetSettingsSectionComponent({
               : botStatus?.online
                 ? "Good news: your bot is running."
                 : botStatus?.status === "unverified"
-                  ? "Bot status cannot be verified yet. Make sure bot token is configured in setup."
+                  ? botStatus.error || "Bot status cannot be verified yet. Make sure bot token is configured in setup."
                 : "Your bot is offline. Open the Local tab and follow each step exactly. Railway tabs are only for cloud hosting."}
           </CardDescription>
         </CardHeader>

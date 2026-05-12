@@ -12,11 +12,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "guildId is required" }, { status: 400 });
   }
 
-  const access = await requireDashboardGuildAccess(guildId);
-  if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status });
-  }
-
   const botToken = await getDashboardBotToken();
 
   if (!botToken) {
@@ -27,6 +22,11 @@ export async function GET(request: Request) {
       source: "discord_api",
       error: "Bot token is not configured.",
     });
+  }
+
+  const access = await requireDashboardGuildAccess(guildId);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   try {
