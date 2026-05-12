@@ -130,7 +130,11 @@ export default function DashboardClient({
   const [nextGuildOffset, setNextGuildOffset] = useState(0);
   const [guildPickerOpen, setGuildPickerOpen] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
+  const [loadingChannels, setLoadingChannels] = useState(false);
+  const [loadingRoles, setLoadingRoles] = useState(false);
   const [loadedSettingsGuildId, setLoadedSettingsGuildId] = useState<string | null>(null);
+  const [loadedChannelsGuildId, setLoadedChannelsGuildId] = useState<string | null>(null);
+  const [loadedRolesGuildId, setLoadedRolesGuildId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -211,6 +215,8 @@ export default function DashboardClient({
       setLfgChannelId("");
       setLoadingConfig(false);
       setLoadedSettingsGuildId(null);
+      setLoadedChannelsGuildId(null);
+      setLoadedRolesGuildId(null);
       return;
     }
     if (activeTab !== "settings") {
@@ -224,43 +230,22 @@ export default function DashboardClient({
     let active = true;
     setLoadingConfig(true);
     setError(null);
-    setVoiceChannels([]);
-    setTextChannels([]);
-    setRoles([]);
     setEnabledVoiceIds([]);
     setJoinToCreateLobbies([]);
     setAutoRoleConfig(DEFAULT_AUTO_ROLE_CONFIG);
     setLogChannelId("");
     setLfgChannelId("");
 
-    Promise.all([
-      fetch(`/api/guilds/${selectedGuildId}/channels`).then(async (response) => {
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(payload?.error || "Failed to load channels");
-        }
-        return response.json() as Promise<ChannelsResponse>;
-      }),
-      fetch(`/api/guilds/${selectedGuildId}/config`).then(async (response) => {
+    fetch(`/api/guilds/${selectedGuildId}/config`)
+      .then(async (response) => {
         if (!response.ok) {
           const payload = (await response.json().catch(() => null)) as { error?: string } | null;
           throw new Error(payload?.error || "Failed to load config");
         }
         return response.json() as Promise<ConfigResponse>;
-      }),
-      fetch(`/api/guilds/${selectedGuildId}/roles`).then(async (response) => {
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(payload?.error || "Failed to load roles");
-        }
-        return response.json() as Promise<RolesResponse>;
-      }),
-    ])
-      .then(([channels, config, rolesResponse]) => {
+      })
+      .then((config) => {
         if (!active) return;
-        setVoiceChannels(channels.voiceChannels);
-        setTextChannels(channels.textChannels);
-        setRoles(rolesResponse.roles ?? []);
         setLogChannelId(config.logChannelId ?? "");
         setLfgChannelId(config.lfgChannelId ?? "");
         setEnabledVoiceIds(config.enabledVoiceChannelIds ?? []);
@@ -466,10 +451,60 @@ export default function DashboardClient({
     }
   }, [hasMoreGuilds, loadingMoreGuilds, loadGuildPage, nextGuildOffset, selectedGuildId]);
 
+  const handleLoadChannels = useCallback(async () => {
+    if (!selectedGuildId || loadingChannels || loadedChannelsGuildId === selectedGuildId) return;
+    setLoadingChannels(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/guilds/${selectedGuildId}/channels`, { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || "Failed to load channels");
+      }
+      const channels = (await response.json()) as ChannelsResponse;
+      setVoiceChannels(channels.voiceChannels);
+      setTextChannels(channels.textChannels);
+      setLoadedChannelsGuildId(selectedGuildId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load channels";
+      setError(message);
+      toast.error("Channel load failed", { description: message });
+    } finally {
+      setLoadingChannels(false);
+    }
+  }, [loadedChannelsGuildId, loadingChannels, selectedGuildId]);
+
+  const handleLoadRoles = useCallback(async () => {
+    if (!selectedGuildId || loadingRoles || loadedRolesGuildId === selectedGuildId) return;
+    setLoadingRoles(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/guilds/${selectedGuildId}/roles`, { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || "Failed to load roles");
+      }
+      const rolesResponse = (await response.json()) as RolesResponse;
+      setRoles(rolesResponse.roles ?? []);
+      setLoadedRolesGuildId(selectedGuildId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load roles";
+      setError(message);
+      toast.error("Role load failed", { description: message });
+    } finally {
+      setLoadingRoles(false);
+    }
+  }, [loadedRolesGuildId, loadingRoles, selectedGuildId]);
+
   const handleGuildChange = useCallback((guildId: string) => {
     localStorage.setItem(SELECTED_GUILD_STORAGE_KEY, guildId);
     setSelectedGuildId(guildId);
     setLoadedSettingsGuildId(null);
+    setLoadedChannelsGuildId(null);
+    setLoadedRolesGuildId(null);
+    setVoiceChannels([]);
+    setTextChannels([]);
+    setRoles([]);
     setActiveTab("dashboard");
     setDetailView(null);
     setGuildPickerOpen(false);
@@ -631,16 +666,23 @@ export default function DashboardClient({
         <>
           <ChannelConfigCards
             loadingConfig={loadingConfig}
+            loadingChannels={loadingChannels}
+            channelsLoaded={loadedChannelsGuildId === selectedGuildId}
             textChannels={memoTextChannels}
             logChannelId={logChannelId}
             lfgChannelId={lfgChannelId}
             selectedGuildId={selectedGuildId}
             onLogChannelChange={setLogChannelId}
             onLfgChannelChange={setLfgChannelId}
+            onOpenTextChannels={handleLoadChannels}
           />
 
           <VoiceSettingsSection
             loadingConfig={loadingConfig}
+            loadingChannels={loadingChannels}
+            loadingRoles={loadingRoles}
+            channelsLoaded={loadedChannelsGuildId === selectedGuildId}
+            rolesLoaded={loadedRolesGuildId === selectedGuildId}
             logChannelId={logChannelId}
             saving={saving}
             voiceChannels={memoVoiceChannels}
@@ -654,16 +696,24 @@ export default function DashboardClient({
             onRemoveLobbyChannel={handleRemoveLobbyChannel}
             onAddEnabledVoiceChannel={handleAddEnabledVoiceChannel}
             onRemoveEnabledVoiceChannel={handleRemoveEnabledVoiceChannel}
+            onOpenVoiceChannels={handleLoadChannels}
+            onOpenRoles={handleLoadRoles}
             onSave={handleSave}
           />
 
           <AutoRoleSection
             loadingConfig={loadingConfig}
+            loadingChannels={loadingChannels}
+            loadingRoles={loadingRoles}
+            channelsLoaded={loadedChannelsGuildId === selectedGuildId}
+            rolesLoaded={loadedRolesGuildId === selectedGuildId}
             saving={saving}
             roles={memoRoles}
             textChannels={memoTextChannels}
             value={autoRoleConfig}
             onChange={setAutoRoleConfig}
+            onOpenTextChannels={handleLoadChannels}
+            onOpenRoles={handleLoadRoles}
             onSave={handleSave}
           />
 

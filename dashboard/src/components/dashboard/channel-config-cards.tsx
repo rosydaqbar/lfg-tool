@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { Building2, Check, ChevronsUpDown, MessageSquareText } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, Loader2, MessageSquareText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,22 +25,28 @@ import type { Channel } from "./types";
 
 type ChannelConfigCardsProps = {
   loadingConfig: boolean;
+  loadingChannels: boolean;
+  channelsLoaded: boolean;
   textChannels: Channel[];
   logChannelId: string;
   lfgChannelId: string;
   selectedGuildId: string;
   onLogChannelChange: (channelId: string) => void;
   onLfgChannelChange: (channelId: string) => void;
+  onOpenTextChannels: () => void;
 };
 
 function ChannelConfigCardsComponent({
   loadingConfig,
+  loadingChannels,
+  channelsLoaded,
   textChannels,
   logChannelId,
   lfgChannelId,
   selectedGuildId,
   onLogChannelChange,
   onLfgChannelChange,
+  onOpenTextChannels,
 }: ChannelConfigCardsProps) {
   const [logChannelOpen, setLogChannelOpen] = useState(false);
   const [lfgChannelOpen, setLfgChannelOpen] = useState(false);
@@ -102,16 +108,22 @@ function ChannelConfigCardsComponent({
           {loadingConfig ? (
             <Skeleton className="h-10 w-full" />
           ) : (
-            <Popover open={logChannelOpen} onOpenChange={setLogChannelOpen}>
+            <Popover
+              open={logChannelOpen}
+              onOpenChange={(open) => {
+                setLogChannelOpen(open);
+                if (open) onOpenTextChannels();
+              }}
+            >
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   role="combobox"
                   aria-expanded={logChannelOpen}
                   className="w-full justify-between"
-                  disabled={textChannels.length === 0}
                 >
                   {logChannelLabel}
+                  {loadingChannels ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -150,7 +162,7 @@ function ChannelConfigCardsComponent({
               </PopoverContent>
             </Popover>
           )}
-          {!loadingConfig && textChannels.length === 0 ? (
+          {!loadingConfig && channelsLoaded && textChannels.length === 0 ? (
             <div className="text-xs text-muted-foreground">
               No text channels were found for this guild.
             </div>
@@ -175,16 +187,22 @@ function ChannelConfigCardsComponent({
           {loadingConfig ? (
             <Skeleton className="h-10 w-full" />
           ) : (
-            <Popover open={lfgChannelOpen} onOpenChange={setLfgChannelOpen}>
+            <Popover
+              open={lfgChannelOpen}
+              onOpenChange={(open) => {
+                setLfgChannelOpen(open);
+                if (open) onOpenTextChannels();
+              }}
+            >
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   role="combobox"
                   aria-expanded={lfgChannelOpen}
                   className="w-full justify-between"
-                  disabled={textChannels.length === 0}
                 >
                   {lfgChannelLabel}
+                  {loadingChannels ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -238,7 +256,7 @@ function ChannelConfigCardsComponent({
               </PopoverContent>
             </Popover>
           )}
-          {!loadingConfig && textChannels.length === 0 ? (
+          {!loadingConfig && channelsLoaded && textChannels.length === 0 ? (
             <div className="text-xs text-muted-foreground">
               No text channels were found for this guild.
             </div>

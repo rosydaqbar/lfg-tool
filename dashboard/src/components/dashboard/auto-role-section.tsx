@@ -35,11 +35,17 @@ import type { AutoRoleCondition, AutoRoleConfig, Channel, Role } from "./types";
 
 type AutoRoleSectionProps = {
   loadingConfig: boolean;
+  loadingChannels: boolean;
+  loadingRoles: boolean;
+  channelsLoaded: boolean;
+  rolesLoaded: boolean;
   saving: boolean;
   roles: Role[];
   textChannels: Channel[];
   value: AutoRoleConfig;
   onChange: (next: AutoRoleConfig) => void;
+  onOpenTextChannels: () => void;
+  onOpenRoles: () => void;
   onSave: () => void;
 };
 
@@ -67,6 +73,8 @@ type SearchableSelectProps = {
   placeholder: string;
   disabled?: boolean;
   emptyText?: string;
+  loading?: boolean;
+  onOpen?: () => void;
 };
 
 function SearchableSelect({
@@ -76,12 +84,20 @@ function SearchableSelect({
   placeholder,
   disabled,
   emptyText = "No options found.",
+  loading,
+  onOpen,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const selected = options.find((item) => item.value === value) || null;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) onOpen?.();
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -102,6 +118,7 @@ function SearchableSelect({
           ) : (
             <span className="truncate text-left text-muted-foreground">{placeholder}</span>
           )}
+          {loading ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -146,11 +163,17 @@ function SearchableSelect({
 
 function AutoRoleSectionComponent({
   loadingConfig,
+  loadingChannels,
+  loadingRoles,
+  channelsLoaded,
+  rolesLoaded,
   saving,
   roles,
   textChannels,
   value,
   onChange,
+  onOpenTextChannels,
+  onOpenRoles,
   onSave,
 }: AutoRoleSectionProps) {
   const [requiredRolePickerOpen, setRequiredRolePickerOpen] = useState(false);
@@ -246,7 +269,10 @@ function AutoRoleSectionComponent({
 
           <Popover
             open={requiredRolePickerOpen}
-            onOpenChange={setRequiredRolePickerOpen}
+            onOpenChange={(open) => {
+              setRequiredRolePickerOpen(open);
+              if (open) onOpenRoles();
+            }}
           >
             <PopoverTrigger asChild>
               <Button
@@ -257,6 +283,7 @@ function AutoRoleSectionComponent({
                 disabled={formDisabled}
               >
                 <span className="truncate text-left">{requiredRoleButtonLabel}</span>
+                {loadingRoles ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
@@ -330,6 +357,9 @@ function AutoRoleSectionComponent({
               </Command>
             </PopoverContent>
           </Popover>
+          {rolesLoaded && roles.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No roles found.</div>
+          ) : null}
 
           {selectedRequiredRoleIds.length ? (
             <div className="flex flex-wrap gap-2">
@@ -424,6 +454,8 @@ function AutoRoleSectionComponent({
                     options={requiredRoleRuleOptions}
                     placeholder="Any role"
                     emptyText="No roles found."
+                    loading={loadingRoles}
+                    onOpen={onOpenRoles}
                     onChange={(selectedValue) =>
                       onChange({
                         ...value,
@@ -502,6 +534,8 @@ function AutoRoleSectionComponent({
                     options={roleOptions}
                     placeholder="Select role to give"
                     emptyText="No roles found."
+                    loading={loadingRoles}
+                    onOpen={onOpenRoles}
                     onChange={(roleId) =>
                       onChange({
                         ...value,
@@ -569,6 +603,8 @@ function AutoRoleSectionComponent({
               options={approvalChannelOptions}
               placeholder="Select approval channel"
               emptyText="No text channels found."
+              loading={loadingChannels}
+              onOpen={onOpenTextChannels}
               onChange={(channelId) =>
                 onChange({
                   ...value,
@@ -576,6 +612,9 @@ function AutoRoleSectionComponent({
                 })
               }
             />
+          ) : null}
+          {value.requireAdminApproval && channelsLoaded && textChannels.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No text channels found.</div>
           ) : null}
         </div>
 

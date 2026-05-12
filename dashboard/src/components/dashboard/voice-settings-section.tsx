@@ -36,6 +36,10 @@ import type { Channel, JoinToCreateLobby, Role } from "./types";
 
 type VoiceSettingsSectionProps = {
   loadingConfig: boolean;
+  loadingChannels: boolean;
+  loadingRoles: boolean;
+  channelsLoaded: boolean;
+  rolesLoaded: boolean;
   logChannelId: string;
   saving: boolean;
   voiceChannels: Channel[];
@@ -49,11 +53,17 @@ type VoiceSettingsSectionProps = {
   onRemoveLobbyChannel: (channelId: string) => void;
   onAddEnabledVoiceChannel: (channelId: string) => void;
   onRemoveEnabledVoiceChannel: (channelId: string) => void;
+  onOpenVoiceChannels: () => void;
+  onOpenRoles: () => void;
   onSave: () => void;
 };
 
 function VoiceSettingsSectionComponent({
   loadingConfig,
+  loadingChannels,
+  loadingRoles,
+  channelsLoaded,
+  rolesLoaded,
   logChannelId,
   saving,
   voiceChannels,
@@ -67,6 +77,8 @@ function VoiceSettingsSectionComponent({
   onRemoveLobbyChannel,
   onAddEnabledVoiceChannel,
   onRemoveEnabledVoiceChannel,
+  onOpenVoiceChannels,
+  onOpenRoles,
   onSave,
 }: VoiceSettingsSectionProps) {
   const [lobbyPickerOpen, setLobbyPickerOpen] = useState(false);
@@ -155,7 +167,7 @@ function VoiceSettingsSectionComponent({
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
-        ) : voiceChannels.length ? (
+        ) : (
           <div className="space-y-6">
             <div className={`space-y-4 ${dashboardPanel}`}>
               <div className="flex items-center justify-between">
@@ -165,16 +177,22 @@ function VoiceSettingsSectionComponent({
                 </Badge>
               </div>
               <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
-              <Popover open={lobbyPickerOpen} onOpenChange={setLobbyPickerOpen}>
+              <Popover
+                open={lobbyPickerOpen}
+                onOpenChange={(open) => {
+                  setLobbyPickerOpen(open);
+                  if (open) onOpenVoiceChannels();
+                }}
+              >
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     role="combobox"
                     aria-expanded={lobbyPickerOpen}
                     className="w-full justify-between"
-                    disabled={availableLobbyChannels.length === 0}
                   >
                     {lobbyVoiceLabel}
+                    {loadingChannels ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -214,7 +232,10 @@ function VoiceSettingsSectionComponent({
               </Popover>
               <Popover
                 open={lobbyRolePickerOpen}
-                onOpenChange={setLobbyRolePickerOpen}
+                onOpenChange={(open) => {
+                  setLobbyRolePickerOpen(open);
+                  if (open) onOpenRoles();
+                }}
               >
                 <PopoverTrigger asChild>
                   <Button
@@ -222,9 +243,9 @@ function VoiceSettingsSectionComponent({
                     role="combobox"
                     aria-expanded={lobbyRolePickerOpen}
                     className="w-full justify-between"
-                    disabled={roles.length === 0}
                   >
                     {lobbyRoleLabel}
+                    {loadingRoles ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -380,7 +401,7 @@ function VoiceSettingsSectionComponent({
                   No lobbies selected yet. Users will need a lobby to create squads.
                 </div>
               )}
-              {roles.length === 0 ? (
+              {rolesLoaded && roles.length === 0 ? (
                 <div className="text-xs text-muted-foreground">
                   No roles were found. The bot token needs permission to read roles.
                 </div>
@@ -402,16 +423,22 @@ function VoiceSettingsSectionComponent({
                 log-only tracking (no voice settings panel).
               </div>
               <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-              <Popover open={voiceLogPickerOpen} onOpenChange={setVoiceLogPickerOpen}>
+              <Popover
+                open={voiceLogPickerOpen}
+                onOpenChange={(open) => {
+                  setVoiceLogPickerOpen(open);
+                  if (open) onOpenVoiceChannels();
+                }}
+              >
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     role="combobox"
                     aria-expanded={voiceLogPickerOpen}
                     className="w-full justify-between"
-                    disabled={availableVoiceLogChannels.length === 0}
                   >
                     {voiceLogChannelLabel}
+                    {loadingChannels ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -526,11 +553,12 @@ function VoiceSettingsSectionComponent({
               ) : null}
             </div>
           </div>
-        ) : (
+        )}
+        {!loadingConfig && channelsLoaded && voiceChannels.length === 0 ? (
           <div className={dashboardEmpty}>
             No voice channels were found for this guild.
           </div>
-        )}
+        ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">
