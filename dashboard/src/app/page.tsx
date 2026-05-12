@@ -98,7 +98,6 @@ export default async function Home() {
         ) : (
           <DashboardClient
             userName={session.user?.name ?? "Admin"}
-            initialSelectedGuildId={setup.selectedGuildId ?? ""}
           />
         )}
       </main>

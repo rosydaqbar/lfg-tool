@@ -38,6 +38,16 @@ const DEFAULT_AUTO_ROLE_CONFIG: AutoRoleConfig = {
   approvalChannelId: null,
 };
 
+const SELECTED_GUILD_STORAGE_KEY = "lfg-tool:selected-guild-id";
+
+function mergeGuilds(current: ManageableGuild[], incoming: ManageableGuild[]) {
+  const guildsById = new Map(current.map((guild) => [guild.id, guild]));
+  for (const guild of incoming) {
+    guildsById.set(guild.id, guild);
+  }
+  return Array.from(guildsById.values());
+}
+
 function normalizeAutoRoleConfig(
   value: Partial<AutoRoleConfig> | null | undefined
 ): AutoRoleConfig {
@@ -91,10 +101,8 @@ function normalizeAutoRoleConfig(
 
 export default function DashboardClient({
   userName,
-  initialSelectedGuildId,
 }: {
   userName: string;
-  initialSelectedGuildId: string;
 }) {
   const router = useRouter();
   const [guilds, setGuilds] = useState<ManageableGuild[]>([]);
@@ -117,34 +125,62 @@ export default function DashboardClient({
   );
   const [loadingGuilds, setLoadingGuilds] = useState(true);
   const [refreshingGuilds, setRefreshingGuilds] = useState(false);
+  const [loadingMoreGuilds, setLoadingMoreGuilds] = useState(false);
+  const [hasMoreGuilds, setHasMoreGuilds] = useState(false);
+  const [nextGuildOffset, setNextGuildOffset] = useState(0);
+  const [guildPickerOpen, setGuildPickerOpen] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const loadGuildPage = useCallback(async ({
+    offset,
+    reset,
+    selectedGuildId: selectedGuildIdForRequest,
+  }: {
+    offset: number;
+    reset: boolean;
+    selectedGuildId?: string;
+  }) => {
+    const params = new URLSearchParams({
+      limit: "10",
+      offset: String(offset),
+    });
+    if (selectedGuildIdForRequest) {
+      params.set("selectedGuildId", selectedGuildIdForRequest);
+    }
+
+    const response = await fetch(`/api/guilds?${params.toString()}`, { cache: "no-store" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error || "Failed to load guilds");
+    }
+
+    const payload = (await response.json()) as GuildsResponse;
+    const nextGuilds = payload.guilds ?? [];
+    const guildsWithSelected = payload.selectedGuild
+      ? mergeGuilds(nextGuilds, [payload.selectedGuild])
+      : nextGuilds;
+
+    setGuilds((current) => reset ? guildsWithSelected : mergeGuilds(current, guildsWithSelected));
+    setHasMoreGuilds(payload.hasMore === true);
+    setNextGuildOffset(payload.nextOffset ?? offset + 10);
+
+    if (selectedGuildIdForRequest && !payload.selectedGuild) {
+      localStorage.removeItem(SELECTED_GUILD_STORAGE_KEY);
+      setSelectedGuildId("");
+      setGuildPickerOpen(true);
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
+    const storedGuildId = localStorage.getItem(SELECTED_GUILD_STORAGE_KEY)?.trim() ?? "";
+    setSelectedGuildId(storedGuildId);
+    setGuildPickerOpen(!storedGuildId);
     setLoadingGuilds(true);
 
-    fetch("/api/guilds", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(payload?.error || "Failed to load guilds");
-        }
-        return response.json() as Promise<GuildsResponse>;
-      })
-      .then((payload) => {
-        if (!active) return;
-        const nextGuilds = payload.guilds ?? [];
-        setGuilds(nextGuilds);
-        setSelectedGuildId((current) => {
-          if (current && nextGuilds.some((guild) => guild.id === current)) return current;
-          if (initialSelectedGuildId && nextGuilds.some((guild) => guild.id === initialSelectedGuildId)) {
-            return initialSelectedGuildId;
-          }
-          return nextGuilds.find((guild) => guild.status === "ready")?.id ?? nextGuilds[0]?.id ?? "";
-        });
-      })
+    loadGuildPage({ offset: 0, reset: true, selectedGuildId: storedGuildId })
       .catch((err) => {
         if (!active) return;
         setError(err instanceof Error ? err.message : "Failed to load guilds");
@@ -156,11 +192,15 @@ export default function DashboardClient({
     return () => {
       active = false;
     };
-  }, [initialSelectedGuildId]);
+  }, [loadGuildPage]);
 
   useEffect(() => {
     if (!selectedGuildId) {
-      if (!loadingGuilds) setError("No manageable Discord guilds found for this account.");
+      if (!loadingGuilds && guilds.length === 0) {
+        setError("No manageable Discord guilds found for this account.");
+      } else {
+        setError(null);
+      }
       return;
     }
     const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
@@ -399,22 +439,7 @@ export default function DashboardClient({
     setRefreshingGuilds(true);
     setError(null);
     try {
-      const response = await fetch("/api/guilds", { cache: "no-store" });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || "Failed to refresh guild status");
-      }
-
-      const payload = (await response.json()) as GuildsResponse;
-      const nextGuilds = payload.guilds ?? [];
-      setGuilds(nextGuilds);
-      setSelectedGuildId((current) => {
-        if (current && nextGuilds.some((guild) => guild.id === current)) return current;
-        if (initialSelectedGuildId && nextGuilds.some((guild) => guild.id === initialSelectedGuildId)) {
-          return initialSelectedGuildId;
-        }
-        return nextGuilds.find((guild) => guild.status === "ready")?.id ?? nextGuilds[0]?.id ?? "";
-      });
+      await loadGuildPage({ offset: 0, reset: true, selectedGuildId });
       toast.success("Bot status refreshed");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to refresh guild status";
@@ -423,7 +448,30 @@ export default function DashboardClient({
     } finally {
       setRefreshingGuilds(false);
     }
-  }, [initialSelectedGuildId]);
+  }, [loadGuildPage, selectedGuildId]);
+
+  const handleLoadMoreGuilds = useCallback(async () => {
+    if (!hasMoreGuilds || loadingMoreGuilds) return;
+    setLoadingMoreGuilds(true);
+    setError(null);
+    try {
+      await loadGuildPage({ offset: nextGuildOffset, reset: false, selectedGuildId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load more guilds";
+      setError(message);
+      toast.error("Load more failed", { description: message });
+    } finally {
+      setLoadingMoreGuilds(false);
+    }
+  }, [hasMoreGuilds, loadingMoreGuilds, loadGuildPage, nextGuildOffset, selectedGuildId]);
+
+  const handleGuildChange = useCallback((guildId: string) => {
+    localStorage.setItem(SELECTED_GUILD_STORAGE_KEY, guildId);
+    setSelectedGuildId(guildId);
+    setActiveTab("dashboard");
+    setDetailView(null);
+    setGuildPickerOpen(false);
+  }, []);
 
   const memoVoiceChannels = useMemo(() => voiceChannels, [voiceChannels]);
   const memoTextChannels = useMemo(() => textChannels, [textChannels]);
@@ -448,14 +496,17 @@ export default function DashboardClient({
       <HeaderSection
         userName={userName}
         selectedGuildId={selectedGuildId}
+        selectedGuild={selectedGuild}
         guilds={guilds}
+        hasMoreGuilds={hasMoreGuilds}
+        loadingMoreGuilds={loadingMoreGuilds}
+        guildPickerOpen={guildPickerOpen}
+        requireGuildSelection={!selectedGuildId}
         accessLabel={accessLabel}
         refreshingGuilds={loadingGuilds || refreshingGuilds}
-        onGuildChange={(guildId) => {
-          setSelectedGuildId(guildId);
-          setActiveTab("dashboard");
-          setDetailView(null);
-        }}
+        onGuildPickerOpenChange={(open) => setGuildPickerOpen(!selectedGuildId || open)}
+        onGuildChange={handleGuildChange}
+        onLoadMoreGuilds={handleLoadMoreGuilds}
         onRefreshGuilds={handleRefreshGuilds}
       />
 
@@ -510,6 +561,20 @@ export default function DashboardClient({
         </div>
       ) : null}
 
+      {!selectedGuildId && !loadingGuilds ? (
+        <div className={`${dashboardCard} rounded-lg p-6`}>
+          <h2 className="text-lg font-semibold text-foreground">Select a server to continue</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Pick one Discord server first. The dashboard will save it on this device and only load data for that server.
+          </p>
+          <Button type="button" className="mt-4" onClick={() => setGuildPickerOpen(true)}>
+            Choose Server
+          </Button>
+        </div>
+      ) : null}
+
+      {selectedGuildId ? (
+        <>
       <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card/80 p-2 backdrop-blur">
         <Button
           type="button"
@@ -617,6 +682,8 @@ export default function DashboardClient({
             selectedGuildId={selectedGuildId}
             onResetComplete={handleResetComplete}
           />
+        </>
+      ) : null}
         </>
       ) : null}
 

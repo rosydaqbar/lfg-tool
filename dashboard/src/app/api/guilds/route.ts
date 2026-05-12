@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getGuildConfig, getSetupState } from "@/lib/db";
 import { getManageableDiscordGuilds } from "@/lib/session";
+import type { DashboardManageableGuild } from "@/lib/session";
 import { getDashboardBotToken } from "@/lib/runtime-secrets";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,24 @@ async function isGuildConfigured(guildId: string) {
   }
 }
 
-export async function GET() {
+async function hydrateGuild(guild: DashboardManageableGuild, botToken: string, clientId: string | null) {
+  const botInstalled = await isBotInstalled(guild.id, botToken);
+  const configured = botInstalled ? await isGuildConfigured(guild.id) : false;
+  return {
+    ...guild,
+    botInstalled,
+    configured,
+    status: !botInstalled ? "invite_bot" : configured ? "ready" : "needs_setup",
+    inviteUrl: !botInstalled && clientId ? createBotInviteUrl(clientId, guild.id) : null,
+  };
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const limit = Math.max(1, Math.min(10, Number(url.searchParams.get("limit") ?? 10) || 10));
+  const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
+  const selectedGuildId = (url.searchParams.get("selectedGuildId") ?? "").trim();
+
   const manageableGuilds = await getManageableDiscordGuilds();
   if (!Array.isArray(manageableGuilds)) {
     if (manageableGuilds.ok) {
@@ -60,20 +78,27 @@ export async function GET() {
   const setup = await getSetupState();
   const clientId = setup.discordClientId || process.env.DISCORD_CLIENT_ID || null;
 
-  const guilds = [];
-  for (const guild of manageableGuilds) {
-    const botInstalled = await isBotInstalled(guild.id, botToken);
-    const configured = botInstalled ? await isGuildConfigured(guild.id) : false;
-    guilds.push({
-      ...guild,
-      botInstalled,
-      configured,
-      status: !botInstalled ? "invite_bot" : configured ? "ready" : "needs_setup",
-      inviteUrl: !botInstalled && clientId ? createBotInviteUrl(clientId, guild.id) : null,
-    });
-  }
+  const pageGuilds = manageableGuilds.slice(offset, offset + limit);
+  const selectedGuild = selectedGuildId
+    ? manageableGuilds.find((guild) => guild.id === selectedGuildId) ?? null
+    : null;
+  const guildsToHydrate = selectedGuild
+    ? [selectedGuild, ...pageGuilds.filter((guild) => guild.id !== selectedGuild.id)]
+    : pageGuilds;
+  const hydratedGuilds = await Promise.all(
+    guildsToHydrate.map((guild) => hydrateGuild(guild, botToken, clientId))
+  );
+  const selectedHydratedGuild = selectedGuild
+    ? hydratedGuilds.find((guild) => guild.id === selectedGuild.id) ?? null
+    : null;
+  const pageHydratedGuilds = pageGuilds
+    .map((guild) => hydratedGuilds.find((item) => item.id === guild.id))
+    .filter((guild): guild is NonNullable<typeof guild> => Boolean(guild));
 
   return NextResponse.json({
-    guilds,
+    guilds: pageHydratedGuilds,
+    selectedGuild: selectedHydratedGuild,
+    hasMore: offset + limit < manageableGuilds.length,
+    nextOffset: offset + limit,
   });
 }

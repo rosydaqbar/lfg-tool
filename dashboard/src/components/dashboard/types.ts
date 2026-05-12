@@ -23,6 +23,9 @@ export type ManageableGuild = {
 
 export type GuildsResponse = {
   guilds: ManageableGuild[];
+  selectedGuild?: ManageableGuild | null;
+  hasMore?: boolean;
+  nextOffset?: number;
 };
 
 export type JoinToCreateLobby = {
