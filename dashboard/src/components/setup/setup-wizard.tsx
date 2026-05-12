@@ -5,7 +5,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
+import { StatusBadge, guildStatusLabel, guildStatusTone } from "@/components/status-badge";
+import { dashboardCodeBlock, dashboardError, dashboardInset, dashboardPanel, dashboardSuccess, dashboardWarning } from "@/components/ui/patterns";
 
 type SetupState = {
   ownerDiscordId: string | null;
@@ -23,6 +32,16 @@ type SetupState = {
 };
 
 type TextChannel = { id: string; name: string };
+type SetupGuild = {
+  id: string;
+  name: string;
+  icon: string | null;
+  accessLabel: "Owner" | "Admin";
+  botInstalled: boolean;
+  configured: boolean;
+  status: "ready" | "needs_setup" | "invite_bot";
+  inviteUrl: string | null;
+};
 type SetupPhase = "A" | "B" | "C" | "FINAL";
 
 const BOT_INVITE_PERMISSIONS = "288427024";
@@ -61,6 +80,8 @@ export function SetupWizard({
 
   const [tokenInput, setTokenInput] = useState("");
   const [guildIdInput, setGuildIdInput] = useState("");
+  const [setupGuilds, setSetupGuilds] = useState<SetupGuild[]>([]);
+  const [guildsLoading, setGuildsLoading] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [alreadyInvited, setAlreadyInvited] = useState<boolean | null>(null);
   const [guildValidateSuccess, setGuildValidateSuccess] = useState(false);
@@ -321,6 +342,31 @@ export function SetupWizard({
     }
   }
 
+  async function loadSetupGuilds() {
+    setGuildsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/setup/guild", { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; guilds?: SetupGuild[] }
+        | null;
+      if (!response.ok) throw new Error(payload?.error || "Failed to load Discord servers");
+      const guilds = payload?.guilds ?? [];
+      setSetupGuilds(guilds);
+      setGuildIdInput((current) => {
+        if (current && guilds.some((guild) => guild.id === current)) return current;
+        if (setup?.selectedGuildId && guilds.some((guild) => guild.id === setup.selectedGuildId)) {
+          return setup.selectedGuildId;
+        }
+        return "";
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load Discord servers");
+    } finally {
+      setGuildsLoading(false);
+    }
+  }
+
   async function checkInvite() {
     setBusyKey("invite");
     setError(null);
@@ -504,7 +550,11 @@ export function SetupWizard({
   const discordStep3Done = ownerClaimedByCurrentUser;
   const discordStep4Done = Boolean(setup?.botTokenSet);
   const guildStep1Done = Boolean(setup?.selectedGuildId);
-  const guildStep2Done = true;
+  const selectedSetupGuild = setupGuilds.find((guild) => guild.id === (setup?.selectedGuildId || guildIdInput));
+  const selectedGuildSaved = Boolean(setup?.selectedGuildId && selectedSetupGuild?.id === setup.selectedGuildId);
+  const guildStep2Done = Boolean(
+    selectedGuildSaved && (selectedSetupGuild?.botInstalled || alreadyInvited === true)
+  );
   const guildStep3Done = Boolean(setup?.logChannelId);
   const hasLoadedTextChannels = textChannels.length > 0;
   const inviteGuildId = setup?.selectedGuildId || guildIdInput.trim() || null;
@@ -619,6 +669,9 @@ export function SetupWizard({
 
   useEffect(() => {
     if (phase !== "C") return;
+    if (isDatabaseReady && isDiscordReady && setupGuilds.length === 0 && !guildsLoading) {
+      loadSetupGuilds().catch(() => null);
+    }
     if (!guildStep1Done) {
       setGuildSubstep(1);
       return;
@@ -627,7 +680,7 @@ export function SetupWizard({
       setGuildSubstep(3);
       return;
     }
-  }, [phase, guildStep1Done, guildStep3Done]);
+  }, [phase, guildStep1Done, guildStep3Done, guildsLoading, isDatabaseReady, isDiscordReady, setupGuilds.length]);
 
   if (loading && !setup) {
     return <div className="text-sm text-muted-foreground">Loading setup wizard...</div>;
@@ -648,7 +701,7 @@ export function SetupWizard({
     const enabled = canOpenDiscordSubstep(step);
 
     return (
-      <div className="rounded-lg border border-border bg-background">
+      <div className={dashboardPanel}>
         <button
           type="button"
           disabled={!enabled}
@@ -689,7 +742,7 @@ export function SetupWizard({
     const enabled = canOpenGuildSubstep(step);
 
     return (
-      <div className="rounded-lg border border-border bg-background">
+      <div className={dashboardPanel}>
         <button
           type="button"
           disabled={!enabled}
@@ -793,8 +846,8 @@ export function SetupWizard({
       ready: guildStep1Done,
       detail: guildStep1Done
         ? `Configured server ID: ${setup?.selectedGuildId}.`
-        : "No Discord server ID is configured.",
-      issue: guildStep1Done ? null : "Validate the Guild ID in Step 3.",
+        : "No Discord server is selected.",
+      issue: guildStep1Done ? null : "Select a Discord server in Step 3.",
     },
     {
       title: "Channels",
@@ -807,7 +860,7 @@ export function SetupWizard({
   ];
 
   const finalPotentialIssues = [
-    ...(alreadyInvited === true
+    ...(guildStep2Done
       ? []
       : [
           alreadyInvited === false
@@ -823,7 +876,7 @@ export function SetupWizard({
   ];
 
   return (
-    <div className="rounded-2xl border border-border bg-card shadow-lg shadow-black/5 overflow-hidden">
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/80 shadow-lg shadow-black/5">
       <div className="flex items-center justify-between px-6 py-5">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-semibold">
@@ -841,7 +894,7 @@ export function SetupWizard({
 
       <div className="border-t border-border px-6 py-6">
         {error ? (
-          <div className="mb-5 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive whitespace-pre-wrap">
+          <div className={`mb-5 whitespace-pre-wrap ${dashboardError}`}>
             {error}
           </div>
         ) : null}
@@ -873,13 +926,13 @@ export function SetupWizard({
           </div>
 
           {phase === "A" ? (
-            <div className="setup-step-panel space-y-4 rounded-lg border border-border bg-background p-4">
+            <div className={`setup-step-panel space-y-4 ${dashboardPanel}`}>
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <label htmlFor="db-url" className="text-sm font-semibold">Database URL</label>
-                  <span className="rounded-full border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                  <StatusBadge tone="warning" className="text-[10px] uppercase tracking-wide">
                     Required
-                  </span>
+                  </StatusBadge>
                 </div>
                 <Input
                   id="db-url"
@@ -888,7 +941,7 @@ export function SetupWizard({
                   onChange={(event) => setDbUrlInput(event.target.value)}
                   placeholder="postgresql://...:6543/postgres?sslmode=require"
                 />
-                <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs leading-5 text-foreground">
+                <div className={`${dashboardInset} text-xs leading-5 text-foreground`}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="font-semibold">Supabase connection details</p>
@@ -918,7 +971,7 @@ export function SetupWizard({
                 Apply baseline schema check
               </label>
 
-              <div className="rounded-lg border border-border bg-muted/10 p-3">
+              <div className={dashboardInset}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="space-y-1">
                     <p className="text-xs font-semibold text-foreground">Schema SQL</p>
@@ -948,7 +1001,7 @@ export function SetupWizard({
                   </div>
                 </div>
                 {schemaOpen ? (
-                  <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-border bg-background p-3 text-[11px] leading-5 text-foreground">
+                  <pre className={`mt-3 max-h-56 overflow-auto p-3 text-[11px] leading-5 ${dashboardCodeBlock}`}>
                     <code>{schemaLoading ? "Loading schema SQL..." : schemaSql || "Schema SQL unavailable."}</code>
                   </pre>
                 ) : null}
@@ -963,7 +1016,7 @@ export function SetupWizard({
                 </span>
               </div>
               {databaseValidateSuccess ? (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 shadow-sm shadow-emerald-500/10 animate-pulse">
+                <div className={`flex items-center gap-2 text-xs animate-pulse ${dashboardSuccess}`}>
                   <CheckCircle2 className="h-4 w-4" />
                   Database validated successfully. Continue to Discord setup.
                 </div>
@@ -980,7 +1033,7 @@ export function SetupWizard({
               >
                 {discordStep1Done && !editingDiscordApp ? (
                   <>
-                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
+                    <div className={dashboardSuccess}>
                       <div className="flex items-start gap-3">
                         <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-500/40 text-emerald-300">
                           <CheckCircle2 className="h-4 w-4" />
@@ -995,13 +1048,13 @@ export function SetupWizard({
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
-                      <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                      <div className={`${dashboardInset} text-xs`}>
                         <p className="font-semibold text-foreground">Discord Client ID</p>
                         <code className="mt-2 block rounded bg-background px-2 py-1 break-all text-foreground">
                           {setup?.discordClientId || "Not saved"}
                         </code>
                       </div>
-                      <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                      <div className={`${dashboardInset} text-xs`}>
                         <p className="font-semibold text-foreground">Discord Client Secret</p>
                         <p className="mt-2 rounded bg-background px-2 py-1 text-foreground">
                           {setup?.discordClientSecretSet ? "Secret saved and hidden" : "Not saved"}
@@ -1009,7 +1062,7 @@ export function SetupWizard({
                       </div>
                     </div>
 
-                    <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-2">
+                    <div className={`space-y-2 text-xs text-muted-foreground ${dashboardInset}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
@@ -1048,7 +1101,7 @@ export function SetupWizard({
                       onChange={(event) => setDiscordClientSecretInput(event.target.value)}
                       placeholder={setup?.discordClientSecretSet ? "Leave empty to keep current secret" : "Paste secret"}
                     />
-                    <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-2">
+                    <div className={`space-y-2 text-xs text-muted-foreground ${dashboardInset}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-medium text-foreground">Required OAuth2 Redirect URI</p>
@@ -1138,12 +1191,12 @@ export function SetupWizard({
                 title="Discord Bot Token"
                 done={discordStep4Done}
               >
-                <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/5 p-4">
+                <div className={`space-y-2 ${dashboardPanel}`}>
                   <div className="flex flex-wrap items-center gap-2">
                     <label htmlFor="bot-token" className="text-sm font-semibold">Discord Bot Token</label>
-                    <span className="rounded-full border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                    <StatusBadge tone="warning" className="text-[10px] uppercase tracking-wide">
                       Required
-                    </span>
+                    </StatusBadge>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Paste the bot token from Discord Developer Portal. This is the only value needed in this step.
@@ -1161,14 +1214,14 @@ export function SetupWizard({
                 ) : null}
 
                 <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                  <div className={`${dashboardInset} text-xs`}>
                     <p className="font-semibold text-foreground">Discord Client ID</p>
                     <p className="text-muted-foreground">Saved from the Discord app setup step.</p>
                     <code className="mt-2 block rounded bg-background px-2 py-1 break-all text-foreground">
                       {setup?.discordClientId || discordClientIdInput || "Not saved"}
                     </code>
                   </div>
-                  <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                  <div className={`${dashboardInset} text-xs`}>
                     <p className="font-semibold text-foreground">Discord Client Secret</p>
                     <p className="text-muted-foreground">Stored securely and hidden after saving.</p>
                     <p className="mt-2 rounded bg-background px-2 py-1 text-foreground">
@@ -1177,7 +1230,7 @@ export function SetupWizard({
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-2">
+                <div className={`space-y-2 text-xs text-muted-foreground ${dashboardInset}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-foreground">OAuth2 Redirect URI</p>
@@ -1206,29 +1259,73 @@ export function SetupWizard({
             <div className="setup-step-panel space-y-3">
               <GuildSubstepCard
                 step={1}
-                title="Add Guild ID"
+                title="Select Guild"
                 done={guildStep1Done}
               >
-                <label htmlFor="guild-id" className="text-sm font-medium">Guild ID</label>
-                <Input
-                  id="guild-id"
-                  value={guildIdInput}
-                  onChange={(event) => {
-                    setGuildIdInput(event.target.value);
-                    setGuildValidateSuccess(false);
-                    setInviteUrl(null);
-                    setAlreadyInvited(null);
-                    setInviteCheckFeedback(null);
-                  }}
-                  placeholder="670147766839803924"
-                />
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Discord Server</label>
+                  <p className="text-xs text-muted-foreground">
+                    Choose a server where you are the owner or have Discord Administrator permission.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Select
+                      value={guildIdInput}
+                      onValueChange={(value) => {
+                        setGuildIdInput(value);
+                        setGuildValidateSuccess(false);
+                        setInviteUrl(null);
+                        setAlreadyInvited(null);
+                        setInviteCheckFeedback(null);
+                        if (value !== setup?.selectedGuildId) {
+                          setTextChannels([]);
+                          setLogChannelId("");
+                          setLfgChannelId("");
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-11 min-w-[320px] data-[size=default]:h-11">
+                        <SelectValue placeholder={guildsLoading ? "Loading servers..." : "Select server"} />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72 min-w-[320px] overflow-auto">
+                        {setupGuilds.map((guild) => (
+                          <SelectItem key={guild.id} value={guild.id}>
+                            <span className="flex w-full items-center justify-between gap-4">
+                              <span className="truncate">{guild.name}</span>
+                              <StatusBadge tone={guildStatusTone(guild.status)} className="shrink-0 text-[11px]" dot>
+                                {guildStatusLabel(guild.status)}
+                              </StatusBadge>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" onClick={loadSetupGuilds} disabled={guildsLoading}>
+                      {guildsLoading ? "Loading..." : "Refresh Servers"}
+                    </Button>
+                  </div>
+                  {setupGuilds.length === 0 && !guildsLoading ? (
+                    <div className={`${dashboardWarning} px-3 py-2 text-xs`}>
+                      No manageable Discord servers found. Sign in with an account that owns a server or has Administrator permission.
+                    </div>
+                  ) : null}
+                  {selectedSetupGuild ? (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>
+                        Selected: {selectedSetupGuild.name} ({selectedSetupGuild.accessLabel === "Owner" ? "Server owner" : "Server admin"}) · ID {selectedSetupGuild.id}
+                      </span>
+                      <StatusBadge tone={guildStatusTone(selectedSetupGuild.status)} dot>
+                        {guildStatusLabel(selectedSetupGuild.status)}
+                      </StatusBadge>
+                    </div>
+                  ) : null}
+                </div>
                 <Button onClick={saveGuild} disabled={busyKey === "guild" || !guildIdInput.trim()}>
-                  {busyKey === "guild" ? "Validating..." : guildStep1Done ? "Revalidate Guild" : "Validate Guild"}
+                  {busyKey === "guild" ? "Saving..." : guildStep1Done ? "Update Guild" : "Save Guild"}
                 </Button>
                 {guildValidateSuccess ? (
-                  <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 shadow-sm shadow-emerald-500/10 animate-pulse">
+                  <div className={`flex items-center gap-2 px-3 py-2 text-xs animate-pulse ${dashboardSuccess}`}>
                     <CheckCircle2 className="h-4 w-4" />
-                    Guild ID validated successfully. Continue with the bot invite check.
+                    Guild saved successfully. Continue with the bot invite check.
                   </div>
                 ) : null}
               </GuildSubstepCard>
@@ -1254,7 +1351,7 @@ export function SetupWizard({
                   ) : null}
                 </div>
                 {!activeInviteUrl ? (
-                  <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  <div className={`${dashboardWarning} px-3 py-2 text-xs`}>
                     Save your Discord Client ID first to generate the bot invite link.
                   </div>
                 ) : null}
@@ -1262,8 +1359,8 @@ export function SetupWizard({
                   <div
                     className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-sm ${
                       alreadyInvited
-                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 shadow-emerald-500/10"
-                        : "border-amber-500/40 bg-amber-500/10 text-amber-200 shadow-amber-500/10"
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
                     } ${inviteCheckFeedback ? "animate-pulse" : ""}`}
                   >
                     {alreadyInvited ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <ChevronRight className="mt-0.5 h-4 w-4" />}
@@ -1298,14 +1395,14 @@ export function SetupWizard({
                 </div>
 
                 {channelLoadSuccess ? (
-                  <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 shadow-sm shadow-emerald-500/10 animate-pulse">
+                  <div className={`flex items-center gap-2 px-3 py-2 text-xs animate-pulse ${dashboardSuccess}`}>
                     <CheckCircle2 className="h-4 w-4" />
                     Text channels loaded successfully. Pick your log channel below.
                   </div>
                 ) : null}
 
                 {channelLoadWarning ? (
-                  <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  <div className={`${dashboardWarning} px-3 py-2 text-xs`}>
                     {channelLoadWarning}
                   </div>
                 ) : null}
@@ -1313,9 +1410,9 @@ export function SetupWizard({
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <label htmlFor="log-channel" className="text-sm font-semibold">Log Channel</label>
-                    <span className="rounded-full border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                    <StatusBadge tone="warning" className="text-[10px] uppercase tracking-wide">
                       Required
-                    </span>
+                    </StatusBadge>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Receives setup alerts, bot errors, voice activity logs, and operational notices.
@@ -1377,7 +1474,7 @@ export function SetupWizard({
           ) : null}
 
           {phase === "FINAL" ? (
-            <div className="setup-step-panel space-y-5 rounded-lg border border-border bg-background p-5">
+            <div className={`setup-step-panel space-y-5 ${dashboardPanel}`}>
               <div className="flex items-start gap-3">
                 <span
                   className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${
@@ -1421,15 +1518,9 @@ export function SetupWizard({
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-semibold">{item.title}</p>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                              item.ready
-                                ? "bg-emerald-500/15 text-emerald-200"
-                                : "bg-amber-500/15 text-amber-200"
-                            }`}
-                          >
+                          <StatusBadge tone={item.ready ? "success" : "warning"} className="text-[10px] uppercase tracking-wide">
                             {item.ready ? "Ready" : "Needs action"}
-                          </span>
+                          </StatusBadge>
                         </div>
                         <p className="text-xs leading-5 text-muted-foreground">{item.detail}</p>
                         {item.issue ? (

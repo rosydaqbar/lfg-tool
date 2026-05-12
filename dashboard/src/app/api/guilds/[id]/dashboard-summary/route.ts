@@ -101,80 +101,88 @@ export async function GET(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const tempRows = await getTempChannels(id);
-  const voiceLogs = await getTempVoiceDeleteLogs(id, 5, 0);
-  const todayCount = await getVoiceLogTodayCount(id);
-  const leaderboard = await getVoiceLeaderboardSummary(id);
-  const requests = await getVoiceAutoRoleRequests(id, 3, 0);
-  const pendingRequests = await getVoiceAutoRoleRequests(id, 3, 0, "pending");
-  const counts = await getVoiceAutoRoleRequestCounts(id);
+  try {
+    const tempRows = await getTempChannels(id);
+    const voiceLogs = await getTempVoiceDeleteLogs(id, 5, 0);
+    const todayCount = await getVoiceLogTodayCount(id);
+    const leaderboard = await getVoiceLeaderboardSummary(id);
+    const requests = await getVoiceAutoRoleRequests(id, 3, 0);
+    const pendingRequests = await getVoiceAutoRoleRequests(id, 3, 0, "pending");
+    const counts = await getVoiceAutoRoleRequestCounts(id);
 
-  const tempSummaryRows = tempRows.slice(0, 3).map((row) => ({
-    row,
-    activeUsers: parseActiveUsers(row.active_users),
-  }));
-  const userIds = [
-    ...tempSummaryRows.flatMap(({ row, activeUsers }) => [
-      row.owner_id,
-      ...activeUsers.map((user) => user.userId),
-    ]),
-    ...voiceLogs.flatMap((log) => [
-      log.ownerId,
-      ...log.history.map((item) => item.userId),
-    ]),
-    ...leaderboard.top.map((row) => row.userId),
-    ...requests.flatMap((request) => [request.userId, request.decidedBy || ""]),
-    ...pendingRequests.flatMap((request) => [request.userId, request.decidedBy || ""]),
-  ].filter((value) => value && value !== "server_owned");
-  const names = await resolveGuildUsernames(id, userIds);
-  const channelNames = await resolveChannelNames(
-    id,
-    tempSummaryRows
-      .filter(({ row }) => !row.channel_name)
-      .map(({ row }) => row.channel_id)
-  );
+    const tempSummaryRows = tempRows.slice(0, 3).map((row) => ({
+      row,
+      activeUsers: parseActiveUsers(row.active_users),
+    }));
+    const userIds = [
+      ...tempSummaryRows.flatMap(({ row, activeUsers }) => [
+        row.owner_id,
+        ...activeUsers.map((user) => user.userId),
+      ]),
+      ...voiceLogs.flatMap((log) => [
+        log.ownerId,
+        ...log.history.map((item) => item.userId),
+      ]),
+      ...leaderboard.top.map((row) => row.userId),
+      ...requests.flatMap((request) => [request.userId, request.decidedBy || ""]),
+      ...pendingRequests.flatMap((request) => [request.userId, request.decidedBy || ""]),
+    ].filter((value) => value && value !== "server_owned");
+    const names = await resolveGuildUsernames(id, userIds);
+    const channelNames = await resolveChannelNames(
+      id,
+      tempSummaryRows
+        .filter(({ row }) => !row.channel_name)
+        .map(({ row }) => row.channel_id)
+    );
 
-  return NextResponse.json({
-    tempChannels: tempSummaryRows.map(({ row, activeUsers }) => {
-      return {
-        channelId: row.channel_id,
-        channelName: row.channel_name ?? channelNames.get(row.channel_id) ?? null,
-        ownerId: row.owner_id,
-        ownerName: row.owner_id === "server_owned" ? "server owned" : names.get(row.owner_id) ?? null,
-        createdAt: row.created_at,
-        activeCount: activeUsers.length,
-      };
-    }),
-    tempChannelCount: tempRows.length,
-    voiceLogs: voiceLogs.map((log) => ({
-      ...log,
-      ownerName: log.ownerId === "server_owned" ? "server owned" : names.get(log.ownerId) ?? null,
-      history: log.history.map((item) => ({
-        ...item,
-        userName: names.get(item.userId) ?? null,
+    return NextResponse.json({
+      tempChannels: tempSummaryRows.map(({ row, activeUsers }) => {
+        return {
+          channelId: row.channel_id,
+          channelName: row.channel_name ?? channelNames.get(row.channel_id) ?? null,
+          ownerId: row.owner_id,
+          ownerName: row.owner_id === "server_owned" ? "server owned" : names.get(row.owner_id) ?? null,
+          createdAt: row.created_at,
+          activeCount: activeUsers.length,
+        };
+      }),
+      tempChannelCount: tempRows.length,
+      voiceLogs: voiceLogs.map((log) => ({
+        ...log,
+        ownerName: log.ownerId === "server_owned" ? "server owned" : names.get(log.ownerId) ?? null,
+        history: log.history.map((item) => ({
+          ...item,
+          userName: names.get(item.userId) ?? null,
+        })),
       })),
-    })),
-    voiceLogSummary: {
-      todayCount,
-      timezone: "Asia/Jakarta",
-    },
-    leaderboard: {
-      ...leaderboard,
-      top: leaderboard.top.map((row) => ({
-        ...row,
-        userName: names.get(row.userId) ?? null,
+      voiceLogSummary: {
+        todayCount,
+        timezone: "Asia/Jakarta",
+      },
+      leaderboard: {
+        ...leaderboard,
+        top: leaderboard.top.map((row) => ({
+          ...row,
+          userName: names.get(row.userId) ?? null,
+        })),
+      },
+      requests: requests.map((request) => ({
+        ...request,
+        userName: names.get(request.userId) ?? null,
+        decidedByName: request.decidedBy ? names.get(request.decidedBy) ?? null : null,
       })),
-    },
-    requests: requests.map((request) => ({
-      ...request,
-      userName: names.get(request.userId) ?? null,
-      decidedByName: request.decidedBy ? names.get(request.decidedBy) ?? null : null,
-    })),
-    pendingRequests: pendingRequests.map((request) => ({
-      ...request,
-      userName: names.get(request.userId) ?? null,
-      decidedByName: request.decidedBy ? names.get(request.decidedBy) ?? null : null,
-    })),
-    counts,
-  });
+      pendingRequests: pendingRequests.map((request) => ({
+        ...request,
+        userName: names.get(request.userId) ?? null,
+        decidedByName: request.decidedBy ? names.get(request.decidedBy) ?? null : null,
+      })),
+      counts,
+    });
+  } catch (error) {
+    console.error("Failed to load dashboard summary:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to load dashboard summary" },
+      { status: 500 }
+    );
+  }
 }

@@ -10,10 +10,30 @@ export type Role = {
   color: number;
 };
 
+export type ManageableGuild = {
+  id: string;
+  name: string;
+  icon: string | null;
+  accessLabel: "Owner" | "Admin";
+  botInstalled: boolean;
+  configured: boolean;
+  status: "ready" | "needs_setup" | "invite_bot";
+  inviteUrl: string | null;
+};
+
+export type GuildsResponse = {
+  guilds: ManageableGuild[];
+  selectedGuild?: ManageableGuild | null;
+  hasMore?: boolean;
+  nextOffset?: number;
+};
+
 export type JoinToCreateLobby = {
   channelId: string;
   roleId: string | null;
   lfgEnabled: boolean;
+  lfgReminderEnabled: boolean;
+  lfgReminderSeconds: number;
 };
 
 export type AutoRoleCondition = "more_than" | "less_than" | "equal_to";

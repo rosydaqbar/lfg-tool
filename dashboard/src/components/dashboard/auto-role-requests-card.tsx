@@ -2,6 +2,8 @@ import { memo, useRef, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/status-badge";
+import { dashboardCard, dashboardEmpty, dashboardError } from "@/components/ui/patterns";
 import {
   Card,
   CardContent,
@@ -57,24 +59,12 @@ function formatRuleKey(ruleKey: string) {
 
 function statusBadge(status: AutoRoleRequest["status"]) {
   if (status === "pending") {
-    return (
-      <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-300">
-        Need action
-      </span>
-    );
+    return <StatusBadge tone="warning">Needs action</StatusBadge>;
   }
   if (status === "approved") {
-    return (
-      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300">
-        Approved
-      </span>
-    );
+    return <StatusBadge tone="success">Approved</StatusBadge>;
   }
-  return (
-    <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-      Denied
-    </span>
-  );
+  return <StatusBadge tone="danger">Denied</StatusBadge>;
 }
 
 function AutoRoleRequestsCardComponent({
@@ -149,7 +139,7 @@ function AutoRoleRequestsCardComponent({
   useAdaptivePolling(loadRequests, [selectedGuildId]);
 
   return (
-    <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300">
+    <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <ShieldCheck className="h-4 w-4" />
@@ -161,14 +151,14 @@ function AutoRoleRequestsCardComponent({
       </CardHeader>
       <CardContent className="space-y-4">
         {error ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className={dashboardError}>
             {error}
           </div>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="rounded-full px-3 py-1">
-            Need action: {counts.pending}
+            Needs action: {counts.pending}
           </Badge>
           <Badge variant="secondary" className="rounded-full px-3 py-1">
             Approved: {counts.approved}
@@ -266,7 +256,7 @@ function AutoRoleRequestsCardComponent({
             </TableBody>
           </Table>
         ) : (
-          <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className={dashboardEmpty}>
             No auto role requests found.
           </div>
         )}

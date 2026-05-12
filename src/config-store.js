@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const { buildPgSslConfig } = require('./lib/pg-ssl');
+const { buildPgSslConfig, sanitizePgConnectionString } = require('./lib/pg-ssl');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const POSTGRES_POOL_MAX = Number.parseInt(
@@ -13,7 +13,7 @@ if (!DATABASE_URL) {
 
 const pool = DATABASE_URL
   ? new Pool({
-      connectionString: DATABASE_URL,
+      connectionString: sanitizePgConnectionString(DATABASE_URL),
       ssl: buildPgSslConfig(),
       max: Number.isFinite(POSTGRES_POOL_MAX) && POSTGRES_POOL_MAX > 0
         ? POSTGRES_POOL_MAX
@@ -36,6 +36,7 @@ async function query(text, params) {
 }
 
 let lfgEnabledColumnEnsured = false;
+let lfgReminderColumnsEnsured = false;
 let tempVoiceLfgEnabledColumnEnsured = false;
 let tempVoicePromptMessageColumnEnsured = false;
 let tempVoiceChannelNameColumnEnsured = false;
@@ -133,6 +134,21 @@ async function ensureTempVoiceLfgEnabledColumn() {
     tempVoiceLfgEnabledColumnEnsured = true;
   } catch (error) {
     console.error('Failed to ensure temp_voice_channels.lfg_enabled column:', error);
+  }
+}
+
+async function ensureJoinToCreateReminderColumns() {
+  if (lfgReminderColumnsEnsured) return;
+  try {
+    await query(
+      'ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE'
+    );
+    await query(
+      'ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30'
+    );
+    lfgReminderColumnsEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure join_to_create_lobbies LFG reminder columns:', error);
   }
 }
 
@@ -303,6 +319,7 @@ async function ensurePersistentLfgMessageTable() {
 
 async function getGuildConfig(guildId) {
   await ensureJoinToCreateLfgEnabledColumn();
+  await ensureJoinToCreateReminderColumns();
   const configRes = await query(
     'SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1',
     [guildId]
@@ -316,7 +333,7 @@ async function getGuildConfig(guildId) {
   let lobbyRes;
   try {
     lobbyRes = await query(
-      'SELECT lobby_channel_id, role_id, lfg_enabled FROM join_to_create_lobbies WHERE guild_id = $1',
+      'SELECT lobby_channel_id, role_id, lfg_enabled, lfg_reminder_enabled, lfg_reminder_seconds FROM join_to_create_lobbies WHERE guild_id = $1',
       [guildId]
     );
   } catch (error) {
@@ -330,6 +347,8 @@ async function getGuildConfig(guildId) {
     channelId: row.lobby_channel_id,
     roleId: row.role_id ?? null,
     lfgEnabled: row.lfg_enabled ?? true,
+    lfgReminderEnabled: row.lfg_reminder_enabled ?? false,
+    lfgReminderSeconds: row.lfg_reminder_seconds ?? 30,
   }));
   const joinToCreateLobbyIds = joinToCreateLobbies
     .filter((row) => row.roleId)

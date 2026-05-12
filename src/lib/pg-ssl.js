@@ -52,4 +52,18 @@ function buildPgSslConfig() {
   return ssl;
 }
 
-module.exports = { buildPgSslConfig };
+function sanitizePgConnectionString(connectionString) {
+  try {
+    const parsed = new URL(connectionString);
+    parsed.searchParams.delete('sslmode');
+    parsed.searchParams.delete('ssl');
+    parsed.searchParams.delete('sslcert');
+    parsed.searchParams.delete('sslkey');
+    parsed.searchParams.delete('sslrootcert');
+    return parsed.toString();
+  } catch {
+    return connectionString;
+  }
+}
+
+module.exports = { buildPgSslConfig, sanitizePgConnectionString };

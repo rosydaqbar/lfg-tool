@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const { Pool } = require('pg');
-const { buildPgSslConfig } = require('../src/lib/pg-ssl');
+const { buildPgSslConfig, sanitizePgConnectionString } = require('../src/lib/pg-ssl');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -29,7 +29,7 @@ const expectedIndexes = [
 
 async function main() {
   const pool = new Pool({
-    connectionString: DATABASE_URL,
+    connectionString: sanitizePgConnectionString(DATABASE_URL),
     ssl: buildPgSslConfig(),
   });
 

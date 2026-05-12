@@ -4,7 +4,6 @@ import { memo, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -22,6 +21,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { StatusBadge } from "@/components/status-badge";
+import { dashboardCardStrong, dashboardCodeBlock, dashboardError, dashboardInset, dashboardStepper } from "@/components/ui/patterns";
 
 type ResetSettingsSectionProps = {
   selectedGuildId: string;
@@ -51,7 +52,7 @@ type BotStatusResponse = {
 
 function CommandBlock({ children }: { children: string }) {
   return (
-    <div className="mt-3 whitespace-pre-wrap rounded-xl border border-border/70 bg-gradient-to-b from-muted to-background px-3 py-2 font-mono text-xs text-foreground shadow-sm">
+    <div className={`mt-3 whitespace-pre-wrap ${dashboardCodeBlock}`}>
       {children}
     </div>
   );
@@ -102,8 +103,12 @@ function ResetSettingsSectionComponent({
     async function loadBotStatus() {
       setStatusLoading(true);
       try {
-        const response = await fetch("/api/bot/status", { cache: "no-store" });
+        const params = new URLSearchParams({ guildId: trimmedGuildId });
+        const response = await fetch(`/api/bot/status?${params.toString()}`, { cache: "no-store" });
         const payload = (await response.json().catch(() => null)) as BotStatusResponse | null;
+        if (!response.ok) {
+          throw new Error(payload?.error || "Unable to check bot status right now.");
+        }
         if (!mounted) return;
         setBotStatus(payload);
       } catch {
@@ -120,11 +125,15 @@ function ResetSettingsSectionComponent({
       }
     }
 
-    loadBotStatus();
+    if (trimmedGuildId) {
+      loadBotStatus();
+    } else {
+      setStatusLoading(false);
+    }
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [trimmedGuildId]);
 
   async function handleReset() {
     if (!trimmedGuildId) {
@@ -181,24 +190,24 @@ function ResetSettingsSectionComponent({
 
   return (
     <div className="space-y-6">
-      <Card className="border-border/70 bg-card/95 shadow-xl shadow-black/5">
+      <Card className={dashboardCardStrong}>
         <CardHeader className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-lg">Bot status</CardTitle>
             {statusLoading ? (
-              <Badge variant="secondary" className="rounded-full px-3 py-1">Checking...</Badge>
+              <StatusBadge tone="loading" className="px-3 py-1" dot>Checking...</StatusBadge>
             ) : botStatus?.online ? (
-              <Badge className="rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-emerald-800">
+              <StatusBadge tone="success" className="px-3 py-1" dot>
                 Online
-              </Badge>
+              </StatusBadge>
             ) : botStatus?.status === "unverified" ? (
-              <Badge className="rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-amber-800">
+              <StatusBadge tone="warning" className="px-3 py-1" dot>
                 Unverified
-              </Badge>
+              </StatusBadge>
             ) : (
-              <Badge className="rounded-full border border-red-500/40 bg-red-500/15 px-3 py-1 text-red-800">
+              <StatusBadge tone="danger" className="px-3 py-1" dot>
                 Offline
-              </Badge>
+              </StatusBadge>
             )}
           </div>
           <CardDescription>
@@ -212,16 +221,19 @@ function ResetSettingsSectionComponent({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-xl border border-border/60 bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+          <div className={`${dashboardInset} text-sm text-muted-foreground`}>
             Check method: <code>{botStatus?.source === "discord_api" ? "Discord API" : "Unknown"}</code>
           </div>
 
           {!statusLoading && botStatus?.bot ? (
-            <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+            <div className={`${dashboardInset} text-sm text-muted-foreground`}>
               Bot: <code>{botStatus.bot.displayName}</code> (<code>{botStatus.bot.id}</code>)
               {typeof botStatus.inSelectedGuild === "boolean" ? (
-                <span>
-                  {" "}• Selected guild membership: <code>{botStatus.inSelectedGuild ? "Joined" : "Not joined"}</code>
+                <span className="inline-flex items-center gap-2">
+                  <span>• Selected guild bot:</span>
+                  <StatusBadge tone={botStatus.inSelectedGuild ? "success" : "danger"} dot>
+                    {botStatus.inSelectedGuild ? "Installed" : "Invite bot"}
+                  </StatusBadge>
                 </span>
               ) : null}
             </div>
@@ -257,7 +269,7 @@ function ResetSettingsSectionComponent({
               </div>
 
               {deployTab === "local" ? (
-                <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/70 divide-y divide-border/60 shadow-sm">
+                <div className={dashboardStepper}>
                   <StepCard step={1} title="Complete setup first">
                     <p>Open <code>/setup</code> and finish every step until Step 8 (Finalize).</p>
                     <p>This creates and saves all required bot settings.</p>
@@ -344,7 +356,7 @@ function ResetSettingsSectionComponent({
               ) : null}
 
               {deployTab === "railway" ? (
-                <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/70 divide-y divide-border/60 shadow-sm">
+                <div className={dashboardStepper}>
                   <StepCard step={1} title="Create Railway project">
                     Open Railway and create a new project.
                   </StepCard>
@@ -381,7 +393,7 @@ NEXTAUTH_SECRET=your_nextauth_secret</CommandBlock>
               ) : null}
 
               {deployTab === "railway-cli" ? (
-                <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/70 divide-y divide-border/60 shadow-sm">
+                <div className={dashboardStepper}>
                   <StepCard step={1} title="Install CLI">
                     Run:
                     <CommandBlock>npm i -g @railway/cli</CommandBlock>
@@ -439,7 +451,7 @@ NEXTAUTH_SECRET=your_nextauth_secret</CommandBlock>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <div className={`${dashboardError} px-3 py-2 text-xs`}>
             This action is destructive. You must type the current setup Guild ID to confirm.
           </div>
           <Dialog

@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, Loader2, Plus, Radio, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -21,6 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { dashboardCard, dashboardEmpty, dashboardInset, dashboardPanel } from "@/components/ui/patterns";
 import {
   Table,
   TableBody,
@@ -42,6 +44,8 @@ type VoiceSettingsSectionProps = {
   enabledVoiceChannelIds: string[];
   onAddLobbyChannel: (channelId: string, roleId: string) => void;
   onToggleLobbyLfg: (channelId: string, lfgEnabled: boolean) => void;
+  onToggleLobbyReminder: (channelId: string, lfgReminderEnabled: boolean) => void;
+  onLobbyReminderSecondsChange: (channelId: string, lfgReminderSeconds: number) => void;
   onRemoveLobbyChannel: (channelId: string) => void;
   onAddEnabledVoiceChannel: (channelId: string) => void;
   onRemoveEnabledVoiceChannel: (channelId: string) => void;
@@ -58,6 +62,8 @@ function VoiceSettingsSectionComponent({
   enabledVoiceChannelIds,
   onAddLobbyChannel,
   onToggleLobbyLfg,
+  onToggleLobbyReminder,
+  onLobbyReminderSecondsChange,
   onRemoveLobbyChannel,
   onAddEnabledVoiceChannel,
   onRemoveEnabledVoiceChannel,
@@ -119,7 +125,7 @@ function VoiceSettingsSectionComponent({
   );
 
   return (
-    <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200">
+    <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200`}>
       <CardHeader className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -151,7 +157,7 @@ function VoiceSettingsSectionComponent({
           </div>
         ) : voiceChannels.length ? (
           <div className="space-y-6">
-            <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+            <div className={`space-y-4 ${dashboardPanel}`}>
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium">Join-to-Create lobbies</div>
                 <Badge variant="secondary" className="rounded-full px-3 py-1">
@@ -277,6 +283,8 @@ function VoiceSettingsSectionComponent({
                     <TableHead>Lobby channel</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead>Enable LFG</TableHead>
+                    <TableHead>Enable Reminder</TableHead>
+                    <TableHead>Reminder Time</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -320,6 +328,38 @@ function VoiceSettingsSectionComponent({
                             </span>
                           </div>
                         </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={lobby.lfgReminderEnabled}
+                              disabled={!lobby.lfgEnabled}
+                              onCheckedChange={(checked) =>
+                                onToggleLobbyReminder(lobby.channelId, checked)
+                              }
+                              aria-label={`Enable LFG reminder for ${channel?.name ?? lobby.channelId}`}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {lobby.lfgReminderEnabled ? "Enabled" : "Disabled"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={5}
+                              max={3600}
+                              value={lobby.lfgReminderSeconds ?? 30}
+                              disabled={!lobby.lfgEnabled || !lobby.lfgReminderEnabled}
+                              onChange={(event) =>
+                                onLobbyReminderSecondsChange(lobby.channelId, Number(event.target.value))
+                              }
+                              className="h-8 w-24"
+                              aria-label={`Reminder time for ${channel?.name ?? lobby.channelId}`}
+                            />
+                            <span className="text-xs text-muted-foreground">sec</span>
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button
                             variant="ghost"
@@ -350,14 +390,14 @@ function VoiceSettingsSectionComponent({
               </div>
             </div>
 
-            <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+            <div className={`space-y-4 ${dashboardPanel}`}>
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium">Voice Log channels</div>
                 <Badge variant="secondary" className="rounded-full px-3 py-1">
                   Manual {enabledVoiceChannelIds.length}
                 </Badge>
               </div>
-              <div className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
+              <div className={`${dashboardInset} text-xs text-muted-foreground`}>
                 Temp voice channels are logged automatically. Add manual channels here for
                 log-only tracking (no voice settings panel).
               </div>
@@ -487,7 +527,7 @@ function VoiceSettingsSectionComponent({
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className={dashboardEmpty}>
             No voice channels were found for this guild.
           </div>
         )}

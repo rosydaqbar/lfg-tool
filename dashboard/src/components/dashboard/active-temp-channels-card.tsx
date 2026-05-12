@@ -17,6 +17,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/status-badge";
+import { dashboardCard, dashboardEmpty, dashboardError } from "@/components/ui/patterns";
 import type { TempChannel } from "./types";
 import { useAdaptivePolling } from "./use-adaptive-polling";
 
@@ -85,7 +87,7 @@ function ActiveTempChannelsCardComponent({
   );
 
   return (
-    <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300">
+    <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <Volume2 className="h-4 w-4" />
@@ -97,7 +99,7 @@ function ActiveTempChannelsCardComponent({
       </CardHeader>
       <CardContent className="space-y-4">
         {loadError ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className={dashboardError}>
             {loadError}
           </div>
         ) : null}
@@ -151,21 +153,13 @@ function ActiveTempChannelsCardComponent({
                     </TableCell>
                     <TableCell>
                       {item.existsInDiscord === false ? (
-                        <span className="rounded-full border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-                          Not found
-                        </span>
+                        <StatusBadge tone="danger">Not found</StatusBadge>
                       ) : item.existsInDiscord === null ? (
-                        <span className="rounded-full border border-border bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
-                          Unknown
-                        </span>
+                        <StatusBadge tone="muted">Unknown</StatusBadge>
                       ) : (item.activeCount ?? item.activeUsers?.length ?? 0) === 0 ? (
-                        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-300">
-                          Empty
-                        </span>
+                        <StatusBadge tone="warning">Empty</StatusBadge>
                       ) : (
-                        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300">
-                          Exists
-                        </span>
+                        <StatusBadge tone="success">Exists</StatusBadge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -252,7 +246,7 @@ function ActiveTempChannelsCardComponent({
             </TableBody>
           </Table>
         ) : (
-          <div className="rounded-xl border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className={dashboardEmpty}>
             No active temp channels found.
           </div>
         )}

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LayoutDashboard, Settings } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, RefreshCw, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { dashboardCard, dashboardError, dashboardInset, dashboardWarning } from "@/components/ui/patterns";
 
 import { ChannelConfigCards } from "@/components/dashboard/channel-config-cards";
 import { HeaderSection } from "@/components/dashboard/header-section";
@@ -24,6 +25,8 @@ import type {
   AutoRoleConfig,
   Role,
   RolesResponse,
+  GuildsResponse,
+  ManageableGuild,
 } from "@/components/dashboard/types";
 
 const DEFAULT_AUTO_ROLE_CONFIG: AutoRoleConfig = {
@@ -34,6 +37,16 @@ const DEFAULT_AUTO_ROLE_CONFIG: AutoRoleConfig = {
   requireAdminApproval: false,
   approvalChannelId: null,
 };
+
+const SELECTED_GUILD_STORAGE_KEY = "lfg-tool:selected-guild-id";
+
+function mergeGuilds(current: ManageableGuild[], incoming: ManageableGuild[]) {
+  const guildsById = new Map(current.map((guild) => [guild.id, guild]));
+  for (const guild of incoming) {
+    guildsById.set(guild.id, guild);
+  }
+  return Array.from(guildsById.values());
+}
 
 function normalizeAutoRoleConfig(
   value: Partial<AutoRoleConfig> | null | undefined
@@ -88,14 +101,12 @@ function normalizeAutoRoleConfig(
 
 export default function DashboardClient({
   userName,
-  selectedGuildId,
-  accessLabel,
 }: {
   userName: string;
-  selectedGuildId: string;
-  accessLabel: "Owner" | "Admin";
 }) {
   const router = useRouter();
+  const [guilds, setGuilds] = useState<ManageableGuild[]>([]);
+  const [selectedGuildId, setSelectedGuildId] = useState("");
   const [activeTab, setActiveTab] = useState<"dashboard" | "settings">("dashboard");
   const [detailView, setDetailView] = useState<
     "active-temp" | "voice-log" | "leaderboard" | "auto-role" | null
@@ -112,13 +123,102 @@ export default function DashboardClient({
   const [autoRoleConfig, setAutoRoleConfig] = useState<AutoRoleConfig>(
     DEFAULT_AUTO_ROLE_CONFIG
   );
+  const [loadingGuilds, setLoadingGuilds] = useState(true);
+  const [refreshingGuilds, setRefreshingGuilds] = useState(false);
+  const [loadingMoreGuilds, setLoadingMoreGuilds] = useState(false);
+  const [hasMoreGuilds, setHasMoreGuilds] = useState(false);
+  const [nextGuildOffset, setNextGuildOffset] = useState(0);
+  const [guildPickerOpen, setGuildPickerOpen] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const loadGuildPage = useCallback(async ({
+    offset,
+    reset,
+    selectedGuildId: selectedGuildIdForRequest,
+  }: {
+    offset: number;
+    reset: boolean;
+    selectedGuildId?: string;
+  }) => {
+    const params = new URLSearchParams({
+      limit: "10",
+      offset: String(offset),
+    });
+    if (selectedGuildIdForRequest) {
+      params.set("selectedGuildId", selectedGuildIdForRequest);
+    }
+
+    const response = await fetch(`/api/guilds?${params.toString()}`, { cache: "no-store" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error || "Failed to load guilds");
+    }
+
+    const payload = (await response.json()) as GuildsResponse;
+    const nextGuilds = payload.guilds ?? [];
+    const guildsWithSelected = payload.selectedGuild
+      ? mergeGuilds(nextGuilds, [payload.selectedGuild])
+      : nextGuilds;
+
+    setGuilds((current) => reset ? guildsWithSelected : mergeGuilds(current, guildsWithSelected));
+    setHasMoreGuilds(payload.hasMore === true);
+    setNextGuildOffset(payload.nextOffset ?? offset + 10);
+
+    if (selectedGuildIdForRequest && !payload.selectedGuild) {
+      localStorage.removeItem(SELECTED_GUILD_STORAGE_KEY);
+      setSelectedGuildId("");
+      setGuildPickerOpen(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const storedGuildId = localStorage.getItem(SELECTED_GUILD_STORAGE_KEY)?.trim() ?? "";
+    setSelectedGuildId(storedGuildId);
+    setGuildPickerOpen(!storedGuildId);
+    setLoadingGuilds(true);
+
+    loadGuildPage({ offset: 0, reset: true, selectedGuildId: storedGuildId })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load guilds");
+      })
+      .finally(() => {
+        if (active) setLoadingGuilds(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [loadGuildPage]);
+
   useEffect(() => {
     if (!selectedGuildId) {
-      setError("No guild selected in setup. Open /setup and pick a guild.");
+      if (!loadingGuilds && guilds.length === 0) {
+        setError("No manageable Discord guilds found for this account.");
+      } else {
+        setError(null);
+      }
+      return;
+    }
+    const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
+    if (selectedGuild && selectedGuild.status === "invite_bot") {
+      setError(null);
+      setVoiceChannels([]);
+      setTextChannels([]);
+      setRoles([]);
+      setEnabledVoiceIds([]);
+      setJoinToCreateLobbies([]);
+      setAutoRoleConfig(DEFAULT_AUTO_ROLE_CONFIG);
+      setLogChannelId("");
+      setLfgChannelId("");
+      setLoadingConfig(false);
+      return;
+    }
+    if (activeTab !== "settings") {
+      setLoadingConfig(false);
       return;
     }
     let active = true;
@@ -169,6 +269,8 @@ export default function DashboardClient({
             channelId: item.channelId,
             roleId: item.roleId,
             lfgEnabled: item.lfgEnabled ?? true,
+            lfgReminderEnabled: item.lfgReminderEnabled ?? false,
+            lfgReminderSeconds: item.lfgReminderSeconds ?? 30,
           }))
         );
         setAutoRoleConfig(normalizeAutoRoleConfig(config.autoRoleConfig));
@@ -184,7 +286,7 @@ export default function DashboardClient({
     return () => {
       active = false;
     };
-  }, [selectedGuildId]);
+  }, [activeTab, guilds, loadingGuilds, selectedGuildId]);
 
   const handleAddLobbyChannel = useCallback((channelId: string, roleId: string) => {
     if (!channelId || !roleId) return;
@@ -199,7 +301,7 @@ export default function DashboardClient({
         };
         return next;
       }
-      return [...prev, { channelId, roleId, lfgEnabled: true }];
+      return [...prev, { channelId, roleId, lfgEnabled: true, lfgReminderEnabled: false, lfgReminderSeconds: 30 }];
     });
   }, []);
 
@@ -207,6 +309,25 @@ export default function DashboardClient({
     setJoinToCreateLobbies((prev) =>
       prev.map((item) =>
         item.channelId === channelId ? { ...item, lfgEnabled } : item
+      )
+    );
+  }, []);
+
+  const handleToggleLobbyReminder = useCallback((channelId: string, lfgReminderEnabled: boolean) => {
+    setJoinToCreateLobbies((prev) =>
+      prev.map((item) =>
+        item.channelId === channelId ? { ...item, lfgReminderEnabled } : item
+      )
+    );
+  }, []);
+
+  const handleLobbyReminderSecondsChange = useCallback((channelId: string, lfgReminderSeconds: number) => {
+    const safeSeconds = Number.isFinite(lfgReminderSeconds)
+      ? Math.max(5, Math.min(3600, Math.floor(lfgReminderSeconds)))
+      : 30;
+    setJoinToCreateLobbies((prev) =>
+      prev.map((item) =>
+        item.channelId === channelId ? { ...item, lfgReminderSeconds: safeSeconds } : item
       )
     );
   }, []);
@@ -263,6 +384,8 @@ export default function DashboardClient({
       channelId: item.channelId.trim(),
       roleId: (item.roleId ?? "").trim(),
       lfgEnabled: item.lfgEnabled ?? true,
+      lfgReminderEnabled: item.lfgReminderEnabled ?? false,
+      lfgReminderSeconds: Math.max(5, Math.min(3600, Math.floor(item.lfgReminderSeconds ?? 30))),
     }));
 
     try {
@@ -288,6 +411,13 @@ export default function DashboardClient({
       toast.success("Configuration saved", {
         description: "The bot will pick up the new settings shortly.",
       });
+      setGuilds((prev) =>
+        prev.map((guild) =>
+          guild.id === trimmedGuildId
+            ? { ...guild, configured: true, status: "ready" as const }
+            : guild
+        )
+      );
     } catch (err) {
       toast.error("Save failed", {
         description:
@@ -305,6 +435,44 @@ export default function DashboardClient({
     selectedGuildId,
   ]);
 
+  const handleRefreshGuilds = useCallback(async () => {
+    setRefreshingGuilds(true);
+    setError(null);
+    try {
+      await loadGuildPage({ offset: 0, reset: true, selectedGuildId });
+      toast.success("Bot status refreshed");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to refresh guild status";
+      setError(message);
+      toast.error("Refresh failed", { description: message });
+    } finally {
+      setRefreshingGuilds(false);
+    }
+  }, [loadGuildPage, selectedGuildId]);
+
+  const handleLoadMoreGuilds = useCallback(async () => {
+    if (!hasMoreGuilds || loadingMoreGuilds) return;
+    setLoadingMoreGuilds(true);
+    setError(null);
+    try {
+      await loadGuildPage({ offset: nextGuildOffset, reset: false, selectedGuildId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load more guilds";
+      setError(message);
+      toast.error("Load more failed", { description: message });
+    } finally {
+      setLoadingMoreGuilds(false);
+    }
+  }, [hasMoreGuilds, loadingMoreGuilds, loadGuildPage, nextGuildOffset, selectedGuildId]);
+
+  const handleGuildChange = useCallback((guildId: string) => {
+    localStorage.setItem(SELECTED_GUILD_STORAGE_KEY, guildId);
+    setSelectedGuildId(guildId);
+    setActiveTab("dashboard");
+    setDetailView(null);
+    setGuildPickerOpen(false);
+  }, []);
+
   const memoVoiceChannels = useMemo(() => voiceChannels, [voiceChannels]);
   const memoTextChannels = useMemo(() => textChannels, [textChannels]);
   const memoRoles = useMemo(() => roles, [roles]);
@@ -318,21 +486,96 @@ export default function DashboardClient({
     router.refresh();
   }, [router]);
 
+  const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId) ?? null;
+  const accessLabel = selectedGuild?.accessLabel ?? "Admin";
+  const canOpenGuildDashboard = selectedGuild?.status === "ready";
+  const canOpenGuildSettings = selectedGuild?.status === "ready" || selectedGuild?.status === "needs_setup";
+
   return (
     <div className="flex flex-col gap-10">
       <HeaderSection
         userName={userName}
         selectedGuildId={selectedGuildId}
+        selectedGuild={selectedGuild}
+        guilds={guilds}
+        hasMoreGuilds={hasMoreGuilds}
+        loadingMoreGuilds={loadingMoreGuilds}
+        guildPickerOpen={guildPickerOpen}
+        requireGuildSelection={!selectedGuildId}
         accessLabel={accessLabel}
+        refreshingGuilds={loadingGuilds || refreshingGuilds}
+        onGuildPickerOpenChange={(open) => setGuildPickerOpen(!selectedGuildId || open)}
+        onGuildChange={handleGuildChange}
+        onLoadMoreGuilds={handleLoadMoreGuilds}
+        onRefreshGuilds={handleRefreshGuilds}
       />
 
+      {loadingGuilds ? (
+        <div className={`${dashboardInset} text-sm text-muted-foreground`}>
+          Loading your manageable Discord servers...
+        </div>
+      ) : null}
+
       {error ? (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className={dashboardError}>
           {error}
         </div>
       ) : null}
 
-      <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 backdrop-blur">
+      {selectedGuild?.status === "invite_bot" ? (
+        <div className={`${dashboardCard} rounded-lg p-6`}>
+          <h2 className="text-lg font-semibold text-foreground">Invite the bot to {selectedGuild.name}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            You can manage this Discord server, but the bot is not installed there yet. Invite the bot before opening logs or settings for this guild.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {selectedGuild.inviteUrl ? (
+              <Button asChild>
+                <a href={selectedGuild.inviteUrl} target="_blank" rel="noreferrer">
+                  Invite Bot
+                </a>
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRefreshGuilds}
+              disabled={refreshingGuilds}
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshingGuilds ? "animate-spin" : ""}`} />
+              Refresh Status
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedGuild?.status === "needs_setup" ? (
+        <div className={`${dashboardWarning} p-6`}>
+          <h2 className="text-lg font-semibold text-foreground">Finish guild setup for {selectedGuild.name}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Pick a log channel in Settings, then save. After that, this guild dashboard can show logs, stats, and live activity.
+          </p>
+          <Button type="button" className="mt-4" onClick={() => setActiveTab("settings")}>
+            Open Settings
+          </Button>
+        </div>
+      ) : null}
+
+      {!selectedGuildId && !loadingGuilds ? (
+        <div className={`${dashboardCard} rounded-lg p-6`}>
+          <h2 className="text-lg font-semibold text-foreground">Select a server to continue</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Pick one Discord server first. The dashboard will save it on this device and only load data for that server.
+          </p>
+          <Button type="button" className="mt-4" onClick={() => setGuildPickerOpen(true)}>
+            Choose Server
+          </Button>
+        </div>
+      ) : null}
+
+      {selectedGuildId ? (
+        <>
+      <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card/80 p-2 backdrop-blur">
         <Button
           type="button"
           variant={activeTab === "dashboard" ? "default" : "ghost"}
@@ -359,11 +602,11 @@ export default function DashboardClient({
         </Button>
       </div>
 
-      {activeTab === "dashboard" && !detailView ? (
+      {activeTab === "dashboard" && !detailView && canOpenGuildDashboard ? (
         <DashboardOverview selectedGuildId={selectedGuildId} onOpenDetail={setDetailView} />
       ) : null}
 
-      {activeTab === "dashboard" && detailView ? (
+      {activeTab === "dashboard" && detailView && canOpenGuildDashboard ? (
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-4">
             <Button
@@ -395,7 +638,7 @@ export default function DashboardClient({
         </div>
       ) : null}
 
-      {activeTab === "settings" ? (
+      {activeTab === "settings" && canOpenGuildSettings ? (
         <>
           <ChannelConfigCards
             loadingConfig={loadingConfig}
@@ -417,6 +660,8 @@ export default function DashboardClient({
             enabledVoiceChannelIds={enabledVoiceIds}
             onAddLobbyChannel={handleAddLobbyChannel}
             onToggleLobbyLfg={handleToggleLobbyLfg}
+            onToggleLobbyReminder={handleToggleLobbyReminder}
+            onLobbyReminderSecondsChange={handleLobbyReminderSecondsChange}
             onRemoveLobbyChannel={handleRemoveLobbyChannel}
             onAddEnabledVoiceChannel={handleAddEnabledVoiceChannel}
             onRemoveEnabledVoiceChannel={handleRemoveEnabledVoiceChannel}
@@ -437,6 +682,8 @@ export default function DashboardClient({
             selectedGuildId={selectedGuildId}
             onResetComplete={handleResetComplete}
           />
+        </>
+      ) : null}
         </>
       ) : null}
 

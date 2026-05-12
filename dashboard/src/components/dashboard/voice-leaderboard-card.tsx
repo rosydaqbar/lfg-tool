@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { dashboardCard, dashboardEmpty, dashboardError } from "@/components/ui/patterns";
 import type { VoiceDeleteLeaderboardEntry } from "./types";
 import { useAdaptivePolling } from "./use-adaptive-polling";
 
@@ -152,7 +153,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
   const canNext = rows.length === 20;
 
   return (
-    <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-[450ms]">
+    <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-[450ms]`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <Trophy className="h-4 w-4" />
@@ -164,7 +165,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
       </CardHeader>
       <CardContent className="space-y-4">
         {error ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className={dashboardError}>
             {error}
           </div>
         ) : null}
@@ -226,7 +227,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
             </TableBody>
           </Table>
         ) : (
-          <div className="text-xs text-muted-foreground">Belum ada data leaderboard.</div>
+          <div className={dashboardEmpty}>Belum ada data leaderboard.</div>
         )}
 
         <div className="flex items-center justify-between gap-2">

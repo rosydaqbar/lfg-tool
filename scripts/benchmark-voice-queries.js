@@ -3,7 +3,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-const { buildPgSslConfig } = require('../src/lib/pg-ssl');
+const { buildPgSslConfig, sanitizePgConnectionString } = require('../src/lib/pg-ssl');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -29,7 +29,7 @@ async function queryPlan(client, sql, params) {
 
 async function main() {
   const pool = new Pool({
-    connectionString: DATABASE_URL,
+    connectionString: sanitizePgConnectionString(DATABASE_URL),
     ssl: buildPgSslConfig(),
   });
 

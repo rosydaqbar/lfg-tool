@@ -1,6 +1,5 @@
 import { memo, useRef, useState } from "react";
 import { AlertTriangle, Clock3, ShieldCheck, Trophy, Volume2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,6 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/status-badge";
+import { dashboardCard, dashboardEmptyCompact, dashboardError, dashboardInset, dashboardWarningCard } from "@/components/ui/patterns";
 import type {
   AutoRoleRequest,
   TempVoiceDeleteLog,
@@ -100,12 +101,12 @@ function formatRuleKey(ruleKey: string) {
 
 function statusBadge(status: AutoRoleRequest["status"]) {
   if (status === "pending") {
-    return <Badge className="rounded-full bg-amber-500 text-white">Need action</Badge>;
+    return <StatusBadge tone="warning">Needs action</StatusBadge>;
   }
   if (status === "approved") {
-    return <Badge className="rounded-full bg-emerald-600 text-white">Approved</Badge>;
+    return <StatusBadge tone="success">Approved</StatusBadge>;
   }
-  return <Badge variant="destructive" className="rounded-full">Denied</Badge>;
+  return <StatusBadge tone="danger">Denied</StatusBadge>;
 }
 
 function DashboardOverviewComponent({
@@ -193,13 +194,13 @@ function DashboardOverviewComponent({
   return (
     <div className="space-y-6">
       {error ? (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className={dashboardError}>
           {error}
         </div>
       ) : null}
 
       {counts.pending > 0 ? (
-        <Card className="border-amber-500/40 bg-amber-500/10 shadow-lg shadow-black/5 animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-100">
+        <Card className={`${dashboardWarningCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-100`}>
           <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg text-amber-900 dark:text-amber-100">
@@ -265,7 +266,7 @@ function DashboardOverviewComponent({
       ) : null}
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-100">
+        <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-100`}>
           <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -281,7 +282,7 @@ function DashboardOverviewComponent({
           <CardContent className="space-y-3">
             {loading && !loadedOnce.current ? <Skeleton className="h-24 w-full" /> : null}
             {!loading && tempChannels.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+              <div className={dashboardEmptyCompact}>
                 No active temp channels found.
               </div>
             ) : null}
@@ -311,7 +312,7 @@ function DashboardOverviewComponent({
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-150">
+        <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-150`}>
           <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -327,7 +328,7 @@ function DashboardOverviewComponent({
           <CardContent className="space-y-3">
             {loading && !loadedOnce.current ? <Skeleton className="h-24 w-full" /> : null}
             {!loading && voiceLogs.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+              <div className={dashboardEmptyCompact}>
                 No voice log data yet.
               </div>
             ) : null}
@@ -346,7 +347,7 @@ function DashboardOverviewComponent({
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200">
+        <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-200`}>
           <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -361,15 +362,15 @@ function DashboardOverviewComponent({
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl border border-border bg-muted/30 p-3">
+              <div className={dashboardInset}>
                 <div className="text-xs text-muted-foreground">Users</div>
                 <div className="text-xl font-semibold">{leaderboard.totalUsers}</div>
               </div>
-              <div className="rounded-xl border border-border bg-muted/30 p-3">
+              <div className={dashboardInset}>
                 <div className="text-xs text-muted-foreground">Hours</div>
                 <div className="text-xl font-semibold">{Math.floor(leaderboard.totalMs / 3600000)}</div>
               </div>
-              <div className="rounded-xl border border-border bg-muted/30 p-3">
+              <div className={dashboardInset}>
                 <div className="text-xs text-muted-foreground">Sessions</div>
                 <div className="text-xl font-semibold">{leaderboard.totalSessions}</div>
               </div>
@@ -385,7 +386,7 @@ function DashboardOverviewComponent({
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 bg-card/80 shadow-lg shadow-black/5 backdrop-blur animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300">
+        <Card className={`${dashboardCard} animate-in fade-in-0 slide-in-from-bottom-4 duration-700 delay-300`}>
           <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">

@@ -292,6 +292,8 @@ export async function PUT(
       channelId?: string;
       roleId?: string;
       lfgEnabled?: boolean;
+      lfgReminderEnabled?: boolean;
+      lfgReminderSeconds?: number;
     }[];
     autoRoleConfig?: unknown;
   };
@@ -331,6 +333,12 @@ export async function PUT(
             roleId: typeof item.roleId === "string" ? item.roleId.trim() : "",
             lfgEnabled:
               typeof item.lfgEnabled === "boolean" ? item.lfgEnabled : true,
+            lfgReminderEnabled:
+              typeof item.lfgReminderEnabled === "boolean" ? item.lfgReminderEnabled : false,
+            lfgReminderSeconds:
+              Number.isFinite(Number(item.lfgReminderSeconds))
+                ? Math.max(5, Math.min(3600, Math.floor(Number(item.lfgReminderSeconds))))
+                : 30,
           },
         ])
     ).values()

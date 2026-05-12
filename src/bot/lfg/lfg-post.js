@@ -1,7 +1,7 @@
 const { MessageFlags } = require('discord.js');
 const { LFG_MESSAGE_INPUT_ID } = require('./constants');
 
-async function handleLfgPostModal(interaction, deps, channelId) {
+async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
   const {
     configStore,
     env,
@@ -13,7 +13,7 @@ async function handleLfgPostModal(interaction, deps, channelId) {
     isOwner,
   } = deps;
 
-  const guildId = interaction.guildId;
+  const guildId = options.guildId || interaction.guildId;
   const remaining = getCooldownRemainingMs(guildId, interaction.user.id);
   try {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -95,7 +95,15 @@ async function handleLfgPostModal(interaction, deps, channelId) {
       });
       return;
     }
-    const channel = await interaction.guild.channels
+    const guild = interaction.guild || await deps.client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) {
+      await interaction.editReply({
+        content: 'Unable to access the server for this LFG post.',
+      });
+      return;
+    }
+
+    const channel = await guild.channels
       .fetch(channelId)
       .catch(() => null);
     const createdTimestamp = Math.floor(
