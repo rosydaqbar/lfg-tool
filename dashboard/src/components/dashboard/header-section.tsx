@@ -23,7 +23,6 @@ type HeaderSectionProps = {
   hasMoreGuilds: boolean;
   loadingMoreGuilds: boolean;
   guildPickerOpen: boolean;
-  requireGuildSelection: boolean;
   accessLabel: "Owner" | "Admin";
   refreshingGuilds: boolean;
   onGuildPickerOpenChange: (open: boolean) => void;
@@ -40,7 +39,6 @@ function HeaderSectionComponent({
   hasMoreGuilds,
   loadingMoreGuilds,
   guildPickerOpen,
-  requireGuildSelection,
   accessLabel,
   refreshingGuilds,
   onGuildPickerOpenChange,
@@ -73,7 +71,7 @@ function HeaderSectionComponent({
               </span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             </Button>
-            <DialogContent showCloseButton={!requireGuildSelection} className="sm:max-w-xl">
+            <DialogContent className="sm:max-w-xl">
               <DialogHeader>
                 <DialogTitle>Select a server</DialogTitle>
                 <DialogDescription>
@@ -129,9 +127,11 @@ function HeaderSectionComponent({
             <RefreshCw className={`h-3.5 w-3.5 ${refreshingGuilds ? "animate-spin" : ""}`} />
             Refresh status
           </Button>
-          <span className="font-mono text-xs text-muted-foreground">
-            {selectedGuildId}
-          </span>
+          {selectedGuildId ? (
+            <span className="font-mono text-xs text-muted-foreground">
+              {selectedGuildId}
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="flex shrink-0 flex-nowrap items-center justify-end gap-3">

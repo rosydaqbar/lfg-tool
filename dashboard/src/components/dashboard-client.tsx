@@ -169,7 +169,6 @@ export default function DashboardClient({
     if (selectedGuildIdForRequest && !payload.selectedGuild) {
       localStorage.removeItem(SELECTED_GUILD_STORAGE_KEY);
       setSelectedGuildId("");
-      setGuildPickerOpen(true);
     }
   }, []);
 
@@ -177,7 +176,6 @@ export default function DashboardClient({
     let active = true;
     const storedGuildId = localStorage.getItem(SELECTED_GUILD_STORAGE_KEY)?.trim() ?? "";
     setSelectedGuildId(storedGuildId);
-    setGuildPickerOpen(!storedGuildId);
     setLoadingGuilds(true);
 
     loadGuildPage({ offset: 0, reset: true, selectedGuildId: storedGuildId })
@@ -196,11 +194,7 @@ export default function DashboardClient({
 
   useEffect(() => {
     if (!selectedGuildId) {
-      if (!loadingGuilds && guilds.length === 0) {
-        setError("No manageable Discord guilds found for this account.");
-      } else {
-        setError(null);
-      }
+      setError(null);
       return;
     }
     const selectedGuild = guilds.find((guild) => guild.id === selectedGuildId);
@@ -501,10 +495,9 @@ export default function DashboardClient({
         hasMoreGuilds={hasMoreGuilds}
         loadingMoreGuilds={loadingMoreGuilds}
         guildPickerOpen={guildPickerOpen}
-        requireGuildSelection={!selectedGuildId}
         accessLabel={accessLabel}
         refreshingGuilds={loadingGuilds || refreshingGuilds}
-        onGuildPickerOpenChange={(open) => setGuildPickerOpen(!selectedGuildId || open)}
+        onGuildPickerOpenChange={setGuildPickerOpen}
         onGuildChange={handleGuildChange}
         onLoadMoreGuilds={handleLoadMoreGuilds}
         onRefreshGuilds={handleRefreshGuilds}
@@ -557,18 +550,6 @@ export default function DashboardClient({
           </p>
           <Button type="button" className="mt-4" onClick={() => setActiveTab("settings")}>
             Open Settings
-          </Button>
-        </div>
-      ) : null}
-
-      {!selectedGuildId && !loadingGuilds ? (
-        <div className={`${dashboardCard} rounded-lg p-6`}>
-          <h2 className="text-lg font-semibold text-foreground">Select a server to continue</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Pick one Discord server first. The dashboard will save it on this device and only load data for that server.
-          </p>
-          <Button type="button" className="mt-4" onClick={() => setGuildPickerOpen(true)}>
-            Choose Server
           </Button>
         </div>
       ) : null}
