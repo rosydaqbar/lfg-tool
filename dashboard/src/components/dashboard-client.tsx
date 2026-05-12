@@ -130,6 +130,7 @@ export default function DashboardClient({
   const [nextGuildOffset, setNextGuildOffset] = useState(0);
   const [guildPickerOpen, setGuildPickerOpen] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
+  const [loadedSettingsGuildId, setLoadedSettingsGuildId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -209,9 +210,14 @@ export default function DashboardClient({
       setLogChannelId("");
       setLfgChannelId("");
       setLoadingConfig(false);
+      setLoadedSettingsGuildId(null);
       return;
     }
     if (activeTab !== "settings") {
+      setLoadingConfig(false);
+      return;
+    }
+    if (loadedSettingsGuildId === selectedGuildId) {
       setLoadingConfig(false);
       return;
     }
@@ -268,6 +274,7 @@ export default function DashboardClient({
           }))
         );
         setAutoRoleConfig(normalizeAutoRoleConfig(config.autoRoleConfig));
+        setLoadedSettingsGuildId(selectedGuildId);
       })
       .catch((err) => {
         if (!active) return;
@@ -280,7 +287,7 @@ export default function DashboardClient({
     return () => {
       active = false;
     };
-  }, [activeTab, guilds, loadingGuilds, selectedGuildId]);
+  }, [activeTab, guilds, loadedSettingsGuildId, loadingGuilds, selectedGuildId]);
 
   const handleAddLobbyChannel = useCallback((channelId: string, roleId: string) => {
     if (!channelId || !roleId) return;
@@ -462,6 +469,7 @@ export default function DashboardClient({
   const handleGuildChange = useCallback((guildId: string) => {
     localStorage.setItem(SELECTED_GUILD_STORAGE_KEY, guildId);
     setSelectedGuildId(guildId);
+    setLoadedSettingsGuildId(null);
     setActiveTab("dashboard");
     setDetailView(null);
     setGuildPickerOpen(false);
