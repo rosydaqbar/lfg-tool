@@ -119,17 +119,24 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     return `${header}\n\`\`\`text\n${truncate(body, maxBodyLength)}\n\`\`\``;
   }
 
-  function buildPromptResendSkippedEmbed({ args = [] }) {
+  function buildPromptSkippedEmbed({ args = [] }) {
     const [title, details] = args;
-    if (typeof title !== 'string' || !title.includes('Join-to-Create prompt resend skipped')) {
+    if (
+      typeof title !== 'string'
+      || !(
+        title.includes('Join-to-Create prompt refresh skipped')
+        || title.includes('Join-to-Create prompt resend skipped')
+      )
+    ) {
       return null;
     }
     if (!details || typeof details !== 'object') return null;
+    const action = title.includes('refresh') ? 'refresh' : 'resend';
 
     const fields = [
       {
         name: 'Status',
-        value: 'Aman untuk diabaikan. Ini biasanya terjadi ketika temp voice channel sudah dihapus atau ditinggalkan sebelum panel sempat dikirim ulang.',
+        value: 'Aman untuk diabaikan. Ini biasanya terjadi ketika temp voice channel sudah kosong, ditinggalkan, atau terhapus sebelum panel sempat diperbarui.',
       },
       {
         name: 'Channel',
@@ -167,8 +174,8 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     return {
       embeds: [
         {
-          title: 'Join-to-Create prompt resend dilewati',
-          description: 'Bot mencoba mengirim ulang panel kontrol JTC, tetapi Discord menolak karena kondisi channel/message sudah berubah.',
+          title: `Join-to-Create prompt ${action} dilewati`,
+          description: 'Bot mencoba memperbarui panel kontrol JTC, tetapi Discord menolak karena kondisi channel/message sudah berubah.',
           color: 0xf59e0b,
           fields,
           footer: {
@@ -181,7 +188,7 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
   }
 
   function buildDiscordMessagePayload(payload) {
-    const promptEmbed = buildPromptResendSkippedEmbed(payload);
+    const promptEmbed = buildPromptSkippedEmbed(payload);
     if (promptEmbed) return promptEmbed;
     return { content: buildContent(payload) };
   }
