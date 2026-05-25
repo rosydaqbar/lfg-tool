@@ -119,6 +119,73 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     return `${header}\n\`\`\`text\n${truncate(body, maxBodyLength)}\n\`\`\``;
   }
 
+  function buildPromptResendSkippedEmbed({ args = [] }) {
+    const [title, details] = args;
+    if (typeof title !== 'string' || !title.includes('Join-to-Create prompt resend skipped')) {
+      return null;
+    }
+    if (!details || typeof details !== 'object') return null;
+
+    const fields = [
+      {
+        name: 'Status',
+        value: 'Aman untuk diabaikan. Ini biasanya terjadi ketika temp voice channel sudah dihapus atau ditinggalkan sebelum panel sempat dikirim ulang.',
+      },
+      {
+        name: 'Channel',
+        value: details.channelId ? `<#${details.channelId}> (\`${formatDetailValue(details.channelId)}\`)` : '-',
+        inline: true,
+      },
+      {
+        name: 'Owner',
+        value: details.ownerId ? `<@${details.ownerId}> (\`${formatDetailValue(details.ownerId)}\`)` : '-',
+        inline: true,
+      },
+      {
+        name: 'Discord Code',
+        value: `\`${formatDetailValue(details.code)}\``,
+        inline: true,
+      },
+      {
+        name: 'Penyebab',
+        value: formatDetailValue(details.reason),
+      },
+      {
+        name: 'Yang dilakukan bot',
+        value: formatDetailValue(details.nextStep),
+      },
+    ];
+
+    if (details.previousMessageId) {
+      fields.splice(3, 0, {
+        name: 'Panel lama',
+        value: `\`${formatDetailValue(details.previousMessageId)}\``,
+        inline: true,
+      });
+    }
+
+    return {
+      embeds: [
+        {
+          title: 'Join-to-Create prompt resend dilewati',
+          description: 'Bot mencoba mengirim ulang panel kontrol JTC, tetapi Discord menolak karena kondisi channel/message sudah berubah.',
+          color: 0xf59e0b,
+          fields,
+          footer: {
+            text: 'Aman untuk diabaikan jika channel sudah kosong, ditinggalkan, atau sudah terhapus.',
+          },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    };
+  }
+
+  function buildDiscordMessagePayload(payload) {
+    const promptEmbed = buildPromptResendSkippedEmbed(payload);
+    if (promptEmbed) return promptEmbed;
+    return { content: buildContent(payload) };
+  }
+
   function buildSignature({ title = 'Bot Error', args = [], guildId, details }) {
     const formattedArgs = args.map((arg) => {
       if (arg instanceof Error || (arg && typeof arg === 'object' && (arg.stack || arg.message))) {
@@ -225,7 +292,7 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
       const channelIds = await getDestinationIds(payload.guildId);
       if (channelIds.length === 0) return;
 
-      const content = buildContent(payload);
+      const messagePayload = buildDiscordMessagePayload(payload);
       for (const channelId of channelIds) {
         const logChannel = await getLogChannel(channelId).catch((error) => {
           originalConsoleError('Failed to fetch error log channel:', error);
@@ -234,7 +301,7 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
         if (!logChannel || !logChannel.isTextBased()) continue;
 
         await logChannel.send({
-          content,
+          ...messagePayload,
           allowedMentions: { parse: [] },
         }).catch((error) => {
           originalConsoleError('Failed to send error report to log channel:', error);
