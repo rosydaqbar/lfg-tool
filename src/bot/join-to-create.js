@@ -155,16 +155,45 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
       ? '\nHint: Give bot permission to Manage Channels and Connect in this category.'
       : '';
 
-    const content = [
-      '### Join-to-Create Error',
-      `- Guild: \`${guildId || '-'}\``,
-      `- Lobby Channel: <#${lobbyChannelId}> (\`${lobbyChannelId}\`)`,
-      `- User: <@${memberId}> (\`${memberId}\`)`,
-      `- Error: \`${errorMessage}${errorCode}\`${missingPermHint}`,
-    ].join('\n');
-
     await logChannel.send({
-      content,
+      embeds: [
+        {
+          title: 'Join-to-Create Error',
+          description: 'Bot gagal membuat atau memindahkan user ke temp voice channel.',
+          color: 0xef4444,
+          fields: [
+            {
+              name: 'Guild',
+              value: `\`${guildId || '-'}\``,
+              inline: true,
+            },
+            {
+              name: 'Lobby Channel',
+              value: lobbyChannelId ? `<#${lobbyChannelId}> (\`${lobbyChannelId}\`)` : '-',
+              inline: true,
+            },
+            {
+              name: 'User',
+              value: memberId ? `<@${memberId}> (\`${memberId}\`)` : '-',
+              inline: true,
+            },
+            {
+              name: 'Error',
+              value: `\`${errorMessage}${errorCode}\``,
+            },
+            {
+              name: 'Catatan',
+              value: missingPermHint
+                ? 'Cek permission bot untuk Manage Channels dan Connect di kategori lobby.'
+                : 'Jika user sudah keluar dari lobby sebelum bot memindahkan mereka, error ini aman untuk diabaikan.',
+            },
+          ],
+          footer: {
+            text: 'Aman diabaikan jika terjadi sekali karena user keluar/jaringan terlambat; cek jika berulang.',
+          },
+          timestamp: new Date().toISOString(),
+        },
+      ],
       allowedMentions: { parse: [] },
     }).catch((sendError) => {
       console.error('Failed to send Join-to-Create error log:', sendError);

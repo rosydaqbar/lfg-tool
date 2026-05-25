@@ -187,10 +187,59 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     };
   }
 
+  function buildGenericErrorEmbed({ title = 'Bot Error', args = [], guildId, details }) {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const detailLines = normalizeDetails(details);
+    const rawBody = args.map(formatArg).join('\n');
+    const body = redact(rawBody || 'No error details provided.').replace(/```/g, "'''");
+    const fields = [
+      {
+        name: 'Time',
+        value: `<t:${timestamp}:F>`,
+        inline: true,
+      },
+    ];
+
+    if (guildId) {
+      fields.push({
+        name: 'Guild',
+        value: `\`${formatDetailValue(guildId)}\``,
+        inline: true,
+      });
+    }
+
+    if (detailLines.length) {
+      fields.push({
+        name: 'Context',
+        value: truncate(detailLines.join('\n'), 1024),
+      });
+    }
+
+    fields.push({
+      name: 'Detail',
+      value: truncate(body, 1024),
+    });
+
+    return {
+      embeds: [
+        {
+          title,
+          description: 'Bot menemukan error. Detail ringkas ada di bawah agar mudah dibaca tanpa membuka codeblock panjang.',
+          color: 0xef4444,
+          fields,
+          footer: {
+            text: 'Jika error berulang atau fitur berhenti bekerja, cek log runtime untuk stack trace lengkap.',
+          },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    };
+  }
+
   function buildDiscordMessagePayload(payload) {
     const promptEmbed = buildPromptSkippedEmbed(payload);
     if (promptEmbed) return promptEmbed;
-    return { content: buildContent(payload) };
+    return buildGenericErrorEmbed(payload);
   }
 
   function buildSignature({ title = 'Bot Error', args = [], guildId, details }) {
