@@ -1,4 +1,5 @@
 const util = require('node:util');
+const { MessageFlags } = require('discord.js');
 
 function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }) {
   const DEDUPE_MS = 60 * 1000;
@@ -119,7 +120,7 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     return `${header}\n\`\`\`text\n${truncate(body, maxBodyLength)}\n\`\`\``;
   }
 
-  function buildPromptSkippedEmbed({ args = [] }) {
+  function buildPromptSkippedComponents({ args = [] }) {
     const [title, details] = args;
     if (
       typeof title !== 'string'
@@ -133,113 +134,119 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     if (!details || typeof details !== 'object') return null;
     const action = title.includes('refresh') ? 'refresh' : 'resend';
 
-    const fields = [
-      {
-        name: 'Status',
-        value: 'Aman untuk diabaikan. Ini biasanya terjadi ketika temp voice channel sudah kosong, ditinggalkan, atau terhapus sebelum panel sempat diperbarui.',
-      },
-      {
-        name: 'Channel',
-        value: details.channelId ? `<#${details.channelId}> (\`${formatDetailValue(details.channelId)}\`)` : '-',
-        inline: true,
-      },
-      {
-        name: 'Owner',
-        value: details.ownerId ? `<@${details.ownerId}> (\`${formatDetailValue(details.ownerId)}\`)` : '-',
-        inline: true,
-      },
-      {
-        name: 'Discord Code',
-        value: `\`${formatDetailValue(details.code)}\``,
-        inline: true,
-      },
-      {
-        name: 'Penyebab',
-        value: formatDetailValue(details.reason),
-      },
-      {
-        name: 'Yang dilakukan bot',
-        value: formatDetailValue(details.nextStep),
-      },
-    ];
-
-    if (details.previousMessageId) {
-      fields.splice(3, 0, {
-        name: 'Panel lama',
-        value: `\`${formatDetailValue(details.previousMessageId)}\``,
-        inline: true,
-      });
-    }
+    const detailLines = [
+      `- Status: Aman untuk diabaikan. Ini biasanya terjadi ketika temp voice channel sudah kosong, ditinggalkan, atau terhapus sebelum panel sempat diperbarui.`,
+      `- Channel: ${details.channelId ? `<#${details.channelId}> (\`${formatDetailValue(details.channelId)}\`)` : '-'}`,
+      `- Owner: ${details.ownerId ? `<@${details.ownerId}> (\`${formatDetailValue(details.ownerId)}\`)` : '-'}`,
+      details.previousMessageId ? `- Panel lama: \`${formatDetailValue(details.previousMessageId)}\`` : null,
+      `- Discord Code: \`${formatDetailValue(details.code)}\``,
+      `- Penyebab: ${formatDetailValue(details.reason)}`,
+      `- Yang dilakukan bot: ${formatDetailValue(details.nextStep)}`,
+    ].filter(Boolean);
 
     return {
-      embeds: [
+      flags: MessageFlags.IsComponentsV2,
+      components: [
         {
-          title: `Join-to-Create prompt ${action} dilewati`,
-          description: 'Bot mencoba memperbarui panel kontrol JTC, tetapi Discord menolak karena kondisi channel/message sudah berubah.',
-          color: 0xf59e0b,
-          fields,
-          footer: {
-            text: 'Aman untuk diabaikan jika channel sudah kosong, ditinggalkan, atau sudah terhapus.',
-          },
-          timestamp: new Date().toISOString(),
+          type: 17,
+          accent_color: 0xf59e0b,
+          components: [
+            {
+              type: 10,
+              content: `### ⚠️ Join-to-Create prompt ${action} dilewati`,
+            },
+            {
+              type: 10,
+              content: 'Bot mencoba memperbarui panel kontrol JTC, tetapi Discord menolak karena kondisi channel/message sudah berubah.',
+            },
+            {
+              type: 14,
+              divider: true,
+              spacing: 1,
+            },
+            {
+              type: 10,
+              content: detailLines.join('\n'),
+            },
+            {
+              type: 14,
+              divider: true,
+              spacing: 1,
+            },
+            {
+              type: 10,
+              content: '-# ⚠️ Aman untuk diabaikan jika channel sudah kosong, ditinggalkan, atau sudah terhapus.',
+            },
+          ],
         },
       ],
     };
   }
 
-  function buildGenericErrorEmbed({ title = 'Bot Error', args = [], guildId, details }) {
+  function buildGenericErrorComponents({ title = 'Bot Error', args = [], guildId, details }) {
     const timestamp = Math.floor(Date.now() / 1000);
     const detailLines = normalizeDetails(details);
     const rawBody = args.map(formatArg).join('\n');
     const body = redact(rawBody || 'No error details provided.').replace(/```/g, "'''");
-    const fields = [
-      {
-        name: 'Time',
-        value: `<t:${timestamp}:F>`,
-        inline: true,
-      },
+    const contextLines = [
+      `- Time: <t:${timestamp}:F>`,
     ];
 
     if (guildId) {
-      fields.push({
-        name: 'Guild',
-        value: `\`${formatDetailValue(guildId)}\``,
-        inline: true,
-      });
+      contextLines.push(`- Guild: \`${formatDetailValue(guildId)}\``);
     }
 
     if (detailLines.length) {
-      fields.push({
-        name: 'Context',
-        value: truncate(detailLines.join('\n'), 1024),
-      });
+      contextLines.push(...detailLines);
     }
 
-    fields.push({
-      name: 'Detail',
-      value: truncate(body, 1024),
-    });
-
     return {
-      embeds: [
+      flags: MessageFlags.IsComponentsV2,
+      components: [
         {
-          title,
-          description: 'Bot menemukan error. Detail ringkas ada di bawah agar mudah dibaca tanpa membuka codeblock panjang.',
-          color: 0xef4444,
-          fields,
-          footer: {
-            text: 'Jika error berulang atau fitur berhenti bekerja, cek log runtime untuk stack trace lengkap.',
-          },
-          timestamp: new Date().toISOString(),
+          type: 17,
+          accent_color: 0xef4444,
+          components: [
+            {
+              type: 10,
+              content: `### 🚨 ${title}`,
+            },
+            {
+              type: 10,
+              content: 'Bot menemukan error. Detail ringkas ada di bawah agar mudah dibaca.',
+            },
+            {
+              type: 14,
+              divider: true,
+              spacing: 1,
+            },
+            {
+              type: 10,
+              content: truncate(contextLines.join('\n'), 1200),
+            },
+            {
+              type: 10,
+              content: `**Detail**\n${truncate(body, 1400)}`,
+            },
+            {
+              type: 14,
+              divider: true,
+              spacing: 1,
+            },
+            {
+              type: 10,
+              content: '-# 🚨 Jika error berulang atau fitur berhenti bekerja, cek log runtime untuk stack trace lengkap.',
+            },
+          ],
         },
       ],
     };
   }
 
   function buildDiscordMessagePayload(payload) {
-    const promptEmbed = buildPromptSkippedEmbed(payload);
-    if (promptEmbed) return promptEmbed;
-    return buildGenericErrorEmbed(payload);
+    const promptComponents = buildPromptSkippedComponents(payload);
+    if (promptComponents) return promptComponents;
+    return buildGenericErrorComponents(payload);
   }
 
   function buildSignature({ title = 'Bot Error', args = [], guildId, details }) {

@@ -156,42 +156,50 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
       : '';
 
     await logChannel.send({
-      embeds: [
+      flags: MessageFlags.IsComponentsV2,
+      components: [
         {
-          title: 'Join-to-Create Error',
-          description: 'Bot gagal membuat atau memindahkan user ke temp voice channel.',
-          color: 0xef4444,
-          fields: [
+          type: 17,
+          accent_color: 0xef4444,
+          components: [
             {
-              name: 'Guild',
-              value: `\`${guildId || '-'}\``,
-              inline: true,
+              type: 10,
+              content: '### 🚨 Join-to-Create Error',
             },
             {
-              name: 'Lobby Channel',
-              value: lobbyChannelId ? `<#${lobbyChannelId}> (\`${lobbyChannelId}\`)` : '-',
-              inline: true,
+              type: 10,
+              content: 'Bot gagal membuat atau memindahkan user ke temp voice channel.',
             },
             {
-              name: 'User',
-              value: memberId ? `<@${memberId}> (\`${memberId}\`)` : '-',
-              inline: true,
+              type: 14,
+              divider: true,
+              spacing: 1,
             },
             {
-              name: 'Error',
-              value: `\`${errorMessage}${errorCode}\``,
+              type: 10,
+              content: [
+                `- Guild: \`${guildId || '-'}\``,
+                `- Lobby Channel: ${lobbyChannelId ? `<#${lobbyChannelId}> (\`${lobbyChannelId}\`)` : '-'}`,
+                `- User: ${memberId ? `<@${memberId}> (\`${memberId}\`)` : '-'}`,
+                `- Error: \`${errorMessage}${errorCode}\``,
+              ].join('\n'),
             },
             {
-              name: 'Catatan',
-              value: missingPermHint
+              type: 10,
+              content: missingPermHint
                 ? 'Cek permission bot untuk Manage Channels dan Connect di kategori lobby.'
                 : 'Jika user sudah keluar dari lobby sebelum bot memindahkan mereka, error ini aman untuk diabaikan.',
             },
+            {
+              type: 14,
+              divider: true,
+              spacing: 1,
+            },
+            {
+              type: 10,
+              content: '-# 🚨 Aman diabaikan jika terjadi sekali karena user keluar/jaringan terlambat; cek jika berulang.',
+            },
           ],
-          footer: {
-            text: 'Aman diabaikan jika terjadi sekali karena user keluar/jaringan terlambat; cek jika berulang.',
-          },
-          timestamp: new Date().toISOString(),
         },
       ],
       allowedMentions: { parse: [] },
