@@ -299,6 +299,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       [...candidateUserIds].map(async (userId) => {
         try {
           const member = await voiceChannel.guild.members.fetch(userId);
+          if (member?.user?.bot) {
+            configStore.deleteManualVoiceActivityUser(guildId, channelId, userId).catch((error) => {
+              console.error('Failed to delete bot manual voice row:', error);
+            });
+            return [userId, false];
+          }
           return [userId, member?.voice?.channelId === channelId];
         } catch {
           return [userId, false];

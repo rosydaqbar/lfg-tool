@@ -190,6 +190,10 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     return overwrite.deny.has('Connect');
   }
 
+  function getHumanMemberCount(channel) {
+    return channel?.members?.filter((member) => !member.user?.bot).size || 0;
+  }
+
   async function getVoiceActivitySnapshot(channel) {
     if (!channel?.id) {
       return { active: [], history: [], activeCount: 0, historyCount: 0 };
@@ -211,6 +215,12 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       [...candidateUserIds].map(async (userId) => {
         try {
           const member = await guild.members.fetch(userId);
+          if (member?.user?.bot) {
+            configStore.deleteVoiceActivityUser(channelId, userId).catch((error) => {
+              console.error('Failed to delete bot temp voice row:', error);
+            });
+            return [userId, false];
+          }
           return [userId, member?.voice?.channelId === channelId];
         } catch {
           return [userId, false];
@@ -332,7 +342,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         isLocked: isVoiceChannelLocked(channel, guild),
         lfgEnabled,
         lfgChannelId,
-        memberCount: channel.members?.size ?? 0,
+        memberCount: getHumanMemberCount(channel),
         ownerId: tempInfo.ownerId,
         userLimit: channel.userLimit ?? 0,
         voiceActivity: await getVoiceActivitySnapshot(channel),
@@ -465,7 +475,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         isLocked: isVoiceChannelLocked(channel, channel.guild),
         lfgEnabled,
         lfgChannelId,
-        memberCount: channel.members?.size ?? 0,
+        memberCount: getHumanMemberCount(channel),
         ownerId: member.id,
         userLimit: channel.userLimit ?? 0,
         voiceActivity: await getVoiceActivitySnapshot(channel),

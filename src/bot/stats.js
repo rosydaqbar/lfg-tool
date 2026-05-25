@@ -81,7 +81,7 @@ async function getVoicecheckSnapshot(configStore, guild) {
       };
     }
 
-    const activeCount = channel.members?.size || 0;
+    const activeCount = channel.members?.filter((member) => !member.user?.bot).size || 0;
     if (activeCount <= 0) {
       return {
         channelId: row.channel_id,
@@ -404,7 +404,8 @@ function createStatsManager({ client, configStore }) {
 
       const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
       if (channel && channel.isVoiceBased()) {
-        if ((channel.members?.size || 0) > 0) {
+        const humanCount = channel.members?.filter((member) => !member.user?.bot).size || 0;
+        if (humanCount > 0) {
           await interaction.followUp({
             content: 'Channel masih ada user aktif, delete dibatalkan.',
             flags: MessageFlags.Ephemeral,

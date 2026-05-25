@@ -242,6 +242,10 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
       .filter(Boolean);
   }
 
+  function getHumanMemberCount(channel) {
+    return channel?.members?.filter((member) => !member.user?.bot).size || 0;
+  }
+
   async function cleanupTempChannel(oldState) {
     try {
       const oldChannelId = oldState.channelId;
@@ -267,7 +271,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
         return;
       }
 
-      if (channel.members.size > 0) return;
+      if (getHumanMemberCount(channel) > 0) return;
 
       let deleted = false;
       try {
@@ -514,7 +518,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
           if (!trackedChannelId) continue;
           const trackedChannel = await guild.channels.fetch(trackedChannelId).catch(() => null);
 
-          if (!trackedChannel || !trackedChannel.isVoiceBased() || trackedChannel.members.size === 0) {
+          if (!trackedChannel || !trackedChannel.isVoiceBased() || getHumanMemberCount(trackedChannel) === 0) {
             await cleanupTempChannel({
               channelId: trackedChannelId,
               guild,

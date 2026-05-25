@@ -1143,6 +1143,14 @@ async function markVoiceLeave(channelId, userId, leftAt = new Date()) {
   );
 }
 
+async function deleteVoiceActivityUser(channelId, userId) {
+  await ensureTempVoiceActivityTable();
+  await query(
+    'DELETE FROM temp_voice_activity WHERE channel_id = $1 AND user_id = $2',
+    [channelId, userId]
+  );
+}
+
 async function finalizeVoiceActivity(channelId, at = new Date()) {
   await ensureTempVoiceActivityTable();
   await query(
@@ -1310,6 +1318,31 @@ async function clearManualVoiceActiveEntry(guildId, channelId, userId) {
     `,
     [guildId, channelId, userId]
   );
+}
+
+async function deleteManualVoiceActivityUser(guildId, channelId, userId) {
+  await ensureManualVoiceActivityTable();
+  await ensureManualVoiceSessionLogsTable();
+  await Promise.all([
+    query(
+      `
+        DELETE FROM manual_voice_activity
+        WHERE guild_id = $1
+          AND channel_id = $2
+          AND user_id = $3
+      `,
+      [guildId, channelId, userId]
+    ),
+    query(
+      `
+        DELETE FROM manual_voice_session_logs
+        WHERE guild_id = $1
+          AND channel_id = $2
+          AND user_id = $3
+      `,
+      [guildId, channelId, userId]
+    ),
+  ]);
 }
 
 async function finalizeManualVoiceSession(
@@ -1571,6 +1604,7 @@ module.exports = {
   getManualVoiceActivity,
   finalizeVoiceActivity,
   markVoiceLeave,
+  deleteVoiceActivityUser,
   removeTempChannel,
   setPersistentLfgMessage,
   setManualVoicePanelMessage,
@@ -1586,4 +1620,5 @@ module.exports = {
   getVoiceStatsForUser,
   upsertManualVoiceJoin,
   clearManualVoiceActiveEntry,
+  deleteManualVoiceActivityUser,
 };
