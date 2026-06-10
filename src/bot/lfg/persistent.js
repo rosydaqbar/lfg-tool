@@ -31,16 +31,15 @@ function createPersistentLfgManager({ client, configStore, env }) {
     persistentLfgRunning.add(guildId);
 
     try {
-      let config = {
-        logChannelId: null,
-        lfgChannelId: null,
-        enabledVoiceChannelIds: [],
-        joinToCreateLobbyIds: [],
-      };
+      let config = null;
       try {
         config = await configStore.getGuildConfig(guildId);
       } catch (error) {
-        console.error('Failed to read dashboard config:', error);
+        console.warn(
+          'Persistent LFG refresh skipped: failed to read dashboard config. Will retry on the next loop.',
+          error?.message || error
+        );
+        return;
       }
 
       const lobbyIds = config.lfgEnabledLobbyIds || [];

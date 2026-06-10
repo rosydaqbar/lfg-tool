@@ -23,6 +23,32 @@ const pool = DATABASE_URL
     })
   : null;
 
+if (pool) {
+  pool.on('error', (error) => {
+    console.warn('[postgres] Idle client error, pool will replace the connection:', error?.message || error);
+  });
+}
+
+function isTransientPostgresError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return Boolean(
+    error?.code === 'ECONNRESET'
+    || error?.code === 'ECONNREFUSED'
+    || error?.code === 'ETIMEDOUT'
+    || error?.code === 'EPIPE'
+    || error?.code === '08006'
+    || message.includes('connection terminated unexpectedly')
+    || message.includes('connection terminated')
+    || message.includes('connection timeout')
+    || message.includes('econnrefused')
+    || message.includes('terminating connection')
+  );
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function getPool() {
   if (!pool) {
     throw new Error('DATABASE_URL is required.');
@@ -32,7 +58,22 @@ async function getPool() {
 
 async function query(text, params) {
   const db = await getPool();
-  return db.query(text, params);
+  const delays = [250, 1000];
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      return await db.query(text, params);
+    } catch (error) {
+      if (!isTransientPostgresError(error) || attempt >= delays.length) {
+        throw error;
+      }
+      console.warn(
+        `[postgres] Transient query failure, retrying in ${delays[attempt]}ms:`,
+        error?.message || error
+      );
+      await wait(delays[attempt]);
+    }
+  }
+  throw new Error('Postgres query failed without an error.');
 }
 
 let lfgEnabledColumnEnsured = false;
