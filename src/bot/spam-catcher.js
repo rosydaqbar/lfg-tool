@@ -49,6 +49,12 @@ function createSpamCatcherManager({ client, configStore }) {
     return user.send(payload).then(() => true).catch(() => false);
   }
 
+  async function createDmChannel(userId) {
+    const user = await client.users.fetch(userId).catch(() => null);
+    if (!user) return null;
+    return user.createDM().catch(() => null);
+  }
+
   async function getLogChannel(guildId) {
     const config = await configStore.getGuildConfig(guildId).catch(() => null);
     if (!config?.logChannelId) return null;
@@ -151,6 +157,7 @@ function createSpamCatcherManager({ client, configStore }) {
   }
 
   async function handleImmediateBan(guild, event) {
+    const dmChannel = await createDmChannel(event.userId);
     let banError = null;
     await guild.members.ban(event.userId, {
       reason: `Spam Catcher immediate ban, event ${event.id}`,
@@ -167,10 +174,16 @@ function createSpamCatcherManager({ client, configStore }) {
     }
 
     const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'banned').catch(() => event);
-    await dmUser(event.userId, {
+    const dmPayload = {
       content: 'You have been banned by Spam Catcher. If this was a mistake, please contact a server admin.',
-    });
-    await logAction(updated || event, 'Spam Catcher Banned User', ['- Mode: `immediate`']);
+    };
+    const dmSent = dmChannel
+      ? await dmChannel.send(dmPayload).then(() => true).catch(() => false)
+      : await dmUser(event.userId, dmPayload);
+    await logAction(updated || event, 'Spam Catcher Banned User', [
+      '- Mode: `immediate`',
+      `- DM after ban: \`${dmSent ? 'sent' : 'failed'}\``,
+    ]);
   }
 
   async function handleTimeout(guild, member, config, event) {
