@@ -44,9 +44,13 @@ const TIMEOUT_OPTIONS = [
   { value: 10080, label: "7 days" },
   { value: DISCORD_TIMEOUT_MAX_MINUTES, label: "28 days" },
 ];
-const BAN_DELAY_OPTIONS = [1, 5, 10, 15, 30, 45, 60].map((value) => ({
+const BAN_DELAY_MINUTE_OPTIONS = [1, 5, 10, 15, 30, 45, 60].map((value) => ({
   value,
   label: `${value} minute${value === 1 ? "" : "s"}`,
+}));
+const BAN_DELAY_HOUR_OPTIONS = Array.from({ length: 23 }, (_, index) => index + 2).map((value) => ({
+  value,
+  label: `${value} hours`,
 }));
 const panelClass = "rounded-xl border border-border/70 bg-muted/10 p-4";
 
@@ -86,6 +90,8 @@ function SpamCatcherSectionComponent({
   const reviewChannel = value.reviewChannelId ? channelById.get(value.reviewChannelId) : null;
   const formDisabled = loadingConfig || !value.enabled;
   const canSave = !saving && !loadingConfig;
+  const banDelayUnit = value.banDelayMinutes > 60 ? "hours" : "minutes";
+  const banDelayHours = Math.max(2, Math.min(24, Math.round(value.banDelayMinutes / 60)));
 
   function toggleChannel(channelId: string) {
     const nextIds = value.channelIds.includes(channelId)
@@ -254,23 +260,45 @@ function SpamCatcherSectionComponent({
             {value.autoBanEnabled && value.banMode === "delayed" ? (
               <div className="space-y-2">
                 <div className="text-sm font-medium">Ban delay</div>
-                <Select
-                  value={String(value.banDelayMinutes)}
-                  onValueChange={(banDelayMinutes) => onChange({ ...value, banDelayMinutes: Number(banDelayMinutes) })}
-                  disabled={formDisabled}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select delay" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BAN_DELAY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={String(option.value)}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="text-xs text-muted-foreground">Allowed range is 1-60 minutes.</div>
+                <div className="flex flex-wrap gap-2">
+                  <Select
+                    value={banDelayUnit}
+                    onValueChange={(unit) => onChange({
+                      ...value,
+                      banDelayMinutes: unit === "hours" ? banDelayHours * 60 : Math.min(value.banDelayMinutes, 60),
+                    })}
+                    disabled={formDisabled}
+                  >
+                    <SelectTrigger className="w-32">
+                      <SelectValue placeholder="Select unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minutes">Minutes</SelectItem>
+                      <SelectItem value="hours">Hours</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    value={String(banDelayUnit === "hours" ? banDelayHours : value.banDelayMinutes)}
+                    onValueChange={(delay) => onChange({
+                      ...value,
+                      banDelayMinutes: banDelayUnit === "hours" ? Number(delay) * 60 : Number(delay),
+                    })}
+                    disabled={formDisabled}
+                  >
+                    <SelectTrigger className="w-36">
+                      <SelectValue placeholder="Select delay" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(banDelayUnit === "hours" ? BAN_DELAY_HOUR_OPTIONS : BAN_DELAY_MINUTE_OPTIONS).map((option) => (
+                        <SelectItem key={option.value} value={String(option.value)}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="text-xs text-muted-foreground">Allowed range is 1-60 minutes or 2-24 hours.</div>
               </div>
             ) : null}
           </div>

@@ -120,6 +120,7 @@ function normalizeSpamCatcherConfig(
   value: Partial<SpamCatcherConfig> | null | undefined
 ): SpamCatcherConfig {
   if (!value || typeof value !== "object") return DEFAULT_SPAM_CATCHER_CONFIG;
+  const banDelayMinutes = Number(value.banDelayMinutes);
 
   return {
     enabled: value.enabled === true,
@@ -129,7 +130,11 @@ function normalizeSpamCatcherConfig(
     timeoutMinutes: Math.max(1, Math.min(40320, Number.isFinite(Number(value.timeoutMinutes)) ? Math.floor(Number(value.timeoutMinutes)) : 60)),
     autoBanEnabled: value.autoBanEnabled === true,
     banMode: value.banMode === "immediate" ? "immediate" : "delayed",
-    banDelayMinutes: Math.max(1, Math.min(60, Number.isFinite(Number(value.banDelayMinutes)) ? Math.floor(Number(value.banDelayMinutes)) : 10)),
+    banDelayMinutes: Number.isFinite(banDelayMinutes)
+      ? Math.floor(banDelayMinutes) <= 60
+        ? Math.max(1, Math.floor(banDelayMinutes))
+        : Math.max(2, Math.min(24, Math.floor(banDelayMinutes / 60))) * 60
+      : 10,
     reviewChannelId:
       typeof value.reviewChannelId === "string" && value.reviewChannelId.trim().length > 0
         ? value.reviewChannelId

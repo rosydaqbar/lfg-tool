@@ -99,7 +99,9 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
     autoBanEnabled: source.autoBanEnabled === true,
     banMode: source.banMode === "immediate" ? "immediate" : "delayed",
     banDelayMinutes: Number.isFinite(banDelayMinutes)
-      ? Math.max(1, Math.min(60, Math.floor(banDelayMinutes)))
+      ? Math.floor(banDelayMinutes) <= 60
+        ? Math.max(1, Math.floor(banDelayMinutes))
+        : Math.max(2, Math.min(24, Math.floor(banDelayMinutes / 60))) * 60
       : DEFAULT_SPAM_CATCHER_CONFIG.banDelayMinutes,
     reviewChannelId:
       typeof source.reviewChannelId === "string" && source.reviewChannelId.trim().length > 0
