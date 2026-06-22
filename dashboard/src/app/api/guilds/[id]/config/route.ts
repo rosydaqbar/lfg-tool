@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGuildConfig, saveGuildConfig } from "@/lib/db";
+import { getGuildConfig, getSpamCatcherCaughtUserCounts, saveGuildConfig } from "@/lib/db";
 import { requireDashboardGuildAccess } from "@/lib/session";
 import { getDashboardBotToken } from "@/lib/runtime-secrets";
 
@@ -28,7 +28,22 @@ type SpamCatcherConfigPayload = {
   banMode: "immediate" | "delayed";
   banDelayMinutes: number;
   reviewChannelId: string | null;
+  webhookEnabled: boolean;
+  webhookUrl: string | null;
 };
+
+function isDiscordWebhookUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return (
+      (host === "discord.com" || host === "discordapp.com") &&
+      /^\/api\/webhooks\/\d+\/[A-Za-z0-9._-]+\/?$/.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
 
 function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
   const source = value && typeof value === "object"
@@ -60,6 +75,11 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
     reviewChannelId:
       typeof source.reviewChannelId === "string" && source.reviewChannelId.trim().length > 0
         ? source.reviewChannelId.trim()
+        : null,
+    webhookEnabled: source.webhookEnabled === true,
+    webhookUrl:
+      typeof source.webhookUrl === "string" && source.webhookUrl.trim().length > 0
+        ? source.webhookUrl.trim()
         : null,
   };
 }
@@ -289,6 +309,130 @@ async function sendAutoRoleConfigLog({
   }).catch(() => null);
 }
 
+function formatNoticeMinutes(minutes: number) {
+  const safeMinutes = Math.max(1, Math.floor(Number(minutes) || 1));
+  if (safeMinutes % 1440 === 0) {
+    const days = safeMinutes / 1440;
+    return `${days} day${days === 1 ? "" : "s"}`;
+  }
+  if (safeMinutes % 60 === 0) {
+    const hours = safeMinutes / 60;
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  return `${safeMinutes} minute${safeMinutes === 1 ? "" : "s"}`;
+}
+
+function buildSpamCatcherNoticePayload(
+  caughtCount: number,
+  config: SpamCatcherConfigPayload
+) {
+  const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
+  const timeoutText = formatNoticeMinutes(config.timeoutMinutes);
+  const banDelayText = formatNoticeMinutes(config.banDelayMinutes);
+  const actionId = config.autoBanEnabled
+    ? config.banMode === "immediate"
+      ? "kamu akan langsung terkena `ban`."
+      : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah ${banDelayText}.`
+    : `kamu akan terkena \`timeout\` selama ${timeoutText}.`;
+  const appealId = config.autoBanEnabled && config.banMode === "immediate"
+    ? "Jika ini adalah kesalahan, silakan hubungi admin server."
+    : "Jika kamu terkena timeout, silakan kirim private message ke salah satu admin yang sedang online atau gunakan tombol appeal jika tersedia.";
+  const actionEn = config.autoBanEnabled
+    ? config.banMode === "immediate"
+      ? "you will be `banned` immediately."
+      : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after ${banDelayText}.`
+    : `you will receive a \`timeout\` for ${timeoutText}.`;
+  const appealEn = config.autoBanEnabled && config.banMode === "immediate"
+    ? "If this was a mistake, please contact a server admin."
+    : "If you are timed out, please send a private message to one of the online admins or use the appeal button if available.";
+  const contentId = [
+    "# 🚫 Dilarang Mengirim Pesan di Channel Ini",
+    `⚠️ Channel ini dibuat untuk menangkap spammer. Jika kamu mengirim pesan di channel ini, ${actionId} ${appealId}`,
+    "",
+    `-# Jumlah user yang sudah tertangkap di channel ini: \`${safeCount}\``,
+  ].join("\n");
+  const contentEn = [
+    "# 🚫 Do Not Send Messages in This Channel",
+    `⚠️ This channel is made to catch spammers. If you send a message in this channel, ${actionEn} ${appealEn}`,
+    "",
+    `-# Caught users in this channel: \`${safeCount}\``,
+  ].join("\n");
+
+  return {
+    flags: 32768,
+    components: [
+      {
+        type: 17,
+        components: [
+          { type: 10, content: contentId },
+          { type: 14, divider: true, spacing: 1 },
+          { type: 10, content: contentEn },
+        ],
+      },
+    ],
+    allowed_mentions: { parse: [] },
+  };
+}
+
+async function sendSpamCatcherTrapChannelNotices({
+  channelIds,
+  caughtCounts,
+  config,
+  webhookUrl,
+}: {
+  channelIds: string[];
+  caughtCounts: Record<string, number>;
+  config: SpamCatcherConfigPayload;
+  webhookUrl?: string | null;
+}) {
+  if (!channelIds.length) return;
+
+  if (webhookUrl) {
+    const totalCaught = channelIds.reduce(
+      (total, channelId) => total + (caughtCounts[channelId] ?? 0),
+      0
+    );
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildSpamCatcherNoticePayload(totalCaught, config)),
+    }).catch((error) => {
+      console.error("Failed to send Spam Catcher webhook notice:", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
+    if (response && !response.ok) {
+      console.error("Discord webhook rejected Spam Catcher notice:", {
+        status: response.status,
+        detail: await response.text().catch(() => ""),
+      });
+    }
+    return;
+  }
+
+  const botToken = await getDashboardBotToken();
+  if (!botToken) return;
+
+  for (const channelId of channelIds) {
+    await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bot ${botToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildSpamCatcherNoticePayload(caughtCounts[channelId] ?? 0, config)),
+    }).catch((error) => {
+      console.error("Failed to send Spam Catcher trap-channel notice:", {
+        channelId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+}
+
 export const dynamic = "force-dynamic";
 
 export async function GET(
@@ -447,6 +591,17 @@ export async function PUT(
     );
   }
 
+  if (
+    spamCatcherConfig.enabled &&
+    spamCatcherConfig.webhookEnabled &&
+    (!spamCatcherConfig.webhookUrl || !isDiscordWebhookUrl(spamCatcherConfig.webhookUrl))
+  ) {
+    return NextResponse.json(
+      { error: "Enter a valid Discord webhook URL or disable webhook delivery." },
+      { status: 400 }
+    );
+  }
+
   try {
     const previousConfig = await getGuildConfig(id);
 
@@ -469,6 +624,22 @@ export async function PUT(
       logChannelId: body.logChannelId,
       lines: changeLines,
     });
+
+    if (spamCatcherConfig.enabled && spamCatcherConfig.channelIds.length > 0) {
+      const caughtCounts = await getSpamCatcherCaughtUserCounts(
+        id,
+        spamCatcherConfig.channelIds
+      ).catch((error) => {
+        console.error("Failed to count Spam Catcher caught users:", error);
+        return {} as Record<string, number>;
+      });
+      await sendSpamCatcherTrapChannelNotices({
+        channelIds: spamCatcherConfig.channelIds,
+        caughtCounts,
+        config: spamCatcherConfig,
+        webhookUrl: spamCatcherConfig.webhookEnabled ? spamCatcherConfig.webhookUrl : null,
+      });
+    }
   } catch (error) {
     return NextResponse.json(
       { error: (error as Error).message },

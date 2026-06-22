@@ -64,6 +64,8 @@ export type SpamCatcherConfig = {
   banMode: "immediate" | "delayed";
   banDelayMinutes: number;
   reviewChannelId: string | null;
+  webhookEnabled: boolean;
+  webhookUrl: string | null;
 };
 
 export type AutoRoleRequestStatus = "pending" | "approved" | "denied";

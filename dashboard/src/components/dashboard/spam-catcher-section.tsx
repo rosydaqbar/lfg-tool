@@ -17,6 +17,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -329,6 +330,34 @@ function SpamCatcherSectionComponent({
               </PopoverContent>
             </Popover>
           </div>
+        </div>
+
+        <div className={`${panelClass} space-y-3`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Send notice with webhook</div>
+              <div className="text-xs text-muted-foreground">
+                Optional. Posts one warning through the webhook&apos;s channel instead of the bot account.
+              </div>
+            </div>
+            <Switch
+              checked={value.webhookEnabled}
+              onCheckedChange={(webhookEnabled) => onChange({ ...value, webhookEnabled })}
+              disabled={formDisabled}
+            />
+          </div>
+          {value.webhookEnabled ? (
+            <label className="space-y-2 text-sm font-medium">
+              Discord webhook URL
+              <Input
+                type="url"
+                value={value.webhookUrl ?? ""}
+                onChange={(event) => onChange({ ...value, webhookUrl: event.target.value })}
+                placeholder="https://discord.com/api/webhooks/..."
+                disabled={formDisabled}
+              />
+            </label>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">

@@ -56,6 +56,8 @@ type SpamCatcherConfig = {
   banMode: "immediate" | "delayed";
   banDelayMinutes: number;
   reviewChannelId: string | null;
+  webhookEnabled: boolean;
+  webhookUrl: string | null;
 };
 
 const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
@@ -66,6 +68,8 @@ const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
   banMode: "delayed",
   banDelayMinutes: 10,
   reviewChannelId: null,
+  webhookEnabled: false,
+  webhookUrl: null,
 };
 
 function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
@@ -100,6 +104,11 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
     reviewChannelId:
       typeof source.reviewChannelId === "string" && source.reviewChannelId.trim().length > 0
         ? source.reviewChannelId.trim()
+        : null,
+    webhookEnabled: source.webhookEnabled === true,
+    webhookUrl:
+      typeof source.webhookUrl === "string" && source.webhookUrl.trim().length > 0
+        ? source.webhookUrl.trim()
         : null,
   };
 }
@@ -3475,6 +3484,102 @@ export async function getVoiceAutoRoleRequestCounts(guildId: string) {
       [row.status]: Number(row.count ?? 0),
     }),
     { pending: 0, approved: 0, denied: 0 }
+  );
+}
+
+export async function getSpamCatcherCaughtUserCounts(
+  guildId: string,
+  channelIds: string[]
+) {
+  const uniqueChannelIds = Array.from(
+    new Set(channelIds.map((id) => id.trim()).filter((id) => id.length > 0))
+  );
+  const emptyCounts = Object.fromEntries(uniqueChannelIds.map((id) => [id, 0]));
+  if (uniqueChannelIds.length === 0) return emptyCounts;
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS spam_catcher_events (
+              id BIGSERIAL PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              message_id TEXT,
+              action TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'caught',
+              timeout_until TIMESTAMPTZ,
+              ban_after TIMESTAMPTZ,
+              appeal_message TEXT,
+              review_channel_id TEXT,
+              review_message_id TEXT,
+              decided_by TEXT,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              banned_at TIMESTAMPTZ
+            )
+          `
+        );
+        const res = await client.query(
+          `
+            SELECT channel_id, COUNT(DISTINCT user_id)::bigint AS count
+            FROM spam_catcher_events
+            WHERE guild_id = $1
+              AND channel_id = ANY($2::text[])
+            GROUP BY channel_id
+          `,
+          [guildId, uniqueChannelIds]
+        );
+        return (res.rows as { channel_id: string; count: string | number }[]).reduce(
+          (counts, row) => ({ ...counts, [row.channel_id]: Number(row.count ?? 0) }),
+          emptyCounts
+        );
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    const placeholders = uniqueChannelIds.map(() => "?").join(", ");
+    const rows = db
+      .prepare(
+        `
+          SELECT channel_id, COUNT(DISTINCT user_id) AS count
+          FROM spam_catcher_events
+          WHERE guild_id = ?
+            AND channel_id IN (${placeholders})
+          GROUP BY channel_id
+        `
+      )
+      .all(guildId, ...uniqueChannelIds) as { channel_id: string; count: number }[];
+    return rows.reduce(
+      (counts, row) => ({ ...counts, [row.channel_id]: Number(row.count ?? 0) }),
+      emptyCounts
+    );
+  }
+
+  const res = await query(
+    `
+      SELECT channel_id, COUNT(DISTINCT user_id)::bigint AS count
+      FROM spam_catcher_events
+      WHERE guild_id = $1
+        AND channel_id = ANY($2::text[])
+      GROUP BY channel_id
+    `,
+    [guildId, uniqueChannelIds]
+  );
+  return (res.rows as { channel_id: string; count: string | number }[]).reduce(
+    (counts, row) => ({ ...counts, [row.channel_id]: Number(row.count ?? 0) }),
+    emptyCounts
   );
 }
 

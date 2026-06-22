@@ -48,6 +48,8 @@ const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
   banMode: "delayed",
   banDelayMinutes: 10,
   reviewChannelId: null,
+  webhookEnabled: false,
+  webhookUrl: null,
 };
 
 const SELECTED_GUILD_STORAGE_KEY = "lfg-tool:selected-guild-id";
@@ -131,6 +133,11 @@ function normalizeSpamCatcherConfig(
     reviewChannelId:
       typeof value.reviewChannelId === "string" && value.reviewChannelId.trim().length > 0
         ? value.reviewChannelId
+        : null,
+    webhookEnabled: value.webhookEnabled === true,
+    webhookUrl:
+      typeof value.webhookUrl === "string" && value.webhookUrl.trim().length > 0
+        ? value.webhookUrl.trim()
         : null,
   };
 }
