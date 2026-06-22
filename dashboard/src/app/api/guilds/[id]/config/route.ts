@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getGuildConfig, getSpamCatcherCaughtUserCounts, saveGuildConfig } from "@/lib/db";
+import {
+  getGuildConfig,
+  getSpamCatcherCaughtUserCounts,
+  saveGuildConfig,
+  saveSpamCatcherNoticeMessages,
+} from "@/lib/db";
 import { requireDashboardGuildAccess } from "@/lib/session";
 import { getDashboardBotToken } from "@/lib/runtime-secrets";
 
@@ -45,9 +50,12 @@ function isDiscordWebhookUrl(value: string) {
   }
 }
 
-function withWebhookComponentsEnabled(webhookUrl: string) {
+function withWebhookComponentsEnabled(webhookUrl: string, waitForMessage = false) {
   const url = new URL(webhookUrl);
   url.searchParams.set("with_components", "true");
+  if (waitForMessage) {
+    url.searchParams.set("wait", "true");
+  }
   return url.toString();
 }
 
@@ -381,24 +389,32 @@ function buildSpamCatcherNoticePayload(
 }
 
 async function sendSpamCatcherTrapChannelNotices({
+  guildId,
   channelIds,
   caughtCounts,
   config,
   webhookUrl,
 }: {
+  guildId: string;
   channelIds: string[];
   caughtCounts: Record<string, number>;
   config: SpamCatcherConfigPayload;
   webhookUrl?: string | null;
 }) {
-  if (!channelIds.length) return;
+  if (!channelIds.length) return [];
+  const notices: {
+    channelId: string;
+    messageId: string;
+    deliveryMethod: "bot" | "webhook";
+    webhookUrl?: string | null;
+  }[] = [];
 
   if (webhookUrl) {
     const totalCaught = channelIds.reduce(
       (total, channelId) => total + (caughtCounts[channelId] ?? 0),
       0
     );
-    const response = await fetch(withWebhookComponentsEnabled(webhookUrl), {
+    const response = await fetch(withWebhookComponentsEnabled(webhookUrl, true), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -416,14 +432,30 @@ async function sendSpamCatcherTrapChannelNotices({
         detail: await response.text().catch(() => ""),
       });
     }
-    return;
+    if (response?.ok) {
+      const message = (await response.json().catch(() => null)) as { id?: string; channel_id?: string } | null;
+      if (message?.id) {
+        for (const channelId of channelIds) {
+          notices.push({
+          channelId,
+          messageId: message.id,
+          deliveryMethod: "webhook",
+          webhookUrl,
+        });
+        }
+      }
+    }
+    await saveSpamCatcherNoticeMessages(guildId, notices).catch((error) => {
+      console.error("Failed to save Spam Catcher webhook notice message:", error);
+    });
+    return notices;
   }
 
   const botToken = await getDashboardBotToken();
-  if (!botToken) return;
+  if (!botToken) return notices;
 
   for (const channelId of channelIds) {
-    await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
       method: "POST",
       headers: {
         Authorization: `Bot ${botToken}`,
@@ -435,8 +467,19 @@ async function sendSpamCatcherTrapChannelNotices({
         channelId,
         error: error instanceof Error ? error.message : String(error),
       });
+      return null;
     });
+    if (response?.ok) {
+      const message = (await response.json().catch(() => null)) as { id?: string } | null;
+      if (message?.id) {
+        notices.push({ channelId, messageId: message.id, deliveryMethod: "bot" });
+      }
+    }
   }
+  await saveSpamCatcherNoticeMessages(guildId, notices).catch((error) => {
+    console.error("Failed to save Spam Catcher notice messages:", error);
+  });
+  return notices;
 }
 
 export const dynamic = "force-dynamic";
@@ -640,6 +683,7 @@ export async function PUT(
         return {} as Record<string, number>;
       });
       await sendSpamCatcherTrapChannelNotices({
+        guildId: id,
         channelIds: spamCatcherConfig.channelIds,
         caughtCounts,
         config: spamCatcherConfig,

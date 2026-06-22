@@ -94,6 +94,7 @@ let voiceAutoRoleRequestsEnsured = false;
 let voiceLeaderboardOverridesEnsured = false;
 let spamCatcherConfigEnsured = false;
 let spamCatcherEventsEnsured = false;
+let spamCatcherNoticeMessagesEnsured = false;
 
 const TEMP_OWNER_CACHE_TTL_MS = 15_000;
 const tempOwnerByOwnerKeyCache = new Map();
@@ -955,6 +956,8 @@ const DEFAULT_SPAM_CATCHER_CONFIG = {
   banMode: 'delayed',
   banDelayMinutes: 10,
   reviewChannelId: null,
+  webhookEnabled: false,
+  webhookUrl: null,
 };
 
 function normalizeSpamCatcherConfig(value) {
@@ -984,6 +987,11 @@ function normalizeSpamCatcherConfig(value) {
     reviewChannelId:
       typeof value.reviewChannelId === 'string' && value.reviewChannelId.trim().length > 0
         ? value.reviewChannelId.trim()
+        : null,
+    webhookEnabled: value.webhookEnabled === true,
+    webhookUrl:
+      typeof value.webhookUrl === 'string' && value.webhookUrl.trim().length > 0
+        ? value.webhookUrl.trim()
         : null,
   };
 }
@@ -1087,6 +1095,31 @@ async function ensureSpamCatcherEventsTable() {
     spamCatcherEventsEnsured = true;
   } catch (error) {
     console.error('Failed to ensure spam_catcher_events table:', error);
+  }
+}
+
+async function ensureSpamCatcherNoticeMessagesTable() {
+  if (spamCatcherNoticeMessagesEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_notice_messages (
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          delivery_method TEXT NOT NULL DEFAULT 'bot',
+          webhook_url TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, channel_id)
+        )
+      `
+    );
+    await query(
+      'CREATE INDEX IF NOT EXISTS idx_spam_catcher_notice_messages_guild ON spam_catcher_notice_messages(guild_id)'
+    );
+    spamCatcherNoticeMessagesEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure spam_catcher_notice_messages table:', error);
   }
 }
 
@@ -1870,6 +1903,41 @@ async function getDueSpamCatcherBanEvents(limit = 25) {
   return res.rows.map(mapSpamCatcherEvent);
 }
 
+async function getSpamCatcherCaughtCount(guildId, channelId) {
+  await ensureSpamCatcherEventsTable();
+  const res = await query(
+    `
+      SELECT COUNT(id)::bigint AS count
+      FROM spam_catcher_events
+      WHERE guild_id = $1
+        AND channel_id = $2
+    `,
+    [guildId, channelId]
+  );
+  return Number(res.rows[0]?.count || 0);
+}
+
+async function getSpamCatcherNoticeMessage(guildId, channelId) {
+  await ensureSpamCatcherNoticeMessagesTable();
+  const res = await query(
+    `
+      SELECT channel_id, message_id, delivery_method, webhook_url
+      FROM spam_catcher_notice_messages
+      WHERE guild_id = $1
+        AND channel_id = $2
+    `,
+    [guildId, channelId]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    channelId: row.channel_id,
+    messageId: row.message_id,
+    deliveryMethod: row.delivery_method === 'webhook' ? 'webhook' : 'bot',
+    webhookUrl: row.webhook_url || null,
+  };
+}
+
 module.exports = {
   getGuildConfig,
   getVoiceAutoRoleConfig,
@@ -1887,6 +1955,8 @@ module.exports = {
   updateSpamCatcherReviewMessage,
   resolveSpamCatcherAppeal,
   getDueSpamCatcherBanEvents,
+  getSpamCatcherCaughtCount,
+  getSpamCatcherNoticeMessage,
   addTempChannel,
   clearPersistentLfgMessage,
   clearManualVoicePanelMessage,

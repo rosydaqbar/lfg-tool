@@ -322,6 +322,15 @@ function getSqliteDb() {
       updated_at TEXT NOT NULL,
       banned_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS spam_catcher_notice_messages (
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      delivery_method TEXT NOT NULL DEFAULT 'bot',
+      webhook_url TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (guild_id, channel_id)
+    );
     CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       guild_id TEXT NOT NULL,
@@ -628,6 +637,19 @@ async function ensureCoreConfigTables() {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           banned_at TIMESTAMPTZ
+        )
+      `
+    );
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_notice_messages (
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          delivery_method TEXT NOT NULL DEFAULT 'bot',
+          webhook_url TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, channel_id)
         )
       `
     );
@@ -1150,6 +1172,19 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
           guild_id TEXT PRIMARY KEY,
           config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_notice_messages (
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          delivery_method TEXT NOT NULL DEFAULT 'bot',
+          webhook_url TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, channel_id)
         )
       `
     );
@@ -1763,6 +1798,19 @@ export async function saveGuildConfigWithDatabaseUrl(
           guild_id TEXT PRIMARY KEY,
           config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_notice_messages (
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          delivery_method TEXT NOT NULL DEFAULT 'bot',
+          webhook_url TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, channel_id)
         )
       `
     );
@@ -3530,7 +3578,7 @@ export async function getSpamCatcherCaughtUserCounts(
         );
         const res = await client.query(
           `
-            SELECT channel_id, COUNT(DISTINCT user_id)::bigint AS count
+            SELECT channel_id, COUNT(id)::bigint AS count
             FROM spam_catcher_events
             WHERE guild_id = $1
               AND channel_id = ANY($2::text[])
@@ -3553,7 +3601,7 @@ export async function getSpamCatcherCaughtUserCounts(
     const rows = db
       .prepare(
         `
-          SELECT channel_id, COUNT(DISTINCT user_id) AS count
+          SELECT channel_id, COUNT(id) AS count
           FROM spam_catcher_events
           WHERE guild_id = ?
             AND channel_id IN (${placeholders})
@@ -3569,7 +3617,7 @@ export async function getSpamCatcherCaughtUserCounts(
 
   const res = await query(
     `
-      SELECT channel_id, COUNT(DISTINCT user_id)::bigint AS count
+      SELECT channel_id, COUNT(id)::bigint AS count
       FROM spam_catcher_events
       WHERE guild_id = $1
         AND channel_id = ANY($2::text[])
@@ -3581,6 +3629,127 @@ export async function getSpamCatcherCaughtUserCounts(
     (counts, row) => ({ ...counts, [row.channel_id]: Number(row.count ?? 0) }),
     emptyCounts
   );
+}
+
+export async function saveSpamCatcherNoticeMessages(
+  guildId: string,
+  notices: {
+    channelId: string;
+    messageId: string;
+    deliveryMethod: "bot" | "webhook";
+    webhookUrl?: string | null;
+  }[]
+) {
+  const validNotices = notices.filter(
+    (notice) => notice.channelId.trim() && notice.messageId.trim()
+  );
+  if (validNotices.length === 0) return;
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS spam_catcher_notice_messages (
+              guild_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              message_id TEXT NOT NULL,
+              delivery_method TEXT NOT NULL DEFAULT 'bot',
+              webhook_url TEXT,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              PRIMARY KEY (guild_id, channel_id)
+            )
+          `
+        );
+        for (const notice of validNotices) {
+          await client.query(
+            `
+              INSERT INTO spam_catcher_notice_messages (
+                guild_id, channel_id, message_id, delivery_method, webhook_url, updated_at
+              )
+              VALUES ($1, $2, $3, $4, $5, NOW())
+              ON CONFLICT(guild_id, channel_id) DO UPDATE SET
+                message_id = EXCLUDED.message_id,
+                delivery_method = EXCLUDED.delivery_method,
+                webhook_url = EXCLUDED.webhook_url,
+                updated_at = EXCLUDED.updated_at
+            `,
+            [
+              guildId,
+              notice.channelId,
+              notice.messageId,
+              notice.deliveryMethod,
+              notice.webhookUrl || null,
+            ]
+          );
+        }
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+      return;
+    }
+
+    const db = getSqliteDb();
+    const now = new Date().toISOString();
+    const insert = db.prepare(
+      `
+        INSERT INTO spam_catcher_notice_messages (
+          guild_id, channel_id, message_id, delivery_method, webhook_url, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(guild_id, channel_id) DO UPDATE SET
+          message_id = excluded.message_id,
+          delivery_method = excluded.delivery_method,
+          webhook_url = excluded.webhook_url,
+          updated_at = excluded.updated_at
+      `
+    );
+    const tx = db.transaction(() => {
+      for (const notice of validNotices) {
+        insert.run(
+          guildId,
+          notice.channelId,
+          notice.messageId,
+          notice.deliveryMethod,
+          notice.webhookUrl || null,
+          now
+        );
+      }
+    });
+    tx();
+    return;
+  }
+
+  await ensureCoreConfigTables();
+  for (const notice of validNotices) {
+    await query(
+      `
+        INSERT INTO spam_catcher_notice_messages (
+          guild_id, channel_id, message_id, delivery_method, webhook_url, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT(guild_id, channel_id) DO UPDATE SET
+          message_id = EXCLUDED.message_id,
+          delivery_method = EXCLUDED.delivery_method,
+          webhook_url = EXCLUDED.webhook_url,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [
+        guildId,
+        notice.channelId,
+        notice.messageId,
+        notice.deliveryMethod,
+        notice.webhookUrl || null,
+      ]
+    );
+  }
 }
 
 export async function deleteVoiceAutoRoleRequest(guildId: string, id: number) {

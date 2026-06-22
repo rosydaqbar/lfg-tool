@@ -64,6 +64,112 @@ function createSpamCatcherManager({ client, configStore }) {
     return channel?.isTextBased() ? channel : null;
   }
 
+  function formatNoticeMinutes(minutes) {
+    const safeMinutes = Math.max(1, Math.floor(Number(minutes) || 1));
+    if (safeMinutes % 1440 === 0) {
+      const days = safeMinutes / 1440;
+      return `${days} day${days === 1 ? '' : 's'}`;
+    }
+    if (safeMinutes % 60 === 0) {
+      const hours = safeMinutes / 60;
+      return `${hours} hour${hours === 1 ? '' : 's'}`;
+    }
+    return `${safeMinutes} minute${safeMinutes === 1 ? '' : 's'}`;
+  }
+
+  function buildTrapNoticePayload(caughtCount, config) {
+    const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
+    const timeoutText = formatNoticeMinutes(config.timeoutMinutes);
+    const banDelayText = formatNoticeMinutes(config.banDelayMinutes);
+    const actionId = config.autoBanEnabled
+      ? config.banMode === 'immediate'
+        ? 'kamu akan langsung terkena `ban`.'
+        : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah ${banDelayText}.`
+      : `kamu akan terkena \`timeout\` selama ${timeoutText}.`;
+    const appealId = config.autoBanEnabled && config.banMode === 'immediate'
+      ? 'Jika ini adalah kesalahan, silakan hubungi admin server.'
+      : 'Jika kamu terkena timeout, silakan kirim private message ke salah satu admin yang sedang online atau gunakan tombol appeal jika tersedia.';
+    const actionEn = config.autoBanEnabled
+      ? config.banMode === 'immediate'
+        ? 'you will be `banned` immediately.'
+        : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after ${banDelayText}.`
+      : `you will receive a \`timeout\` for ${timeoutText}.`;
+    const appealEn = config.autoBanEnabled && config.banMode === 'immediate'
+      ? 'If this was a mistake, please contact a server admin.'
+      : 'If you are timed out, please send a private message to one of the online admins or use the appeal button if available.';
+
+    return {
+      flags: MessageFlags.IsComponentsV2,
+      components: [
+        new ContainerBuilder()
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+              [
+                '# 🚫 Dilarang Mengirim Pesan di Channel Ini',
+                `⚠️ Channel ini dibuat untuk menangkap spammer. Jika kamu mengirim pesan di channel ini, ${actionId} ${appealId}`,
+                '',
+                `-# Jumlah user yang sudah tertangkap di channel ini: \`${safeCount}\``,
+              ].join('\n')
+            )
+          )
+          .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+              [
+                '# 🚫 Do Not Send Messages in This Channel',
+                `⚠️ This channel is made to catch spammers. If you send a message in this channel, ${actionEn} ${appealEn}`,
+                '',
+                `-# Caught users in this channel: \`${safeCount}\``,
+              ].join('\n')
+            )
+          ),
+      ],
+      allowedMentions: { parse: [] },
+    };
+  }
+
+  function webhookEditUrl(webhookUrl, messageId) {
+    const url = new URL(webhookUrl);
+    url.pathname = `${url.pathname.replace(/\/$/, '')}/messages/${messageId}`;
+    url.searchParams.set('with_components', 'true');
+    return url.toString();
+  }
+
+  async function refreshTrapNoticeCount(guild, config, event) {
+    const notice = await configStore
+      .getSpamCatcherNoticeMessage(event.guildId, event.channelId)
+      .catch(() => null);
+    if (!notice?.messageId) return;
+
+    const caughtCount = notice.deliveryMethod === 'webhook' && config.webhookEnabled
+      ? (await Promise.all(
+          (config.channelIds || []).map((channelId) =>
+            configStore.getSpamCatcherCaughtCount(event.guildId, channelId).catch(() => 0)
+          )
+        )).reduce((total, count) => total + count, 0)
+      : await configStore.getSpamCatcherCaughtCount(event.guildId, event.channelId).catch(() => 0);
+    const payload = buildTrapNoticePayload(caughtCount, config);
+
+    if (notice.deliveryMethod === 'webhook' && notice.webhookUrl) {
+      await fetch(webhookEditUrl(notice.webhookUrl, notice.messageId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch((error) => {
+        console.error('Failed to edit Spam Catcher webhook notice:', error);
+      });
+      return;
+    }
+
+    const channel = await guild.channels.fetch(notice.channelId).catch(() => null);
+    if (!channel?.isTextBased()) return;
+    const message = await channel.messages.fetch(notice.messageId).catch(() => null);
+    if (!message) return;
+    await message.edit(payload).catch((error) => {
+      console.error('Failed to edit Spam Catcher trap notice:', error);
+    });
+  }
+
   async function logAction(event, title, details = []) {
     const logChannel = await getLogChannel(event.guildId);
     if (!logChannel) return;
@@ -245,6 +351,7 @@ function createSpamCatcherManager({ client, configStore }) {
     });
 
     if (!event) return;
+    await refreshTrapNoticeCount(message.guild, config, event);
     if (action === 'ban_immediate') {
       await handleImmediateBan(message.guild, event);
       return;
