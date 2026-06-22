@@ -125,6 +125,7 @@ export async function POST(request: Request) {
       enabledVoiceChannelIds: existingConfig.enabledVoiceChannelIds,
       joinToCreateLobbies: existingConfig.joinToCreateLobbies,
       autoRoleConfig: existingConfig.autoRoleConfig,
+      spamCatcherConfig: existingConfig.spamCatcherConfig,
     });
   } catch (error) {
     return NextResponse.json(

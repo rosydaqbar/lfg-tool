@@ -56,6 +56,16 @@ export type AutoRoleConfig = {
   approvalChannelId: string | null;
 };
 
+export type SpamCatcherConfig = {
+  enabled: boolean;
+  channelIds: string[];
+  timeoutMinutes: number;
+  autoBanEnabled: boolean;
+  banMode: "immediate" | "delayed";
+  banDelayMinutes: number;
+  reviewChannelId: string | null;
+};
+
 export type AutoRoleRequestStatus = "pending" | "approved" | "denied";
 
 export type AutoRoleRequest = {
@@ -121,6 +131,7 @@ export type ConfigResponse = {
   enabledVoiceChannelIds: string[];
   joinToCreateLobbies: JoinToCreateLobby[];
   autoRoleConfig: AutoRoleConfig;
+  spamCatcherConfig: SpamCatcherConfig;
 };
 
 export type ChannelsResponse = {

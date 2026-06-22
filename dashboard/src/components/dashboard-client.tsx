@@ -11,6 +11,7 @@ import { ChannelConfigCards } from "@/components/dashboard/channel-config-cards"
 import { HeaderSection } from "@/components/dashboard/header-section";
 import { VoiceSettingsSection } from "@/components/dashboard/voice-settings-section";
 import { AutoRoleSection } from "@/components/dashboard/auto-role-section";
+import { SpamCatcherSection } from "@/components/dashboard/spam-catcher-section";
 import { AutoRoleRequestsCard } from "@/components/dashboard/auto-role-requests-card";
 import { ActiveTempChannelsCard } from "@/components/dashboard/active-temp-channels-card";
 import { VoiceLeaderboardCard } from "@/components/dashboard/voice-leaderboard-card";
@@ -23,6 +24,7 @@ import type {
   ConfigResponse,
   JoinToCreateLobby,
   AutoRoleConfig,
+  SpamCatcherConfig,
   Role,
   RolesResponse,
   GuildsResponse,
@@ -36,6 +38,16 @@ const DEFAULT_AUTO_ROLE_CONFIG: AutoRoleConfig = {
   rules: [],
   requireAdminApproval: false,
   approvalChannelId: null,
+};
+
+const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
+  enabled: false,
+  channelIds: [],
+  timeoutMinutes: 60,
+  autoBanEnabled: false,
+  banMode: "delayed",
+  banDelayMinutes: 10,
+  reviewChannelId: null,
 };
 
 const SELECTED_GUILD_STORAGE_KEY = "lfg-tool:selected-guild-id";
@@ -99,6 +111,27 @@ function normalizeAutoRoleConfig(
   };
 }
 
+function normalizeSpamCatcherConfig(
+  value: Partial<SpamCatcherConfig> | null | undefined
+): SpamCatcherConfig {
+  if (!value || typeof value !== "object") return DEFAULT_SPAM_CATCHER_CONFIG;
+
+  return {
+    enabled: value.enabled === true,
+    channelIds: Array.isArray(value.channelIds)
+      ? Array.from(new Set(value.channelIds.filter((id): id is string => typeof id === "string")))
+      : [],
+    timeoutMinutes: Math.max(1, Math.min(40320, Number.isFinite(Number(value.timeoutMinutes)) ? Math.floor(Number(value.timeoutMinutes)) : 60)),
+    autoBanEnabled: value.autoBanEnabled === true,
+    banMode: value.banMode === "immediate" ? "immediate" : "delayed",
+    banDelayMinutes: Math.max(1, Math.min(60, Number.isFinite(Number(value.banDelayMinutes)) ? Math.floor(Number(value.banDelayMinutes)) : 10)),
+    reviewChannelId:
+      typeof value.reviewChannelId === "string" && value.reviewChannelId.trim().length > 0
+        ? value.reviewChannelId
+        : null,
+  };
+}
+
 export default function DashboardClient({
   userName,
 }: {
@@ -122,6 +155,9 @@ export default function DashboardClient({
   >([]);
   const [autoRoleConfig, setAutoRoleConfig] = useState<AutoRoleConfig>(
     DEFAULT_AUTO_ROLE_CONFIG
+  );
+  const [spamCatcherConfig, setSpamCatcherConfig] = useState<SpamCatcherConfig>(
+    DEFAULT_SPAM_CATCHER_CONFIG
   );
   const [loadingGuilds, setLoadingGuilds] = useState(true);
   const [refreshingGuilds, setRefreshingGuilds] = useState(false);
@@ -233,6 +269,7 @@ export default function DashboardClient({
     setEnabledVoiceIds([]);
     setJoinToCreateLobbies([]);
     setAutoRoleConfig(DEFAULT_AUTO_ROLE_CONFIG);
+    setSpamCatcherConfig(DEFAULT_SPAM_CATCHER_CONFIG);
     setLogChannelId("");
     setLfgChannelId("");
 
@@ -259,6 +296,7 @@ export default function DashboardClient({
           }))
         );
         setAutoRoleConfig(normalizeAutoRoleConfig(config.autoRoleConfig));
+        setSpamCatcherConfig(normalizeSpamCatcherConfig(config.spamCatcherConfig));
         setLoadedSettingsGuildId(selectedGuildId);
       })
       .catch((err) => {
@@ -341,7 +379,18 @@ export default function DashboardClient({
     const trimmedGuildId = selectedGuildId.trim();
     const trimmedLogChannelId = logChannelId.trim();
     const trimmedLfgChannelId = lfgChannelId.trim();
-    if (!trimmedGuildId || !trimmedLogChannelId) return;
+    if (!trimmedGuildId) {
+      toast.error("Save failed", {
+        description: "Select a server before saving settings.",
+      });
+      return;
+    }
+    if (!trimmedLogChannelId) {
+      toast.error("Save failed", {
+        description: "Select a log channel before saving settings.",
+      });
+      return;
+    }
     setSaving(true);
 
     const enabledVoiceChannelIds = Array.from(
@@ -384,6 +433,7 @@ export default function DashboardClient({
           enabledVoiceChannelIds,
           joinToCreateLobbies: joinToCreateLobbiesPayload,
           autoRoleConfig,
+          spamCatcherConfig,
         }),
       });
 
@@ -418,6 +468,7 @@ export default function DashboardClient({
     lfgChannelId,
     logChannelId,
     autoRoleConfig,
+    spamCatcherConfig,
     selectedGuildId,
   ]);
 
@@ -714,6 +765,18 @@ export default function DashboardClient({
             onChange={setAutoRoleConfig}
             onOpenTextChannels={handleLoadChannels}
             onOpenRoles={handleLoadRoles}
+            onSave={handleSave}
+          />
+
+          <SpamCatcherSection
+            loadingConfig={loadingConfig}
+            loadingChannels={loadingChannels}
+            channelsLoaded={loadedChannelsGuildId === selectedGuildId}
+            saving={saving}
+            textChannels={memoTextChannels}
+            value={spamCatcherConfig}
+            onChange={setSpamCatcherConfig}
+            onOpenTextChannels={handleLoadChannels}
             onSave={handleSave}
           />
 

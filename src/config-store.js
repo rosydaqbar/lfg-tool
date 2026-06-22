@@ -92,6 +92,8 @@ let persistentLfgMessageEnsured = false;
 let voiceAutoRoleConfigEnsured = false;
 let voiceAutoRoleRequestsEnsured = false;
 let voiceLeaderboardOverridesEnsured = false;
+let spamCatcherConfigEnsured = false;
+let spamCatcherEventsEnsured = false;
 
 const TEMP_OWNER_CACHE_TTL_MS = 15_000;
 const tempOwnerByOwnerKeyCache = new Map();
@@ -945,6 +947,47 @@ function normalizeAutoRoleConfig(value) {
   };
 }
 
+const DEFAULT_SPAM_CATCHER_CONFIG = {
+  enabled: false,
+  channelIds: [],
+  timeoutMinutes: 60,
+  autoBanEnabled: false,
+  banMode: 'delayed',
+  banDelayMinutes: 10,
+  reviewChannelId: null,
+};
+
+function normalizeSpamCatcherConfig(value) {
+  if (!value || typeof value !== 'object') {
+    return { ...DEFAULT_SPAM_CATCHER_CONFIG };
+  }
+
+  const timeoutMinutes = Number(value.timeoutMinutes);
+  const banDelayMinutes = Number(value.banDelayMinutes);
+
+  return {
+    enabled: value.enabled === true,
+    channelIds: Array.isArray(value.channelIds)
+      ? [...new Set(value.channelIds
+        .filter((id) => typeof id === 'string')
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0))]
+      : [],
+    timeoutMinutes: Number.isFinite(timeoutMinutes)
+      ? Math.max(1, Math.min(40_320, Math.floor(timeoutMinutes)))
+      : DEFAULT_SPAM_CATCHER_CONFIG.timeoutMinutes,
+    autoBanEnabled: value.autoBanEnabled === true,
+    banMode: value.banMode === 'immediate' ? 'immediate' : 'delayed',
+    banDelayMinutes: Number.isFinite(banDelayMinutes)
+      ? Math.max(1, Math.min(60, Math.floor(banDelayMinutes)))
+      : DEFAULT_SPAM_CATCHER_CONFIG.banDelayMinutes,
+    reviewChannelId:
+      typeof value.reviewChannelId === 'string' && value.reviewChannelId.trim().length > 0
+        ? value.reviewChannelId.trim()
+        : null,
+  };
+}
+
 async function ensureVoiceAutoRoleConfigTable() {
   if (voiceAutoRoleConfigEnsured) return;
   try {
@@ -989,6 +1032,61 @@ async function ensureVoiceAutoRoleRequestsTable() {
     voiceAutoRoleRequestsEnsured = true;
   } catch (error) {
     console.error('Failed to ensure voice_auto_role_requests table:', error);
+  }
+}
+
+async function ensureSpamCatcherConfigTable() {
+  if (spamCatcherConfigEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_config (
+          guild_id TEXT PRIMARY KEY,
+          config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    spamCatcherConfigEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure spam_catcher_config table:', error);
+  }
+}
+
+async function ensureSpamCatcherEventsTable() {
+  if (spamCatcherEventsEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_events (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          message_id TEXT,
+          action TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'caught',
+          timeout_until TIMESTAMPTZ,
+          ban_after TIMESTAMPTZ,
+          appeal_message TEXT,
+          review_channel_id TEXT,
+          review_message_id TEXT,
+          decided_by TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          banned_at TIMESTAMPTZ
+        )
+      `
+    );
+    await query(
+      'CREATE INDEX IF NOT EXISTS idx_spam_catcher_events_guild_created ON spam_catcher_events(guild_id, created_at DESC)'
+    );
+    await query(
+      'CREATE INDEX IF NOT EXISTS idx_spam_catcher_events_ban_due ON spam_catcher_events(status, ban_after)'
+    );
+    spamCatcherEventsEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure spam_catcher_events table:', error);
   }
 }
 
@@ -1623,15 +1721,172 @@ async function getVoiceLeaderboard(guildId, limit = 10) {
   }));
 }
 
+function mapSpamCatcherEvent(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    guildId: row.guild_id,
+    userId: row.user_id,
+    channelId: row.channel_id,
+    messageId: row.message_id ?? null,
+    action: row.action,
+    status: row.status,
+    timeoutUntil: row.timeout_until ? new Date(row.timeout_until) : null,
+    banAfter: row.ban_after ? new Date(row.ban_after) : null,
+    appealMessage: row.appeal_message ?? null,
+    reviewChannelId: row.review_channel_id ?? null,
+    reviewMessageId: row.review_message_id ?? null,
+    decidedBy: row.decided_by ?? null,
+    createdAt: row.created_at ? new Date(row.created_at) : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at) : null,
+    bannedAt: row.banned_at ? new Date(row.banned_at) : null,
+  };
+}
+
+async function getSpamCatcherConfig(guildId) {
+  await ensureSpamCatcherConfigTable();
+  const res = await query(
+    'SELECT config_json FROM spam_catcher_config WHERE guild_id = $1',
+    [guildId]
+  );
+  return normalizeSpamCatcherConfig(res.rows[0]?.config_json || null);
+}
+
+async function createSpamCatcherEvent({
+  guildId,
+  userId,
+  channelId,
+  messageId,
+  action,
+  status,
+  timeoutUntil,
+  banAfter,
+  reviewChannelId,
+}) {
+  await ensureSpamCatcherEventsTable();
+  const res = await query(
+    `
+      INSERT INTO spam_catcher_events (
+        guild_id, user_id, channel_id, message_id, action, status,
+        timeout_until, ban_after, review_channel_id, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      RETURNING *
+    `,
+    [
+      guildId,
+      userId,
+      channelId,
+      messageId || null,
+      action,
+      status || 'caught',
+      timeoutUntil || null,
+      banAfter || null,
+      reviewChannelId || null,
+    ]
+  );
+  return mapSpamCatcherEvent(res.rows[0]);
+}
+
+async function getSpamCatcherEventById(id) {
+  await ensureSpamCatcherEventsTable();
+  const res = await query('SELECT * FROM spam_catcher_events WHERE id = $1', [id]);
+  return mapSpamCatcherEvent(res.rows[0]);
+}
+
+async function updateSpamCatcherEventStatus(id, status, decidedBy = null) {
+  await ensureSpamCatcherEventsTable();
+  const res = await query(
+    `
+      UPDATE spam_catcher_events
+      SET status = $2,
+          decided_by = COALESCE($3, decided_by),
+          updated_at = NOW(),
+          banned_at = CASE WHEN $2 = 'banned' THEN NOW() ELSE banned_at END
+      WHERE id = $1
+      RETURNING *
+    `,
+    [id, status, decidedBy]
+  );
+  return mapSpamCatcherEvent(res.rows[0]);
+}
+
+async function markSpamCatcherAppealed(id, appealMessage) {
+  await ensureSpamCatcherEventsTable();
+  const res = await query(
+    `
+      UPDATE spam_catcher_events
+      SET appeal_message = $2, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `,
+    [id, appealMessage]
+  );
+  return mapSpamCatcherEvent(res.rows[0]);
+}
+
+async function updateSpamCatcherReviewMessage(id, reviewChannelId, reviewMessageId) {
+  await ensureSpamCatcherEventsTable();
+  const res = await query(
+    `
+      UPDATE spam_catcher_events
+      SET review_channel_id = $2, review_message_id = $3, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `,
+    [id, reviewChannelId, reviewMessageId]
+  );
+  return mapSpamCatcherEvent(res.rows[0]);
+}
+
+async function resolveSpamCatcherAppeal(id, decidedBy) {
+  await ensureSpamCatcherEventsTable();
+  const res = await query(
+    `
+      UPDATE spam_catcher_events
+      SET status = 'timeout_removed', ban_after = NULL, decided_by = $2, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `,
+    [id, decidedBy]
+  );
+  return mapSpamCatcherEvent(res.rows[0]);
+}
+
+async function getDueSpamCatcherBanEvents(limit = 25) {
+  await ensureSpamCatcherEventsTable();
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 25;
+  const res = await query(
+    `
+      SELECT * FROM spam_catcher_events
+      WHERE status = 'ban_pending'
+        AND ban_after IS NOT NULL
+        AND ban_after <= NOW()
+      ORDER BY ban_after ASC
+      LIMIT $1
+    `,
+    [safeLimit]
+  );
+  return res.rows.map(mapSpamCatcherEvent);
+}
+
 module.exports = {
   getGuildConfig,
   getVoiceAutoRoleConfig,
+  getSpamCatcherConfig,
   getGuildVoiceTotals,
   getVoiceAutoRoleRequest,
   getVoiceAutoRoleRequestById,
   createOrGetVoiceAutoRoleRequest,
   updateVoiceAutoRoleRequestMessage,
   updateVoiceAutoRoleRequestStatus,
+  createSpamCatcherEvent,
+  getSpamCatcherEventById,
+  updateSpamCatcherEventStatus,
+  markSpamCatcherAppealed,
+  updateSpamCatcherReviewMessage,
+  resolveSpamCatcherAppeal,
+  getDueSpamCatcherBanEvents,
   addTempChannel,
   clearPersistentLfgMessage,
   clearManualVoicePanelMessage,

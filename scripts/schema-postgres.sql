@@ -89,6 +89,31 @@ CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
   UNIQUE (guild_id, user_id, role_id, rule_key)
 );
 
+CREATE TABLE IF NOT EXISTS spam_catcher_config (
+  guild_id TEXT PRIMARY KEY,
+  config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS spam_catcher_events (
+  id BIGSERIAL PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  message_id TEXT,
+  action TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'caught',
+  timeout_until TIMESTAMPTZ,
+  ban_after TIMESTAMPTZ,
+  appeal_message TEXT,
+  review_channel_id TEXT,
+  review_message_id TEXT,
+  decided_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  banned_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
   guild_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
@@ -167,3 +192,5 @@ CREATE INDEX IF NOT EXISTS idx_manual_voice_panel_guild_channel ON manual_voice_
 CREATE INDEX IF NOT EXISTS idx_voice_auto_role_requests_guild_status_created ON voice_auto_role_requests(guild_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_voice_auto_role_requests_guild_user ON voice_auto_role_requests(guild_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_voice_leaderboard_overrides_guild_updated ON voice_leaderboard_overrides(guild_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_spam_catcher_events_guild_created ON spam_catcher_events(guild_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_spam_catcher_events_ban_due ON spam_catcher_events(status, ban_after);

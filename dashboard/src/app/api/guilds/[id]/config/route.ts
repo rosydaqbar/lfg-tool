@@ -20,6 +20,50 @@ type AutoRoleConfigPayload = {
   approvalChannelId: string | null;
 };
 
+type SpamCatcherConfigPayload = {
+  enabled: boolean;
+  channelIds: string[];
+  timeoutMinutes: number;
+  autoBanEnabled: boolean;
+  banMode: "immediate" | "delayed";
+  banDelayMinutes: number;
+  reviewChannelId: string | null;
+};
+
+function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
+  const source = value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+  const timeoutMinutes = Number(source.timeoutMinutes);
+  const banDelayMinutes = Number(source.banDelayMinutes);
+
+  return {
+    enabled: source.enabled === true,
+    channelIds: Array.isArray(source.channelIds)
+      ? Array.from(
+          new Set(
+            source.channelIds
+              .filter((id): id is string => typeof id === "string")
+              .map((id) => id.trim())
+              .filter((id) => id.length > 0)
+          )
+        )
+      : [],
+    timeoutMinutes: Number.isFinite(timeoutMinutes)
+      ? Math.max(1, Math.min(40_320, Math.floor(timeoutMinutes)))
+      : 60,
+    autoBanEnabled: source.autoBanEnabled === true,
+    banMode: source.banMode === "immediate" ? "immediate" : "delayed",
+    banDelayMinutes: Number.isFinite(banDelayMinutes)
+      ? Math.max(1, Math.min(60, Math.floor(banDelayMinutes)))
+      : 10,
+    reviewChannelId:
+      typeof source.reviewChannelId === "string" && source.reviewChannelId.trim().length > 0
+        ? source.reviewChannelId.trim()
+        : null,
+  };
+}
+
 function normalizeAutoRoleConfig(value: unknown): AutoRoleConfigPayload {
   const source = value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -265,6 +309,7 @@ export async function GET(
       enabledVoiceChannelIds: config.enabledVoiceChannelIds,
       joinToCreateLobbies: config.joinToCreateLobbies,
       autoRoleConfig: config.autoRoleConfig,
+      spamCatcherConfig: config.spamCatcherConfig,
     });
   } catch (error) {
     return NextResponse.json(
@@ -296,6 +341,7 @@ export async function PUT(
       lfgReminderSeconds?: number;
     }[];
     autoRoleConfig?: unknown;
+    spamCatcherConfig?: unknown;
   };
 
   if (!body.logChannelId) {
@@ -351,6 +397,7 @@ export async function PUT(
   }
 
   const autoRoleConfig = normalizeAutoRoleConfig(body.autoRoleConfig);
+  const spamCatcherConfig = normalizeSpamCatcherConfig(body.spamCatcherConfig);
   if (
     autoRoleConfig.requireAdminApproval &&
     !autoRoleConfig.approvalChannelId
@@ -382,6 +429,24 @@ export async function PUT(
     );
   }
 
+  if (spamCatcherConfig.enabled && spamCatcherConfig.channelIds.length === 0) {
+    return NextResponse.json(
+      { error: "Select at least one spam catcher channel or disable Spam Catcher." },
+      { status: 400 }
+    );
+  }
+
+  if (
+    spamCatcherConfig.enabled &&
+    (!spamCatcherConfig.autoBanEnabled || spamCatcherConfig.banMode === "delayed") &&
+    !spamCatcherConfig.reviewChannelId
+  ) {
+    return NextResponse.json(
+      { error: "Review channel is required for timeout appeals." },
+      { status: 400 }
+    );
+  }
+
   try {
     const previousConfig = await getGuildConfig(id);
 
@@ -391,6 +456,7 @@ export async function PUT(
       enabledVoiceChannelIds,
       joinToCreateLobbies,
       autoRoleConfig,
+      spamCatcherConfig,
     });
 
     const changeLines = buildAutoRoleChangeLines(

@@ -22,6 +22,7 @@ const { createVoiceLogger } = require('./bot/voice-log');
 const { createHealthServer } = require('./bot/health-server');
 const { createStatsManager } = require('./bot/stats');
 const { createAutoRoleManager } = require('./bot/auto-role');
+const { createSpamCatcherManager } = require('./bot/spam-catcher');
 const { createLogger } = require('./lib/logger');
 
 const logger = createLogger('bot');
@@ -34,7 +35,11 @@ if (!LOG_CHANNEL_ID) {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
+  ],
 });
 
 const debugLog = createDebugLogger(DEBUG === 'true');
@@ -72,6 +77,10 @@ const voiceLogger = createVoiceLogger({
 });
 const healthServer = createHealthServer();
 const autoRoleManager = createAutoRoleManager({
+  client,
+  configStore,
+});
+const spamCatcherManager = createSpamCatcherManager({
   client,
   configStore,
 });
@@ -143,6 +152,12 @@ async function shutdown(signal) {
   }
 
   try {
+    spamCatcherManager.stopLoop?.();
+  } catch (error) {
+    logger.error('Failed to stop Spam Catcher loop:', error);
+  }
+
+  try {
     healthServer.stop();
   } catch (error) {
     logger.error('Failed to stop health server:', error);
@@ -182,6 +197,7 @@ client.once(Events.ClientReady, () => {
   lfgManager.startPromptReconcileLoop?.();
   joinToCreateManager.startStuckLobbyWatchdog?.();
   autoRoleManager.startLoop?.();
+  spamCatcherManager.startLoop?.();
   statsManager.registerCommands().catch((error) => {
     logger.error('Failed to register slash commands:', error);
   });
@@ -193,6 +209,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
     if (await autoRoleManager.handleInteraction(interaction)) {
+      return;
+    }
+    if (await spamCatcherManager.handleInteraction(interaction)) {
       return;
     }
     await lfgManager.handleInteraction(interaction);
@@ -214,6 +233,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
         flags: MessageFlags.Ephemeral,
       })
       .catch(() => null);
+  }
+});
+
+client.on(Events.MessageCreate, async (message) => {
+  try {
+    await spamCatcherManager.handleMessage(message);
+  } catch (error) {
+    console.error('Failed to handle Spam Catcher message:', error);
   }
 });
 

@@ -299,6 +299,7 @@ Enable these Discord bot intents in the Discord Developer Portal:
 
 - `Guilds`
 - `GuildVoiceStates`
+- `GuildMessages`
 
 Give the bot these permissions when inviting it to your server:
 
@@ -306,6 +307,8 @@ Give the bot these permissions when inviting it to your server:
 - `Send Messages`
 - `Manage Channels`
 - `Move Members`
+- `Moderate Members`
+- `Ban Members`
 
 Optional, depending on your setup:
 

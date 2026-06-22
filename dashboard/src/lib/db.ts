@@ -16,6 +16,7 @@ type GuildConfig = {
     lfgReminderSeconds: number;
   }[];
   autoRoleConfig: AutoRoleConfig;
+  spamCatcherConfig: SpamCatcherConfig;
 };
 
 type AutoRoleCondition = "more_than" | "less_than" | "equal_to";
@@ -46,6 +47,62 @@ const DEFAULT_AUTO_ROLE_CONFIG: AutoRoleConfig = {
   requireAdminApproval: false,
   approvalChannelId: null,
 };
+
+type SpamCatcherConfig = {
+  enabled: boolean;
+  channelIds: string[];
+  timeoutMinutes: number;
+  autoBanEnabled: boolean;
+  banMode: "immediate" | "delayed";
+  banDelayMinutes: number;
+  reviewChannelId: string | null;
+};
+
+const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
+  enabled: false,
+  channelIds: [],
+  timeoutMinutes: 60,
+  autoBanEnabled: false,
+  banMode: "delayed",
+  banDelayMinutes: 10,
+  reviewChannelId: null,
+};
+
+function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_SPAM_CATCHER_CONFIG };
+  }
+
+  const source = value as Record<string, unknown>;
+  const timeoutMinutes = Number(source.timeoutMinutes);
+  const banDelayMinutes = Number(source.banDelayMinutes);
+
+  return {
+    enabled: source.enabled === true,
+    channelIds: Array.isArray(source.channelIds)
+      ? Array.from(
+          new Set(
+            source.channelIds
+              .filter((id): id is string => typeof id === "string")
+              .map((id) => id.trim())
+              .filter((id) => id.length > 0)
+          )
+        )
+      : [],
+    timeoutMinutes: Number.isFinite(timeoutMinutes)
+      ? Math.max(1, Math.min(40_320, Math.floor(timeoutMinutes)))
+      : DEFAULT_SPAM_CATCHER_CONFIG.timeoutMinutes,
+    autoBanEnabled: source.autoBanEnabled === true,
+    banMode: source.banMode === "immediate" ? "immediate" : "delayed",
+    banDelayMinutes: Number.isFinite(banDelayMinutes)
+      ? Math.max(1, Math.min(60, Math.floor(banDelayMinutes)))
+      : DEFAULT_SPAM_CATCHER_CONFIG.banDelayMinutes,
+    reviewChannelId:
+      typeof source.reviewChannelId === "string" && source.reviewChannelId.trim().length > 0
+        ? source.reviewChannelId.trim()
+        : null,
+  };
+}
 
 function normalizeAutoRoleConfig(value: unknown): AutoRoleConfig {
   if (!value || typeof value !== "object") {
@@ -232,6 +289,29 @@ function getSqliteDb() {
       guild_id TEXT PRIMARY KEY,
       config_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS spam_catcher_config (
+      guild_id TEXT PRIMARY KEY,
+      config_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS spam_catcher_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      message_id TEXT,
+      action TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'caught',
+      timeout_until TEXT,
+      ban_after TEXT,
+      appeal_message TEXT,
+      review_channel_id TEXT,
+      review_message_id TEXT,
+      decided_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      banned_at TEXT
     );
     CREATE TABLE IF NOT EXISTS voice_auto_role_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -508,6 +588,37 @@ async function ensureCoreConfigTables() {
           guild_id TEXT PRIMARY KEY,
           config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_config (
+          guild_id TEXT PRIMARY KEY,
+          config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_events (
+          id BIGSERIAL PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          message_id TEXT,
+          action TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'caught',
+          timeout_until TIMESTAMPTZ,
+          ban_after TIMESTAMPTZ,
+          appeal_message TEXT,
+          review_channel_id TEXT,
+          review_message_id TEXT,
+          decided_by TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          banned_at TIMESTAMPTZ
         )
       `
     );
@@ -1024,6 +1135,15 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
         )
       `
     );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_config (
+          guild_id TEXT PRIMARY KEY,
+          config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
 
     const configRes = await client.query(
       "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1",
@@ -1037,6 +1157,10 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
     );
     const autoRoleRes = await client.query(
       "SELECT config_json FROM voice_auto_role_config WHERE guild_id = $1",
+      [guildId]
+    );
+    const spamCatcherRes = await client.query(
+      "SELECT config_json FROM spam_catcher_config WHERE guild_id = $1",
       [guildId]
     );
 
@@ -1069,6 +1193,7 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
         lfgReminderSeconds: row.lfg_reminder_seconds ?? 30,
       })),
       autoRoleConfig: normalizeAutoRoleConfig(autoRoleRes.rows[0]?.config_json),
+      spamCatcherConfig: normalizeSpamCatcherConfig(spamCatcherRes.rows[0]?.config_json),
     };
   } finally {
     client.release();
@@ -1100,6 +1225,11 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
         "SELECT config_json FROM voice_auto_role_config WHERE guild_id = ?"
       )
       .get(guildId) as { config_json?: string | null } | undefined;
+    const spamCatcherRow = db
+      .prepare(
+        "SELECT config_json FROM spam_catcher_config WHERE guild_id = ?"
+      )
+      .get(guildId) as { config_json?: string | null } | undefined;
 
     const lobbyRows = db
       .prepare(
@@ -1115,6 +1245,14 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
         parsedAutoRoleConfig = null;
       }
     }
+    let parsedSpamCatcherConfig: unknown = null;
+    if (spamCatcherRow?.config_json) {
+      try {
+        parsedSpamCatcherConfig = JSON.parse(spamCatcherRow.config_json);
+      } catch {
+        parsedSpamCatcherConfig = null;
+      }
+    }
 
     return {
       logChannelId: configRow?.log_channel_id ?? null,
@@ -1128,6 +1266,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
         lfgReminderSeconds: row.lfg_reminder_seconds ?? 30,
       })),
       autoRoleConfig: normalizeAutoRoleConfig(parsedAutoRoleConfig),
+      spamCatcherConfig: normalizeSpamCatcherConfig(parsedSpamCatcherConfig),
     };
   }
 
@@ -1146,6 +1285,10 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
   );
   const autoRoleRes = await query(
     "SELECT config_json FROM voice_auto_role_config WHERE guild_id = $1",
+    [guildId]
+  );
+  const spamCatcherRes = await query(
+    "SELECT config_json FROM spam_catcher_config WHERE guild_id = $1",
     [guildId]
   );
 
@@ -1178,6 +1321,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
       lfgReminderSeconds: row.lfg_reminder_seconds ?? 30,
     })),
     autoRoleConfig: normalizeAutoRoleConfig(autoRoleRes.rows[0]?.config_json),
+    spamCatcherConfig: normalizeSpamCatcherConfig(spamCatcherRes.rows[0]?.config_json),
   };
 }
 
@@ -1300,6 +1444,17 @@ async function saveGuildConfigWithClient(
     `,
     [guildId, JSON.stringify(normalizeAutoRoleConfig(config.autoRoleConfig))]
   );
+
+  await client.query(
+    `
+      INSERT INTO spam_catcher_config (guild_id, config_json, updated_at)
+      VALUES ($1, $2::jsonb, NOW())
+      ON CONFLICT(guild_id) DO UPDATE SET
+        config_json = EXCLUDED.config_json,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [guildId, JSON.stringify(normalizeSpamCatcherConfig(config.spamCatcherConfig))]
+  );
 }
 
 async function runDeleteIgnoreMissingTable(
@@ -1356,6 +1511,11 @@ async function clearGuildSettingsWithClient(
   );
   await runDeleteIgnoreMissingTable(
     client,
+    "DELETE FROM spam_catcher_config WHERE guild_id = $1",
+    [guildId]
+  );
+  await runDeleteIgnoreMissingTable(
+    client,
     "DELETE FROM guild_config WHERE guild_id = $1",
     [guildId]
   );
@@ -1407,6 +1567,11 @@ export async function clearGuildSettings(guildId: string) {
       runSqliteDeleteIgnoreMissingTable(
         db,
         "DELETE FROM voice_auto_role_config WHERE guild_id = ?",
+        [targetGuildId]
+      );
+      runSqliteDeleteIgnoreMissingTable(
+        db,
+        "DELETE FROM spam_catcher_config WHERE guild_id = ?",
         [targetGuildId]
       );
       runSqliteDeleteIgnoreMissingTable(
@@ -1496,6 +1661,20 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
         JSON.stringify(normalizeAutoRoleConfig(config.autoRoleConfig)),
         now
       );
+
+      db.prepare(
+        `
+          INSERT INTO spam_catcher_config (guild_id, config_json, updated_at)
+          VALUES (?, ?, ?)
+          ON CONFLICT(guild_id) DO UPDATE SET
+            config_json = excluded.config_json,
+            updated_at = excluded.updated_at
+        `
+      ).run(
+        guildId,
+        JSON.stringify(normalizeSpamCatcherConfig(config.spamCatcherConfig)),
+        now
+      );
     });
 
     tx();
@@ -1563,6 +1742,15 @@ export async function saveGuildConfigWithDatabaseUrl(
     await client.query(
       `
         CREATE TABLE IF NOT EXISTS voice_auto_role_config (
+          guild_id TEXT PRIMARY KEY,
+          config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await client.query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_config (
           guild_id TEXT PRIMARY KEY,
           config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

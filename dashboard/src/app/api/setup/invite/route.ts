@@ -5,7 +5,7 @@ import { requireSetupSession } from "@/lib/setup-session";
 
 export const dynamic = "force-dynamic";
 
-const BOT_INVITE_PERMISSIONS = "288427024";
+const BOT_INVITE_PERMISSIONS = "1099800054804";
 
 function createBotInviteUrl(clientId: string, guildId?: string | null) {
   const params = new URLSearchParams({
