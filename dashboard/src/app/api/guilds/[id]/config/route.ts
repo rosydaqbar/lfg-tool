@@ -45,6 +45,12 @@ function isDiscordWebhookUrl(value: string) {
   }
 }
 
+function withWebhookComponentsEnabled(webhookUrl: string) {
+  const url = new URL(webhookUrl);
+  url.searchParams.set("with_components", "true");
+  return url.toString();
+}
+
 function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
   const source = value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -392,7 +398,7 @@ async function sendSpamCatcherTrapChannelNotices({
       (total, channelId) => total + (caughtCounts[channelId] ?? 0),
       0
     );
-    const response = await fetch(webhookUrl, {
+    const response = await fetch(withWebhookComponentsEnabled(webhookUrl), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
