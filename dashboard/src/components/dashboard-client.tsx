@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, LayoutDashboard, RefreshCw, Settings } from "lucide-react";
 import { toast } from "sonner";
@@ -51,6 +51,9 @@ const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
 };
 
 const SELECTED_GUILD_STORAGE_KEY = "lfg-tool:selected-guild-id";
+const CHANNELS_CACHE_PREFIX = "lfg-tool:guild-channels:";
+const ROLES_CACHE_PREFIX = "lfg-tool:guild-roles:";
+const DISCORD_LIST_CACHE_TTL_MS = 10 * 60 * 1000;
 
 function mergeGuilds(current: ManageableGuild[], incoming: ManageableGuild[]) {
   const guildsById = new Map(current.map((guild) => [guild.id, guild]));
@@ -138,6 +141,8 @@ export default function DashboardClient({
   userName: string;
 }) {
   const router = useRouter();
+  const channelsRequestRef = useRef<Promise<ChannelsResponse> | null>(null);
+  const rolesRequestRef = useRef<Promise<RolesResponse> | null>(null);
   const [guilds, setGuilds] = useState<ManageableGuild[]>([]);
   const [selectedGuildId, setSelectedGuildId] = useState("");
   const [activeTab, setActiveTab] = useState<"dashboard" | "settings">("dashboard");
@@ -173,6 +178,48 @@ export default function DashboardClient({
   const [loadedRolesGuildId, setLoadedRolesGuildId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const readChannelsCache = useCallback((guildId: string, allowStale = false) => {
+    try {
+      const raw = localStorage.getItem(`${CHANNELS_CACHE_PREFIX}${guildId}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { savedAt?: number; payload?: ChannelsResponse };
+      if (!parsed.savedAt || (!allowStale && Date.now() - parsed.savedAt > DISCORD_LIST_CACHE_TTL_MS)) return null;
+      if (!parsed.payload?.textChannels || !parsed.payload?.voiceChannels) return null;
+      return parsed.payload;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const writeChannelsCache = useCallback((guildId: string, payload: ChannelsResponse) => {
+    try {
+      localStorage.setItem(`${CHANNELS_CACHE_PREFIX}${guildId}`, JSON.stringify({ savedAt: Date.now(), payload }));
+    } catch {
+      // Ignore storage quota/private-mode failures; live state still works.
+    }
+  }, []);
+
+  const readRolesCache = useCallback((guildId: string, allowStale = false) => {
+    try {
+      const raw = localStorage.getItem(`${ROLES_CACHE_PREFIX}${guildId}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { savedAt?: number; payload?: RolesResponse };
+      if (!parsed.savedAt || (!allowStale && Date.now() - parsed.savedAt > DISCORD_LIST_CACHE_TTL_MS)) return null;
+      if (!Array.isArray(parsed.payload?.roles)) return null;
+      return parsed.payload;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const writeRolesCache = useCallback((guildId: string, payload: RolesResponse) => {
+    try {
+      localStorage.setItem(`${ROLES_CACHE_PREFIX}${guildId}`, JSON.stringify({ savedAt: Date.now(), payload }));
+    } catch {
+      // Ignore storage quota/private-mode failures; live state still works.
+    }
+  }, []);
 
   const loadGuildPage = useCallback(async ({
     offset,
@@ -503,51 +550,123 @@ export default function DashboardClient({
   }, [hasMoreGuilds, loadingMoreGuilds, loadGuildPage, nextGuildOffset, selectedGuildId]);
 
   const handleLoadChannels = useCallback(async () => {
-    if (!selectedGuildId || loadingChannels || loadedChannelsGuildId === selectedGuildId) return;
-    setLoadingChannels(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/guilds/${selectedGuildId}/channels`, { cache: "no-store" });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || "Failed to load channels");
-      }
-      const channels = (await response.json()) as ChannelsResponse;
+    if (!selectedGuildId || loadedChannelsGuildId === selectedGuildId) return;
+    const cached = readChannelsCache(selectedGuildId);
+    if (cached) {
+      setVoiceChannels(cached.voiceChannels);
+      setTextChannels(cached.textChannels);
+      setLoadedChannelsGuildId(selectedGuildId);
+      return;
+    }
+    if (channelsRequestRef.current) {
+      const channels = await channelsRequestRef.current;
       setVoiceChannels(channels.voiceChannels);
       setTextChannels(channels.textChannels);
       setLoadedChannelsGuildId(selectedGuildId);
+      return;
+    }
+    setLoadingChannels(true);
+    setError(null);
+    try {
+      const request = fetch(`/api/guilds/${selectedGuildId}/channels`, { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+            throw new Error(payload?.error || "Failed to load channels");
+          }
+          return response.json() as Promise<ChannelsResponse>;
+        });
+      channelsRequestRef.current = request;
+      const channels = await request;
+      setVoiceChannels(channels.voiceChannels);
+      setTextChannels(channels.textChannels);
+      writeChannelsCache(selectedGuildId, channels);
+      setLoadedChannelsGuildId(selectedGuildId);
     } catch (err) {
+      const stale = readChannelsCache(selectedGuildId, true);
+      if (stale) {
+        setVoiceChannels(stale.voiceChannels);
+        setTextChannels(stale.textChannels);
+        setLoadedChannelsGuildId(selectedGuildId);
+        return;
+      }
       const message = err instanceof Error ? err.message : "Failed to load channels";
       setError(message);
       toast.error("Channel load failed", { description: message });
     } finally {
+      channelsRequestRef.current = null;
       setLoadingChannels(false);
     }
-  }, [loadedChannelsGuildId, loadingChannels, selectedGuildId]);
+  }, [loadedChannelsGuildId, readChannelsCache, selectedGuildId, writeChannelsCache]);
 
   const handleLoadRoles = useCallback(async () => {
-    if (!selectedGuildId || loadingRoles || loadedRolesGuildId === selectedGuildId) return;
+    if (!selectedGuildId || loadedRolesGuildId === selectedGuildId) return;
+    const cached = readRolesCache(selectedGuildId);
+    if (cached) {
+      setRoles(cached.roles ?? []);
+      setLoadedRolesGuildId(selectedGuildId);
+      return;
+    }
+    if (rolesRequestRef.current) {
+      const rolesResponse = await rolesRequestRef.current;
+      setRoles(rolesResponse.roles ?? []);
+      setLoadedRolesGuildId(selectedGuildId);
+      return;
+    }
     setLoadingRoles(true);
     setError(null);
     try {
-      const response = await fetch(`/api/guilds/${selectedGuildId}/roles`, { cache: "no-store" });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || "Failed to load roles");
-      }
-      const rolesResponse = (await response.json()) as RolesResponse;
+      const request = fetch(`/api/guilds/${selectedGuildId}/roles`, { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+            throw new Error(payload?.error || "Failed to load roles");
+          }
+          return response.json() as Promise<RolesResponse>;
+        });
+      rolesRequestRef.current = request;
+      const rolesResponse = await request;
       setRoles(rolesResponse.roles ?? []);
+      writeRolesCache(selectedGuildId, rolesResponse);
       setLoadedRolesGuildId(selectedGuildId);
     } catch (err) {
+      const stale = readRolesCache(selectedGuildId, true);
+      if (stale) {
+        setRoles(stale.roles ?? []);
+        setLoadedRolesGuildId(selectedGuildId);
+        return;
+      }
       const message = err instanceof Error ? err.message : "Failed to load roles";
       setError(message);
       toast.error("Role load failed", { description: message });
     } finally {
+      rolesRequestRef.current = null;
       setLoadingRoles(false);
     }
-  }, [loadedRolesGuildId, loadingRoles, selectedGuildId]);
+  }, [loadedRolesGuildId, readRolesCache, selectedGuildId, writeRolesCache]);
+
+  useEffect(() => {
+    if (activeTab !== "settings") return;
+    if (!selectedGuildId || loadedSettingsGuildId !== selectedGuildId) return;
+    if (loadedChannelsGuildId !== selectedGuildId) {
+      handleLoadChannels();
+    }
+    if (loadedRolesGuildId !== selectedGuildId) {
+      handleLoadRoles();
+    }
+  }, [
+    activeTab,
+    handleLoadChannels,
+    handleLoadRoles,
+    loadedChannelsGuildId,
+    loadedRolesGuildId,
+    loadedSettingsGuildId,
+    selectedGuildId,
+  ]);
 
   const handleGuildChange = useCallback((guildId: string) => {
+    channelsRequestRef.current = null;
+    rolesRequestRef.current = null;
     localStorage.setItem(SELECTED_GUILD_STORAGE_KEY, guildId);
     setSelectedGuildId(guildId);
     setLoadedSettingsGuildId(null);

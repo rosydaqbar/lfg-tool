@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 const VOICE_TYPES = new Set([2, 13]);
 const TEXT_TYPES = new Set([0, 5]);
-const CHANNELS_CACHE_TTL_MS = 60_000;
+const CHANNELS_CACHE_TTL_MS = 10 * 60_000;
 
 type ChannelsPayload = {
   voiceChannels: { id: string; name: string; type: "voice" | "stage" }[];
@@ -40,11 +40,23 @@ async function loadDiscordChannels(guildId: string, botToken: string) {
     });
 
     if (!response) {
+      if (cached) {
+        console.warn("Using stale Discord channel cache after lookup failure:", { guildId });
+        return cached.payload;
+      }
       throw new Error("Discord channel lookup failed. Please retry.");
     }
 
     if (!response.ok) {
       const details = (await response.json().catch(() => null)) as { code?: number; message?: string } | null;
+      if (response.status === 429 && cached) {
+        console.warn("Using stale Discord channel cache after rate limit:", {
+          guildId,
+          code: details?.code,
+          message: details?.message,
+        });
+        return cached.payload;
+      }
       console.error("Discord guild channels error:", {
         guildId,
         status: response.status,

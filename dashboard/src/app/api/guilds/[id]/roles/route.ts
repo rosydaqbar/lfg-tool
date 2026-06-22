@@ -4,7 +4,7 @@ import { getDashboardBotToken } from "@/lib/runtime-secrets";
 
 export const dynamic = "force-dynamic";
 
-const ROLES_CACHE_TTL_MS = 60_000;
+const ROLES_CACHE_TTL_MS = 10 * 60_000;
 
 type RolesPayload = {
   roles: { id: string; name: string; color: number }[];
@@ -37,11 +37,23 @@ async function loadDiscordRoles(guildId: string, botToken: string) {
     });
 
     if (!response) {
+      if (cached) {
+        console.warn("Using stale Discord role cache after lookup failure:", { guildId });
+        return cached.payload;
+      }
       throw new Error("Discord role lookup failed. Please retry.");
     }
 
     if (!response.ok) {
       const details = (await response.json().catch(() => null)) as { code?: number; message?: string } | null;
+      if (response.status === 429 && cached) {
+        console.warn("Using stale Discord role cache after rate limit:", {
+          guildId,
+          code: details?.code,
+          message: details?.message,
+        });
+        return cached.payload;
+      }
       console.error("Discord guild roles error:", {
         guildId,
         status: response.status,
