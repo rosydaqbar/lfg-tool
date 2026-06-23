@@ -53,7 +53,7 @@ type SpamCatcherConfig = {
   channelIds: string[];
   timeoutMinutes: number;
   autoBanEnabled: boolean;
-  banMode: "immediate" | "delayed";
+  banMode: "immediate" | "after_timeout" | "delayed";
   banDelayMinutes: number;
   reviewChannelId: string | null;
   webhookEnabled: boolean;
@@ -97,7 +97,10 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
       ? Math.max(1, Math.min(40_320, Math.floor(timeoutMinutes)))
       : DEFAULT_SPAM_CATCHER_CONFIG.timeoutMinutes,
     autoBanEnabled: source.autoBanEnabled === true,
-    banMode: source.banMode === "immediate" ? "immediate" : "delayed",
+    banMode:
+      source.banMode === "immediate" || source.banMode === "after_timeout"
+        ? source.banMode
+        : "delayed",
     banDelayMinutes: Number.isFinite(banDelayMinutes)
       ? Math.floor(banDelayMinutes) <= 60
         ? Math.max(1, Math.floor(banDelayMinutes))

@@ -129,7 +129,10 @@ function normalizeSpamCatcherConfig(
       : [],
     timeoutMinutes: Math.max(1, Math.min(40320, Number.isFinite(Number(value.timeoutMinutes)) ? Math.floor(Number(value.timeoutMinutes)) : 60)),
     autoBanEnabled: value.autoBanEnabled === true,
-    banMode: value.banMode === "immediate" ? "immediate" : "delayed",
+    banMode:
+      value.banMode === "immediate" || value.banMode === "after_timeout"
+        ? value.banMode
+        : "delayed",
     banDelayMinutes: Number.isFinite(banDelayMinutes)
       ? Math.floor(banDelayMinutes) <= 60
         ? Math.max(1, Math.floor(banDelayMinutes))

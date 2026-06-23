@@ -30,7 +30,7 @@ type SpamCatcherConfigPayload = {
   channelIds: string[];
   timeoutMinutes: number;
   autoBanEnabled: boolean;
-  banMode: "immediate" | "delayed";
+  banMode: "immediate" | "after_timeout" | "delayed";
   banDelayMinutes: number;
   reviewChannelId: string | null;
   webhookEnabled: boolean;
@@ -82,7 +82,10 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
       ? Math.max(1, Math.min(40_320, Math.floor(timeoutMinutes)))
       : 60,
     autoBanEnabled: source.autoBanEnabled === true,
-    banMode: source.banMode === "immediate" ? "immediate" : "delayed",
+    banMode:
+      source.banMode === "immediate" || source.banMode === "after_timeout"
+        ? source.banMode
+        : "delayed",
     banDelayMinutes: Number.isFinite(banDelayMinutes)
       ? Math.floor(banDelayMinutes) <= 60
         ? Math.max(1, Math.floor(banDelayMinutes))
@@ -348,7 +351,9 @@ function buildSpamCatcherNoticePayload(
   const actionId = config.autoBanEnabled
     ? config.banMode === "immediate"
       ? "kamu akan langsung terkena `ban`."
-      : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah ${banDelayText}.`
+      : config.banMode === "after_timeout"
+        ? `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` saat timeout berakhir.`
+        : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah ${banDelayText}.`
     : `kamu akan terkena \`timeout\` selama ${timeoutText}.`;
   const appealId = config.autoBanEnabled && config.banMode === "immediate"
     ? "Jika ini adalah kesalahan, silakan hubungi admin server."
@@ -356,7 +361,9 @@ function buildSpamCatcherNoticePayload(
   const actionEn = config.autoBanEnabled
     ? config.banMode === "immediate"
       ? "you will be `banned` immediately."
-      : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after ${banDelayText}.`
+      : config.banMode === "after_timeout"
+        ? `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` when the timeout ends.`
+        : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after ${banDelayText}.`
     : `you will receive a \`timeout\` for ${timeoutText}.`;
   const appealEn = config.autoBanEnabled && config.banMode === "immediate"
     ? "If this was a mistake, please contact a server admin."
@@ -639,7 +646,7 @@ export async function PUT(
 
   if (
     spamCatcherConfig.enabled &&
-    (!spamCatcherConfig.autoBanEnabled || spamCatcherConfig.banMode === "delayed") &&
+    (!spamCatcherConfig.autoBanEnabled || spamCatcherConfig.banMode !== "immediate") &&
     !spamCatcherConfig.reviewChannelId
   ) {
     return NextResponse.json(

@@ -61,7 +61,7 @@ export type SpamCatcherConfig = {
   channelIds: string[];
   timeoutMinutes: number;
   autoBanEnabled: boolean;
-  banMode: "immediate" | "delayed";
+  banMode: "immediate" | "after_timeout" | "delayed";
   banDelayMinutes: number;
   reviewChannelId: string | null;
   webhookEnabled: boolean;

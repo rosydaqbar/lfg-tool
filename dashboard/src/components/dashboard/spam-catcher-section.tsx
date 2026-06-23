@@ -222,7 +222,7 @@ function SpamCatcherSectionComponent({
               </SelectContent>
             </Select>
             <div className="text-xs text-muted-foreground">
-              Discord max is 28 days. Immediate bans skip this.
+              Discord max is 28 days. Immediate bans skip this; timeout-end bans use this as the ban timer.
             </div>
           </div>
         </div>
@@ -233,7 +233,7 @@ function SpamCatcherSectionComponent({
               <div>
                 <div className="text-sm font-medium">Automatic banning</div>
                 <div className="text-xs text-muted-foreground">
-                  Optional. Ban caught users immediately or after an appeal window.
+                  Optional. Ban caught users immediately, when timeout ends, or after an appeal window.
                 </div>
               </div>
               <Switch
@@ -245,7 +245,13 @@ function SpamCatcherSectionComponent({
 
             <Select
               value={value.banMode}
-              onValueChange={(banMode) => onChange({ ...value, banMode: banMode === "immediate" ? "immediate" : "delayed" })}
+              onValueChange={(banMode) => onChange({
+                ...value,
+                banMode:
+                  banMode === "immediate" || banMode === "after_timeout"
+                    ? banMode
+                    : "delayed",
+              })}
               disabled={formDisabled || !value.autoBanEnabled}
             >
               <SelectTrigger>
@@ -253,6 +259,7 @@ function SpamCatcherSectionComponent({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="immediate">Ban immediately</SelectItem>
+                <SelectItem value="after_timeout">Ban after timeout ends</SelectItem>
                 <SelectItem value="delayed">Ban after delay</SelectItem>
               </SelectContent>
             </Select>

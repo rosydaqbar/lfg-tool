@@ -84,7 +84,9 @@ function createSpamCatcherManager({ client, configStore }) {
     const actionId = config.autoBanEnabled
       ? config.banMode === 'immediate'
         ? 'kamu akan langsung terkena `ban`.'
-        : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah ${banDelayText}.`
+        : config.banMode === 'after_timeout'
+          ? `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` saat timeout berakhir.`
+          : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah ${banDelayText}.`
       : `kamu akan terkena \`timeout\` selama ${timeoutText}.`;
     const appealId = config.autoBanEnabled && config.banMode === 'immediate'
       ? 'Jika ini adalah kesalahan, silakan hubungi admin server.'
@@ -92,7 +94,9 @@ function createSpamCatcherManager({ client, configStore }) {
     const actionEn = config.autoBanEnabled
       ? config.banMode === 'immediate'
         ? 'you will be `banned` immediately.'
-        : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after ${banDelayText}.`
+        : config.banMode === 'after_timeout'
+          ? `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` when the timeout ends.`
+          : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after ${banDelayText}.`
       : `you will receive a \`timeout\` for ${timeoutText}.`;
     const appealEn = config.autoBanEnabled && config.banMode === 'immediate'
       ? 'If this was a mistake, please contact a server admin.'
@@ -269,17 +273,22 @@ function createSpamCatcherManager({ client, configStore }) {
   }
 
   async function handleImmediateBan(guild, event) {
+    const mode = event.action === 'ban_after_timeout'
+      ? 'after_timeout'
+      : event.action === 'ban_delayed'
+        ? 'delayed'
+        : 'immediate';
     const dmChannel = await createDmChannel(event.userId);
     let banError = null;
     await guild.members.ban(event.userId, {
-      reason: `Spam Catcher immediate ban, event ${event.id}`,
+      reason: `Spam Catcher ${mode} ban, event ${event.id}`,
       deleteMessageSeconds: 0,
     }).catch((error) => {
       banError = error;
     });
 
     if (banError) {
-      console.error('Failed Spam Catcher immediate ban:', banError);
+      console.error('Failed Spam Catcher ban:', banError);
       await configStore.updateSpamCatcherEventStatus(event.id, 'ban_failed').catch(() => null);
       await logAction(event, 'Spam Catcher Ban Failed', [`- Reason: \`${banError.message || banError}\``]);
       return;
@@ -293,7 +302,7 @@ function createSpamCatcherManager({ client, configStore }) {
       ? await dmChannel.send(dmPayload).then(() => true).catch(() => false)
       : await dmUser(event.userId, dmPayload);
     await logAction(updated || event, 'Spam Catcher Banned User', [
-      '- Mode: `immediate`',
+      `- Mode: \`${mode}\``,
       `- DM after ban: \`${dmSent ? 'sent' : 'failed'}\``,
     ]);
   }
@@ -322,7 +331,11 @@ function createSpamCatcherManager({ client, configStore }) {
 
     await logAction(event, 'Spam Catcher Timed Out User', [
       `- Timeout: \`${config.timeoutMinutes} minutes\``,
-      event.banAfter ? `- Delayed ban: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>` : '- Delayed ban: `off`',
+      event.banAfter
+        ? event.action === 'ban_after_timeout'
+          ? `- Ban after timeout ends: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
+          : `- Delayed ban: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
+        : '- Delayed ban: `off`',
     ]);
   }
 
@@ -337,12 +350,19 @@ function createSpamCatcherManager({ client, configStore }) {
 
     const action = config.autoBanEnabled && config.banMode === 'immediate'
       ? 'ban_immediate'
-      : config.autoBanEnabled
-        ? 'ban_delayed'
-        : 'timeout';
+      : config.autoBanEnabled && config.banMode === 'after_timeout'
+        ? 'ban_after_timeout'
+        : config.autoBanEnabled
+          ? 'ban_delayed'
+          : 'timeout';
     const now = Date.now();
+    const timeoutUntil = action === 'ban_immediate'
+      ? null
+      : new Date(now + config.timeoutMinutes * 60 * 1000);
     const banAfter = action === 'ban_delayed'
       ? new Date(now + config.banDelayMinutes * 60 * 1000)
+      : action === 'ban_after_timeout'
+        ? timeoutUntil
       : null;
     const event = await configStore.createSpamCatcherEvent({
       guildId: message.guild.id,
@@ -350,8 +370,8 @@ function createSpamCatcherManager({ client, configStore }) {
       channelId: message.channelId,
       messageId: message.id,
       action,
-      status: action === 'ban_delayed' ? 'ban_pending' : action === 'timeout' ? 'timed_out' : 'caught',
-      timeoutUntil: action === 'ban_immediate' ? null : new Date(now + config.timeoutMinutes * 60 * 1000),
+      status: action === 'ban_delayed' || action === 'ban_after_timeout' ? 'ban_pending' : action === 'timeout' ? 'timed_out' : 'caught',
+      timeoutUntil,
       banAfter,
       reviewChannelId: config.reviewChannelId,
     });
