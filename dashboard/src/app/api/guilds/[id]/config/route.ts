@@ -365,11 +365,17 @@ function buildSpamCatcherNoticePayload(
     "# 🚫 Dilarang Mengirim Pesan di Channel Ini",
     `⚠️ Channel ini dibuat untuk menangkap spammer. Jika kamu mengirim pesan di channel ini, ${actionId} ${appealId}`,
     "",
+    "## 😈 Jangan Berani-Berani Mencoba",
+    "Kalau cuma mau tes, sistem tetap akan menangkap kamu.",
+    "",
     `-# Jumlah user yang sudah tertangkap di channel ini: \`${safeCount}\``,
   ].join("\n");
   const contentEn = [
     "# 🚫 Do Not Send Messages in This Channel",
     `⚠️ This channel is made to catch spammers. If you send a message in this channel, ${actionEn} ${appealEn}`,
+    "",
+    "## 😈 Don't Even Think About Trying",
+    "Even if you are just testing, the system will still catch you.",
     "",
     `-# Caught users in this channel: \`${safeCount}\``,
   ].join("\n");
