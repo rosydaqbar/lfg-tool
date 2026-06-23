@@ -1,0 +1,17 @@
+{
+  "name": "lfg-tool-documentation",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "15.5.19",
+    "nextra": "4.2.17",
+    "nextra-theme-docs": "4.2.17",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  }
+}

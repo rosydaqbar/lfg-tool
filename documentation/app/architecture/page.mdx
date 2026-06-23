@@ -1,0 +1,109 @@
+---
+title: Architecture
+description: Runtime architecture for the bot, dashboard, database, and deployment model.
+---
+
+# Architecture
+
+## Runtime pieces
+
+```text
+Discord
+  │
+  ├── Gateway events and interactions
+  │     │
+  │     ▼
+  │   Bot runtime in src/
+  │     │
+  │     ├── Join-to-Create manager
+  │     ├── LFG manager
+  │     ├── Voice logger and stats manager
+  │     ├── Auto-role manager
+  │     ├── Spam Catcher manager
+  │     └── Health server
+  │
+  └── OAuth and REST API calls
+        │
+        ▼
+      Dashboard in dashboard/
+        │
+        ├── Setup wizard
+        ├── Guild settings API
+        ├── Active temp-channel views
+        ├── Voice logs and leaderboards
+        └── Discord auth and access checks
+
+Postgres stores shared guild configuration, temp channels, voice activity, setup state, auto-role requests, and moderation records.
+```
+
+## Bot startup
+
+The bot entrypoint is `src/index.js`.
+
+Startup sequence:
+
+1. Load `.env`.
+2. Apply runtime config from `src/bot/runtime-config.js`, including `.setup-state.json` hydration when possible.
+3. Validate required bot runtime values.
+4. Create a Discord client with guild, voice-state, and message intents.
+5. Build manager modules for LFG, Join-to-Create, stats, voice logging, auto-role, Spam Catcher, error logging, and health checks.
+6. Start background loops after the Discord client is ready.
+7. Listen for interactions, messages, and voice-state updates.
+
+## Voice event flow
+
+When Discord emits `voiceStateUpdate`, the bot:
+
+1. Loads guild configuration through `src/config-store.js`.
+2. Handles Join-to-Create lobby joins.
+3. Tracks temp-channel joins and leaves.
+4. Tracks configured manual voice channels.
+5. Refreshes LFG prompts and manual voice panels.
+6. Cleans up empty temporary channels.
+
+Configuration reads are cached briefly in the bot to reduce repeated database work during bursts of voice activity.
+
+## Dashboard flow
+
+The dashboard is a Next.js app under `dashboard/`.
+
+- `dashboard/src/app/page.tsx` renders the main management surface.
+- `dashboard/src/app/setup/page.tsx` renders first-time setup.
+- `dashboard/src/app/voice-log/page.tsx` renders voice-log views.
+- `dashboard/src/app/api/*` exposes setup, guild, bot status, and dashboard data routes.
+- `dashboard/src/lib/db.ts` reads and writes shared configuration and activity data.
+- `dashboard/src/lib/session.ts` enforces owner/admin access.
+- `dashboard/src/lib/env.ts` loads dashboard-local env files, root env files, and setup-state fallback data.
+
+## Data model
+
+The fresh Postgres schema is in `scripts/schema-postgres.sql`. The bot also auto-adds several columns and tables in `src/config-store.js` so existing deployments can be upgraded in place.
+
+Core tables:
+
+- `guild_config`
+- `voice_watchlist`
+- `join_to_create_lobbies`
+- `temp_voice_channels`
+- `temp_voice_activity`
+- `temp_voice_delete_logs`
+- `manual_voice_activity`
+- `manual_voice_session_logs`
+- `manual_voice_panel_message`
+- `lfg_persistent_message`
+- `voice_auto_role_config`
+- `voice_auto_role_requests`
+- `voice_leaderboard_overrides`
+- `spam_catcher_config`
+- `spam_catcher_events`
+- `spam_catcher_notice_messages`
+
+## Configuration precedence
+
+Setup and runtime configuration can come from several places:
+
+1. Environment variables.
+2. `.setup-state.json` for local/VPS setup.
+3. `setup_state` database rows when available.
+
+The dashboard setup flow can persist setup details, while cloud deployments should prefer environment variables and `SETUP_COMPLETE=true`.

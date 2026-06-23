@@ -1,0 +1,67 @@
+---
+title: Components
+description: Main bot managers, dashboard components, and shared libraries.
+---
+
+# Components
+
+## Bot modules
+
+| Path | Responsibility |
+| --- | --- |
+| `src/index.js` | Bot entrypoint, Discord client setup, event routing, lifecycle shutdown. |
+| `src/config-store.js` | Postgres connection, schema backfills, guild config, temp channel, stats, auto-role, and moderation persistence. |
+| `src/bot/runtime-config.js` | Hydrates runtime env from `.setup-state.json` when supported. |
+| `src/bot/env.js` | Validates required bot runtime variables. |
+| `src/bot/join-to-create.js` | Creates, tracks, transfers, claims, and cleans temporary voice channels. |
+| `src/bot/lfg/index.js` | Handles LFG interactions and voice control actions. |
+| `src/bot/lfg/builders.js` | Builds Discord UI payloads, modals, embeds, and prompt rows. |
+| `src/bot/lfg/persistent.js` | Maintains persistent LFG messages. |
+| `src/bot/voice-log.js` | Sends voice activity and manual session log messages. |
+| `src/bot/stats.js` | Registers and handles `/stats` and `/voicecheck`. |
+| `src/bot/auto-role.js` | Evaluates voice-time role rules and approval requests. |
+| `src/bot/spam-catcher.js` | Handles configured spam-trap behavior and review flows. |
+| `src/bot/health-server.js` | Runs the bot health endpoint. |
+| `src/bot/error-log.js` | Reports runtime errors to the configured Discord log channel. |
+
+## Dashboard pages
+
+| Path | Responsibility |
+| --- | --- |
+| `dashboard/src/app/page.tsx` | Main dashboard page. |
+| `dashboard/src/app/setup/page.tsx` | First-time setup wizard page. |
+| `dashboard/src/app/voice-log/page.tsx` | Voice log and leaderboard page. |
+| `dashboard/src/components/dashboard-client.tsx` | Client-side dashboard orchestration. |
+| `dashboard/src/components/setup/setup-wizard.tsx` | Step-by-step setup workflow. |
+
+## Dashboard feature components
+
+| Component | Purpose |
+| --- | --- |
+| `active-temp-channels-card.tsx` | Shows current temp channels and live Discord state. |
+| `channel-config-cards.tsx` | Manages log, LFG, Join-to-Create, and voice-watch settings. |
+| `voice-settings-section.tsx` | Configures voice logging and related settings. |
+| `voice-leaderboard-card.tsx` | Displays and edits leaderboard data. |
+| `voice-log-page-client.tsx` | Client logic for the voice-log page. |
+| `auto-role-section.tsx` | Configures voice-time role rules. |
+| `auto-role-requests-card.tsx` | Reviews pending role approval requests. |
+| `spam-catcher-section.tsx` | Configures spam trap channels and actions. |
+| `reset-settings-section.tsx` | Handles setup reset controls. |
+
+## Shared dashboard libraries
+
+| Path | Responsibility |
+| --- | --- |
+| `dashboard/src/lib/db.ts` | Dashboard database access and schema compatibility helpers. |
+| `dashboard/src/lib/env.ts` | Loads dashboard and root env files plus setup-state fallback values. |
+| `dashboard/src/lib/auth.ts` | NextAuth Discord provider setup. |
+| `dashboard/src/lib/session.ts` | Owner/admin access checks and Discord guild helpers. |
+| `dashboard/src/lib/runtime-secrets.ts` | Reads bot token and runtime secrets. |
+| `dashboard/src/lib/setup-crypto.ts` | Encrypts and decrypts saved setup secrets. |
+| `dashboard/src/lib/pg-ssl.ts` | Normalizes Postgres SSL settings. |
+
+## UI foundation
+
+Reusable dashboard UI primitives live in `dashboard/src/components/ui`. They include button, card, command, dialog, input, popover, select, separator, skeleton, switch, table, badge, and toast helpers.
+
+The dashboard currently uses Next.js, NextAuth, Tailwind, Radix UI, Lucide icons, and small local component wrappers.

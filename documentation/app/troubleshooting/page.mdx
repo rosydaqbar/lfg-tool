@@ -1,0 +1,89 @@
+---
+title: Troubleshooting
+description: Common setup, bot, dashboard, Discord, and database issues.
+---
+
+# Troubleshooting
+
+## Bot exits with missing environment values
+
+The bot requires `DISCORD_TOKEN` and `DATABASE_URL` after runtime hydration. Check:
+
+- Root `.env`.
+- Cloud environment variables.
+- `.setup-state.json`, if using local/VPS setup.
+- `SETUP_SECRET` or `NEXTAUTH_SECRET`, if encrypted setup values must be decrypted.
+
+## Dashboard login fails
+
+Check:
+
+- `NEXTAUTH_URL` matches the actual dashboard URL.
+- `NEXTAUTH_SECRET` is set.
+- Discord OAuth client ID and secret are set or saved in setup state.
+- The Discord application redirect URL matches the dashboard auth callback.
+
+## User cannot access the dashboard
+
+Dashboard access is limited to:
+
+- The configured owner ID from setup or `OWNER_DISCORD_ID`.
+- Discord users with Administrator permission in the selected guild.
+
+The dashboard uses the user's Discord OAuth guild list and Discord permission bits to make this decision.
+
+## Guild or channel lists are empty
+
+Check:
+
+- The signed-in Discord user can manage the guild.
+- The bot is installed in the selected guild.
+- The bot token is valid.
+- The dashboard can reach Discord's REST API.
+- Settings selectors are opened before expecting channel or role data, because those lists lazy-load by design.
+
+## Bot status says OK but the bot is not responding
+
+The dashboard bot status route validates credentials against Discord. It does not prove the separate bot process is connected to the Discord gateway.
+
+Check the bot host logs, `npm start`, gateway intents, and whether the bot process has crashed.
+
+## Supabase connection errors
+
+Use the Transaction Pooler URL on port `6543` with `sslmode=require`. Keep connection pools low:
+
+```env
+BOT_POSTGRES_POOL_MAX=2
+POSTGRES_POOL_MAX=1
+PG_SSL_MODE=require
+```
+
+If the provider gives you a CA certificate, configure `PG_SSL_CA` or `PG_SSL_CA_BASE64`.
+
+## Temporary channels are stale
+
+Cleanup happens in several places:
+
+- Voice-state cleanup after members leave.
+- Join-to-Create watchdog reconciliation.
+- `/voicecheck` cleanup actions.
+- Dashboard temp-channel delete routes.
+
+Existing deployments can have missing older message IDs. Cleanup code should tolerate `null` message IDs and Discord `Not found` responses.
+
+## LFG reminders or DMs do not clean up
+
+Reminder DM cleanup only works for DMs sent after `reminder_dm_message_id` is stored. Older DMs cannot be reliably deleted.
+
+Avoid role mentions in DM reminder copy. Discord DMs do not render guild role mentions like guild messages do.
+
+## Documentation app build fails
+
+Run the docs install and build from the repo root:
+
+```bash
+npm --prefix documentation install
+npm --prefix documentation run build
+```
+
+The documentation app is isolated from the root bot, dashboard, and landing dependencies.

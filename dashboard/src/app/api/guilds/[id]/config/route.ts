@@ -353,7 +353,7 @@ function buildSpamCatcherNoticePayload(
       ? "kamu akan langsung terkena `ban`."
       : config.banMode === "after_timeout"
         ? `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` saat timeout berakhir.`
-        : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah ${banDelayText}.`
+        : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah periode appeal selama ${banDelayText}.`
     : `kamu akan terkena \`timeout\` selama ${timeoutText}.`;
   const appealId = config.autoBanEnabled && config.banMode === "immediate"
     ? "Jika ini adalah kesalahan, silakan hubungi admin server."
@@ -363,7 +363,7 @@ function buildSpamCatcherNoticePayload(
       ? "you will be `banned` immediately."
       : config.banMode === "after_timeout"
         ? `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` when the timeout ends.`
-        : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after ${banDelayText}.`
+        : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after a ${banDelayText} appeal window.`
     : `you will receive a \`timeout\` for ${timeoutText}.`;
   const appealEn = config.autoBanEnabled && config.banMode === "immediate"
     ? "If this was a mistake, please contact a server admin."

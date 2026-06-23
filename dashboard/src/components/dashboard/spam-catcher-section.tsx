@@ -233,7 +233,7 @@ function SpamCatcherSectionComponent({
               <div>
                 <div className="text-sm font-medium">Automatic banning</div>
                 <div className="text-xs text-muted-foreground">
-                  Optional. Ban caught users immediately, when timeout ends, or after an appeal window.
+                  Optional. Ban caught users immediately, when timeout ends, or after an appeal window during timeout.
                 </div>
               </div>
               <Switch
@@ -260,13 +260,13 @@ function SpamCatcherSectionComponent({
               <SelectContent>
                 <SelectItem value="immediate">Ban immediately</SelectItem>
                 <SelectItem value="after_timeout">Ban after timeout ends</SelectItem>
-                <SelectItem value="delayed">Ban after delay</SelectItem>
+                <SelectItem value="delayed">Ban after appeal window</SelectItem>
               </SelectContent>
             </Select>
 
             {value.autoBanEnabled && value.banMode === "delayed" ? (
               <div className="space-y-2">
-                <div className="text-sm font-medium">Ban delay</div>
+                <div className="text-sm font-medium">Appeal window</div>
                 <div className="flex flex-wrap gap-2">
                   <Select
                     value={banDelayUnit}
@@ -294,7 +294,7 @@ function SpamCatcherSectionComponent({
                     disabled={formDisabled}
                   >
                     <SelectTrigger className="w-36">
-                      <SelectValue placeholder="Select delay" />
+                      <SelectValue placeholder="Select window" />
                     </SelectTrigger>
                     <SelectContent>
                       {(banDelayUnit === "hours" ? BAN_DELAY_HOUR_OPTIONS : BAN_DELAY_MINUTE_OPTIONS).map((option) => (
@@ -305,7 +305,9 @@ function SpamCatcherSectionComponent({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="text-xs text-muted-foreground">Allowed range is 1-60 minutes or 2-24 hours.</div>
+                <div className="text-xs text-muted-foreground">
+                  Allowed range is 1-60 minutes or 2-24 hours. Appeal instructions are sent to the user during the timeout period; if no admin removes the timeout before this window ends, the user is banned.
+                </div>
               </div>
             ) : null}
           </div>

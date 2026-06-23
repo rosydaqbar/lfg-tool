@@ -1,0 +1,47 @@
+---
+title: Introduction
+description: What the LFG Tool does and how its pieces fit together.
+---
+
+# LFG Tool
+
+LFG Tool is a Discord voice-room automation app with a web dashboard. It helps a server run join-to-create voice rooms, post LFG messages, track voice time, and manage guild settings without editing configuration files by hand.
+
+## What it includes
+
+- A Discord bot that listens for voice-state changes, interactions, and messages.
+- Join-to-Create lobbies that create private temporary voice channels.
+- Voice-room controls for channel owners and admins.
+- LFG posting and persistent LFG summaries.
+- Voice logging, user stats, leaderboards, and `/voicecheck`.
+- Auto-role requests based on voice time.
+- Spam Catcher moderation helpers.
+- A Next.js dashboard for setup, guild configuration, active temp channels, logs, and leaderboards.
+- A separate landing page app.
+
+## Repository layout
+
+```text
+.
+├── src/                 # Discord bot runtime
+├── dashboard/           # Next.js dashboard and API routes
+├── landing/             # Separate Next.js landing page
+├── scripts/             # Discord command, database, and verification scripts
+├── docs/                # Existing planning and security notes
+└── documentation/       # This Nextra documentation site
+```
+
+## Important boundaries
+
+The repository is not an npm workspace. The root bot app, `dashboard/`, `landing/`, and `documentation/` each have their own `package.json` and install lifecycle.
+
+Configuration is shared by the bot and dashboard through environment variables, `.setup-state.json`, and Postgres tables. Keep `.env`, `.setup-state.json`, bot tokens, database URLs, Discord client secrets, and setup secrets private.
+
+## Main user flows
+
+1. An admin configures Discord OAuth, bot token, guild, channels, and database details through the dashboard setup flow or through cloud environment variables.
+2. A Discord user joins a configured lobby voice channel.
+3. The bot creates a temporary voice channel, stores it in Postgres, and moves the user into it.
+4. The owner can manage the temp channel from Discord controls.
+5. The bot updates LFG prompts, persistent LFG summaries, voice activity, and cleanup records as people join and leave.
+6. The dashboard reads the same saved configuration and activity tables to show server status and management controls.

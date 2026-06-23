@@ -1,0 +1,106 @@
+---
+title: Deployment
+description: How to deploy the bot, dashboard, landing app, and documentation site.
+---
+
+# Deployment
+
+## App boundaries
+
+This repository has separate deployable apps:
+
+| App | Location | Primary command |
+| --- | --- | --- |
+| Discord bot | repository root | `npm start` |
+| Dashboard | `dashboard/` | `npm --prefix dashboard run build` |
+| Landing page | `landing/` | `npm run landing:build` |
+| Documentation | `documentation/` | `npm --prefix documentation run build` |
+
+Each app has its own dependency installation. The repository is intentionally not configured as an npm workspace.
+
+## Bot deployment
+
+The bot needs:
+
+- `DISCORD_TOKEN`
+- `DATABASE_URL`
+- Optional `LOG_CHANNEL_ID`
+- Optional `BOT_POSTGRES_POOL_MAX=2`
+- Optional debug and SSL values.
+
+Run:
+
+```bash
+npm install
+npm start
+```
+
+Deploy Discord slash commands whenever command definitions change:
+
+```bash
+npm run deploy:commands
+```
+
+The bot includes a health server in `src/bot/health-server.js`, which can be used by hosts that need a keepalive or health endpoint.
+
+## Dashboard deployment
+
+The dashboard needs:
+
+- Discord OAuth credentials.
+- `NEXTAUTH_URL`
+- `NEXTAUTH_SECRET`
+- Setup state through env variables or the setup flow.
+- Database access.
+
+Build and start:
+
+```bash
+npm --prefix dashboard install
+npm --prefix dashboard run build
+npm --prefix dashboard run start
+```
+
+For cloud deployment, set `SETUP_COMPLETE=true` and provide the full env setup instead of relying on `.setup-state.json`.
+
+## Database deployment
+
+Use Supabase Postgres with the Transaction Pooler URL on port `6543` and `sslmode=require`.
+
+Apply the fresh schema with:
+
+```bash
+npm run migrate:postgres
+```
+
+Verify indexes with:
+
+```bash
+npm run db:verify-indexes
+```
+
+The bot and dashboard also contain compatibility helpers that create or backfill expected tables and columns for older deployments.
+
+## Documentation deployment
+
+The documentation site is a separate Nextra app:
+
+```bash
+npm --prefix documentation install
+npm --prefix documentation run build
+npm --prefix documentation run start
+```
+
+Deploy it like a normal Next.js site. If deploying to a platform from the repository root, set the project root or install command to `documentation/`.
+
+## Landing deployment
+
+The landing app is also separate:
+
+```bash
+npm --prefix landing install
+npm run landing:build
+npm run landing:start
+```
+
+Root scripts proxy the common landing commands.

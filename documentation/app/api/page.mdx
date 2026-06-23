@@ -1,0 +1,72 @@
+---
+title: API
+description: Dashboard API routes and bot-facing commands.
+---
+
+# API
+
+The public HTTP surface is the dashboard's Next.js API routes under `dashboard/src/app/api`. Most routes return JSON and require a valid Discord session plus access to the selected guild.
+
+## Authentication
+
+| Route | Methods | Purpose |
+| --- | --- | --- |
+| `/api/auth/[...nextauth]` | `GET`, `POST` | NextAuth Discord OAuth callback and session handling. |
+
+Dashboard login uses Discord OAuth with `identify guilds` scope. The session stores the Discord user ID and access token. Owner and Administrator checks happen in `dashboard/src/lib/session.ts`.
+
+## Setup routes
+
+| Route | Methods | Purpose |
+| --- | --- | --- |
+| `/api/setup/state` | `GET`, `POST` | Read setup state or claim the setup owner. |
+| `/api/setup/discord-app` | `POST`, `DELETE` | Save or clear Discord OAuth app credentials during setup. |
+| `/api/setup/bootstrap-discord-app` | `POST`, `DELETE` | Helper route for bootstrapping Discord app settings. |
+| `/api/setup/token` | `POST` | Validate and save the bot token. |
+| `/api/setup/guild` | `GET`, `POST` | List manageable Discord guilds and save the selected guild. |
+| `/api/setup/invite` | `GET` | Build a Discord bot invite URL. |
+| `/api/setup/channels` | `GET`, `POST` | Load and save setup channel choices. |
+| `/api/setup/database` | `POST` | Validate and save the Supabase/Postgres database URL. |
+| `/api/setup/database/schema` | `GET` | Return database schema setup details. |
+| `/api/setup/complete` | `POST` | Mark setup as complete. |
+| `/api/setup/abandon` | `POST` | Mark setup as abandoned. |
+| `/api/setup/reset` | `POST` | Reset setup flow state. |
+
+## Guild management routes
+
+| Route | Methods | Purpose |
+| --- | --- | --- |
+| `/api/guilds` | `GET` | List manageable guilds, with pagination and bot-install metadata. |
+| `/api/guilds/:id/config` | `GET`, `PUT` | Read and update guild configuration. |
+| `/api/guilds/:id/channels` | `GET` | Load Discord channels for selectors. |
+| `/api/guilds/:id/roles` | `GET` | Load Discord roles for selectors. |
+| `/api/guilds/:id/dashboard-summary` | `GET` | Return dashboard overview data. |
+| `/api/guilds/:id/temp-channels` | `GET`, `DELETE` | List or delete temporary voice-channel records. |
+| `/api/guilds/:id/voice-delete-logs` | `GET` | Read temp-channel deletion logs. |
+| `/api/guilds/:id/voice-leaderboard` | `GET`, `PUT`, `DELETE` | Read, override, or remove leaderboard entries. |
+| `/api/guilds/:id/auto-role-requests` | `GET`, `PATCH`, `DELETE` | Manage auto-role approval requests. |
+| `/api/bot/status` | `GET` | Check whether configured bot credentials work against Discord. |
+
+## Important behavior
+
+- `/api/guilds` is paginated. The dashboard should not eagerly load every manageable guild.
+- Settings lazy-loads channels and roles when selectors open.
+- Bot status checks Discord with the dashboard's configured bot token; it does not prove the gateway bot process is currently connected.
+- Guild-scoped routes should pass through owner/admin checks before returning data.
+
+## Discord slash commands
+
+The bot registers stats and maintenance commands from `src/bot/stats.js`.
+
+| Command | Purpose |
+| --- | --- |
+| `/stats me` | Show the caller's voice time. |
+| `/stats user` | Show a selected user's voice time. |
+| `/stats leaderboard` | Show the guild leaderboard. |
+| `/voicecheck` | Admin-oriented snapshot and cleanup helper for voice tracking. |
+
+Deploy Discord commands with:
+
+```bash
+npm run deploy:commands
+```

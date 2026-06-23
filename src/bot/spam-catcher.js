@@ -86,7 +86,7 @@ function createSpamCatcherManager({ client, configStore }) {
         ? 'kamu akan langsung terkena `ban`.'
         : config.banMode === 'after_timeout'
           ? `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` saat timeout berakhir.`
-          : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah ${banDelayText}.`
+          : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah periode appeal selama ${banDelayText}.`
       : `kamu akan terkena \`timeout\` selama ${timeoutText}.`;
     const appealId = config.autoBanEnabled && config.banMode === 'immediate'
       ? 'Jika ini adalah kesalahan, silakan hubungi admin server.'
@@ -96,7 +96,7 @@ function createSpamCatcherManager({ client, configStore }) {
         ? 'you will be `banned` immediately.'
         : config.banMode === 'after_timeout'
           ? `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` when the timeout ends.`
-          : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after ${banDelayText}.`
+          : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after a ${banDelayText} appeal window.`
       : `you will receive a \`timeout\` for ${timeoutText}.`;
     const appealEn = config.autoBanEnabled && config.banMode === 'immediate'
       ? 'If this was a mistake, please contact a server admin.'
@@ -213,7 +213,9 @@ function createSpamCatcherManager({ client, configStore }) {
 
   function buildReviewComponents(event) {
     const delayText = event.banAfter
-      ? `- Scheduled ban: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
+      ? event.action === 'ban_delayed'
+        ? `- Scheduled ban after appeal window: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
+        : `- Scheduled ban: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
       : null;
     return {
       flags: MessageFlags.IsComponentsV2,
@@ -334,8 +336,8 @@ function createSpamCatcherManager({ client, configStore }) {
       event.banAfter
         ? event.action === 'ban_after_timeout'
           ? `- Ban after timeout ends: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
-          : `- Delayed ban: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
-        : '- Delayed ban: `off`',
+          : `- Ban after appeal window: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
+        : '- Scheduled ban: `off`',
     ]);
   }
 
