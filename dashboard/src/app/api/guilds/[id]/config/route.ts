@@ -59,6 +59,45 @@ function withWebhookComponentsEnabled(webhookUrl: string, waitForMessage = false
   return url.toString();
 }
 
+async function getDiscordWebhookDestination(webhookUrl: string) {
+  const response = await fetch(webhookUrl, { cache: "no-store" }).catch((error) => {
+    throw new Error(`Failed to check Discord webhook: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `Discord webhook check failed (${response.status}). Make sure the webhook still exists and the URL includes its token.${detail ? ` ${detail}` : ""}`
+    );
+  }
+
+  const webhook = (await response.json().catch(() => null)) as {
+    channel_id?: string;
+    guild_id?: string;
+    name?: string | null;
+  } | null;
+  if (!webhook?.channel_id) {
+    throw new Error("Discord webhook check did not return a destination channel.");
+  }
+
+  return {
+    channelId: webhook.channel_id,
+    guildId: webhook.guild_id ?? null,
+    name: webhook.name ?? null,
+  };
+}
+
+async function getDiscordChannelName(channelId: string) {
+  const botToken = await getDashboardBotToken();
+  if (!botToken) return null;
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+    cache: "no-store",
+    headers: { Authorization: `Bot ${botToken}` },
+  }).catch(() => null);
+  if (!response?.ok) return null;
+  const channel = (await response.json().catch(() => null)) as { name?: string } | null;
+  return typeof channel?.name === "string" && channel.name.length > 0 ? channel.name : null;
+}
+
 function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
   const source = value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -666,6 +705,34 @@ export async function PUT(
     );
   }
 
+  let webhookDestination: {
+    channelId: string;
+    channelName: string | null;
+    guildId: string | null;
+    name: string | null;
+  } | null = null;
+
+  if (spamCatcherConfig.enabled && spamCatcherConfig.webhookEnabled && spamCatcherConfig.webhookUrl) {
+    try {
+      const destination = await getDiscordWebhookDestination(spamCatcherConfig.webhookUrl);
+      if (destination.guildId && destination.guildId !== id) {
+        return NextResponse.json(
+          { error: "That webhook belongs to a different Discord server." },
+          { status: 400 }
+        );
+      }
+      webhookDestination = {
+        ...destination,
+        channelName: await getDiscordChannelName(destination.channelId),
+      };
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Failed to check Discord webhook." },
+        { status: 400 }
+      );
+    }
+  }
+
   try {
     const previousConfig = await getGuildConfig(id);
 
@@ -712,5 +779,5 @@ export async function PUT(
     );
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, spamCatcherWebhook: webhookDestination });
 }

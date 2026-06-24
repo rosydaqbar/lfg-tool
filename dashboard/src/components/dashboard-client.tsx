@@ -506,8 +506,22 @@ export default function DashboardClient({
         throw new Error(payload?.error || "Failed to save configuration");
       }
 
+      const payload = (await response.json().catch(() => null)) as {
+        spamCatcherWebhook?: {
+          channelId?: string;
+          channelName?: string | null;
+        } | null;
+      } | null;
+      const webhookChannel = payload?.spamCatcherWebhook?.channelId
+        ? payload.spamCatcherWebhook.channelName
+          ? `#${payload.spamCatcherWebhook.channelName}`
+          : `channel ID ${payload.spamCatcherWebhook.channelId}`
+        : null;
+
       toast.success("Configuration saved", {
-        description: "The bot will pick up the new settings shortly.",
+        description: webhookChannel
+          ? `Webhook notice will send to ${webhookChannel}.`
+          : "The bot will pick up the new settings shortly.",
       });
       setGuilds((prev) =>
         prev.map((guild) =>

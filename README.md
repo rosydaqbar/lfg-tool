@@ -36,16 +36,47 @@ In plain terms: users join a lobby voice channel, the bot creates a private temp
   - Voice time is logged for selected voice channels.
   - Users can check voice stats with `/stats me`, `/stats user`, and `/stats leaderboard`.
   - Voice panels include quick buttons for `My Stats` and `Leaderboard`.
+  - Spam Catcher can watch trap text channels and automatically timeout or ban users who post there.
+  - Spam Catcher can send appeal DMs, post admin review actions, and run delayed bans after an appeal window.
+  - Spam Catcher trap-channel notices can be sent by the bot or through a Discord webhook, with a live caught-event count.
 - Web dashboard features
   - First-time setup page at `/setup`.
   - Setup can be paused and continued later.
   - Manage the Discord server settings, log channel, and optional LFG channel.
   - Add or remove Join-to-Create lobby channels.
   - Choose which normal voice channels should track voice time.
+  - Configure Spam Catcher trap channels, timeout duration, ban mode, ban delay, review channel, and webhook notice delivery.
   - View currently active temporary voice channels.
   - View voice log history and leaderboard pages.
   - Check whether the bot token works and whether the bot is in the selected Discord server.
   - Only the configured owner or Discord users with Administrator permission can use the dashboard.
+
+## Spam Catcher
+
+Spam Catcher is an optional moderation feature for trap channels. When enabled, the bot watches selected text channels and catches non-admin users who post there.
+
+- Trap channel behavior:
+  - Users with Discord Administrator permission are ignored.
+  - Caught messages are left in the trap channel instead of being deleted.
+  - Each caught event is saved, and the trap notice count tracks caught events, not unique users.
+- Moderation actions:
+  - Timeout only.
+  - Immediate ban.
+  - Delayed ban after an appeal window.
+- Delay settings:
+  - Minutes mode supports `1-60` minutes.
+  - Hours mode supports `2-24` hours.
+  - The app stores delay values internally as minutes.
+- Appeals and review:
+  - Timeout and delayed-ban flows can DM users with appeal instructions.
+  - Admins can review appeals in the configured review channel.
+  - Review messages include an action button to remove the timeout when applicable.
+- Trap-channel notices:
+  - Notices use Discord Component V2 messages.
+  - Bot delivery posts/edits notices in each selected trap channel.
+  - Webhook delivery posts/edits one notice in the webhook's own channel.
+  - Webhook URLs are channel-specific Discord webhook URLs.
+  - Saving settings checks the webhook with Discord, rejects webhooks from another server, and shows the destination channel when available.
 
 ## Screenshots and functions
 ### Discord bot
@@ -310,6 +341,8 @@ Give the bot these permissions when inviting it to your server:
 - `Moderate Members`
 - `Ban Members`
 
+Spam Catcher needs `GuildMessages` intent to see trap-channel posts. Timeout mode needs `Moderate Members`; ban modes need `Ban Members`.
+
 Optional, depending on your setup:
 
 - `Manage Roles`
@@ -329,6 +362,12 @@ Optional, depending on your setup:
 
 ## Recent Changelog
 
+- Spam Catcher moderation
+  - Added trap-channel catching with timeout-only, immediate-ban, and delayed-ban modes.
+  - Added appeal DMs, admin review messages, and remove-timeout actions.
+  - Added Component V2 trap-channel notices with bot or webhook delivery.
+  - Added live caught-event counts on trap-channel notices.
+  - Added ban delay unit controls for `1-60` minutes or `2-24` hours.
 - Temp channel controls and checks
   - Added `/voicecheck` for Discord Administrators.
   - Added cleanup for temporary channels that are missing or empty.
