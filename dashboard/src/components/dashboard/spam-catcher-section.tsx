@@ -61,6 +61,10 @@ type SpamCatcherSectionProps = {
   saving: boolean;
   textChannels: Channel[];
   value: SpamCatcherConfig;
+  webhookDestinationCheck: {
+    status: "idle" | "invalid" | "checking" | "valid" | "error";
+    message?: string;
+  };
   onChange: (next: SpamCatcherConfig) => void;
   onOpenTextChannels: () => void;
   onSave: () => void;
@@ -73,6 +77,7 @@ function SpamCatcherSectionComponent({
   saving,
   textChannels,
   value,
+  webhookDestinationCheck,
   onChange,
   onOpenTextChannels,
   onSave,
@@ -393,6 +398,23 @@ function SpamCatcherSectionComponent({
                 placeholder="https://discord.com/api/webhooks/..."
                 disabled={formDisabled}
               />
+              {webhookDestinationCheck.message ? (
+                <div
+                  className={cn(
+                    "text-xs",
+                    webhookDestinationCheck.status === "valid"
+                      ? "text-emerald-400"
+                      : webhookDestinationCheck.status === "checking"
+                        ? "text-muted-foreground"
+                        : "text-destructive"
+                  )}
+                >
+                  {webhookDestinationCheck.status === "checking" ? (
+                    <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                  ) : null}
+                  {webhookDestinationCheck.message}
+                </div>
+              ) : null}
             </label>
           ) : null}
         </div>

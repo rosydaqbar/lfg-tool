@@ -56,6 +56,14 @@ const SELECTED_GUILD_STORAGE_KEY = "lfg-tool:selected-guild-id";
 const CHANNELS_CACHE_PREFIX = "lfg-tool:guild-channels:";
 const ROLES_CACHE_PREFIX = "lfg-tool:guild-roles:";
 const DISCORD_LIST_CACHE_TTL_MS = 10 * 60 * 1000;
+const DISCORD_WEBHOOK_URL_PATTERN = /^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9._-]+\/?$/;
+
+type WebhookDestinationCheck = {
+  status: "idle" | "invalid" | "checking" | "valid" | "error";
+  message?: string;
+  channelId?: string;
+  channelName?: string | null;
+};
 
 function mergeGuilds(current: ManageableGuild[], incoming: ManageableGuild[]) {
   const guildsById = new Map(current.map((guild) => [guild.id, guild]));
@@ -179,6 +187,7 @@ export default function DashboardClient({
   const [spamCatcherConfig, setSpamCatcherConfig] = useState<SpamCatcherConfig>(
     DEFAULT_SPAM_CATCHER_CONFIG
   );
+  const [webhookDestinationCheck, setWebhookDestinationCheck] = useState<WebhookDestinationCheck>({ status: "idle" });
   const [loadingGuilds, setLoadingGuilds] = useState(true);
   const [refreshingGuilds, setRefreshingGuilds] = useState(false);
   const [loadingMoreGuilds, setLoadingMoreGuilds] = useState(false);
@@ -294,6 +303,61 @@ export default function DashboardClient({
       active = false;
     };
   }, [loadGuildPage]);
+
+  useEffect(() => {
+    const webhookUrl = spamCatcherConfig.webhookUrl?.trim() ?? "";
+    if (!selectedGuildId || !spamCatcherConfig.webhookEnabled || webhookUrl.length === 0) {
+      setWebhookDestinationCheck({ status: "idle" });
+      return;
+    }
+    if (!DISCORD_WEBHOOK_URL_PATTERN.test(webhookUrl)) {
+      setWebhookDestinationCheck({
+        status: "invalid",
+        message: "Enter a valid Discord webhook URL before checking.",
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    setWebhookDestinationCheck({ status: "checking", message: "Checking webhook destination..." });
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/guilds/${selectedGuildId}/webhook-destination`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ webhookUrl }),
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+          channelId?: string;
+          channelName?: string | null;
+        } | null;
+        if (!response.ok) {
+          throw new Error(payload?.error || "Failed to check webhook destination.");
+        }
+        setWebhookDestinationCheck({
+          status: "valid",
+          message: payload?.channelName
+            ? `Webhook will send to #${payload.channelName}.`
+            : `Webhook will send to channel ID ${payload?.channelId ?? "unknown"}.`,
+          channelId: payload?.channelId,
+          channelName: payload?.channelName ?? null,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setWebhookDestinationCheck({
+          status: "error",
+          message: error instanceof Error ? error.message : "Failed to check webhook destination.",
+        });
+      }
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [selectedGuildId, spamCatcherConfig.webhookEnabled, spamCatcherConfig.webhookUrl]);
 
   useEffect(() => {
     if (!selectedGuildId) {
@@ -923,6 +987,7 @@ export default function DashboardClient({
             saving={saving}
             textChannels={memoTextChannels}
             value={spamCatcherConfig}
+            webhookDestinationCheck={webhookDestinationCheck}
             onChange={setSpamCatcherConfig}
             onOpenTextChannels={handleLoadChannels}
             onSave={handleSave}

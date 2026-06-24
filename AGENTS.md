@@ -48,5 +48,5 @@
 - Spam Catcher ignores Discord Administrators and leaves caught trap-channel messages in place.
 - Spam Catcher trap-channel notices use Component V2. Webhook delivery must include `with_components=true`; use `wait=true` when sending if the message ID must be persisted.
 - Spam Catcher notice counts are caught event rows/IDs, not distinct users. Bot-delivered notices are per trap channel; webhook notices are one message in the webhook's channel.
-- Dashboard config save checks Discord webhook URLs with Discord's webhook API and rejects webhooks whose `guild_id` does not match the selected guild.
+- Dashboard validates webhook URL format before calling Discord, auto-checks the destination after typing stops, and config save rejects webhooks whose `guild_id` does not match the selected guild.
 - Immediate-ban DM delivery sends the DM before banning; keep this order because DMs after a ban can fail.
