@@ -958,6 +958,7 @@ const DEFAULT_SPAM_CATCHER_CONFIG = {
   reviewChannelId: null,
   webhookEnabled: false,
   webhookUrl: null,
+  webhookUrls: [],
 };
 
 function normalizeSpamCatcherConfig(value) {
@@ -967,6 +968,19 @@ function normalizeSpamCatcherConfig(value) {
 
   const timeoutMinutes = Number(value.timeoutMinutes);
   const banDelayMinutes = Number(value.banDelayMinutes);
+  const webhookUrls = Array.isArray(value.webhookUrls)
+    ? value.webhookUrls
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => ({
+        channelId: typeof item.channelId === 'string' ? item.channelId.trim() : '',
+        webhookUrl: typeof item.webhookUrl === 'string' ? item.webhookUrl.trim() : '',
+      }))
+      .filter((item) => item.channelId.length > 0 && item.webhookUrl.length > 0)
+    : [];
+  if (webhookUrls.length === 0 && typeof value.webhookUrl === 'string' && value.webhookUrl.trim().length > 0) {
+    const firstChannelId = Array.isArray(value.channelIds) && typeof value.channelIds[0] === 'string' ? value.channelIds[0].trim() : '';
+    if (firstChannelId) webhookUrls.push({ channelId: firstChannelId, webhookUrl: value.webhookUrl.trim() });
+  }
 
   return {
     enabled: value.enabled === true,
@@ -998,6 +1012,7 @@ function normalizeSpamCatcherConfig(value) {
       typeof value.webhookUrl === 'string' && value.webhookUrl.trim().length > 0
         ? value.webhookUrl.trim()
         : null,
+    webhookUrls,
   };
 }
 

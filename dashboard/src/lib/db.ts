@@ -58,6 +58,7 @@ type SpamCatcherConfig = {
   reviewChannelId: string | null;
   webhookEnabled: boolean;
   webhookUrl: string | null;
+  webhookUrls: { channelId: string; webhookUrl: string }[];
 };
 
 const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
@@ -70,6 +71,7 @@ const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
   reviewChannelId: null,
   webhookEnabled: false,
   webhookUrl: null,
+  webhookUrls: [],
 };
 
 function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
@@ -80,6 +82,19 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
   const source = value as Record<string, unknown>;
   const timeoutMinutes = Number(source.timeoutMinutes);
   const banDelayMinutes = Number(source.banDelayMinutes);
+  const webhookUrls = Array.isArray(source.webhookUrls)
+    ? source.webhookUrls
+        .filter((item): item is Record<string, unknown> => item !== null && typeof item === "object")
+        .map((item) => ({
+          channelId: typeof item.channelId === "string" ? item.channelId.trim() : "",
+          webhookUrl: typeof item.webhookUrl === "string" ? item.webhookUrl.trim() : "",
+        }))
+        .filter((item) => item.channelId.length > 0 && item.webhookUrl.length > 0)
+    : [];
+  if (webhookUrls.length === 0 && typeof source.webhookUrl === "string" && source.webhookUrl.trim().length > 0) {
+    const firstChannelId = Array.isArray(source.channelIds) && typeof source.channelIds[0] === "string" ? source.channelIds[0].trim() : "";
+    if (firstChannelId) webhookUrls.push({ channelId: firstChannelId, webhookUrl: source.webhookUrl.trim() });
+  }
 
   return {
     enabled: source.enabled === true,
@@ -115,6 +130,7 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
       typeof source.webhookUrl === "string" && source.webhookUrl.trim().length > 0
         ? source.webhookUrl.trim()
         : null,
+    webhookUrls,
   };
 }
 

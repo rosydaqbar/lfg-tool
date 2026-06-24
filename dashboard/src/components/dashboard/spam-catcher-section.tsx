@@ -61,10 +61,10 @@ type SpamCatcherSectionProps = {
   saving: boolean;
   textChannels: Channel[];
   value: SpamCatcherConfig;
-  webhookDestinationCheck: {
+  webhookDestinationChecks: Record<string, {
     status: "idle" | "invalid" | "checking" | "valid" | "error";
     message?: string;
-  };
+  }>;
   onChange: (next: SpamCatcherConfig) => void;
   onOpenTextChannels: () => void;
   onSave: () => void;
@@ -77,7 +77,7 @@ function SpamCatcherSectionComponent({
   saving,
   textChannels,
   value,
-  webhookDestinationCheck,
+  webhookDestinationChecks,
   onChange,
   onOpenTextChannels,
   onSave,
@@ -97,12 +97,43 @@ function SpamCatcherSectionComponent({
   const canSave = !saving && !loadingConfig;
   const banDelayUnit = value.banDelayMinutes > 60 ? "hours" : "minutes";
   const banDelayHours = Math.max(2, Math.min(24, Math.round(value.banDelayMinutes / 60)));
+  const configuredWebhookChannelIds = new Set(value.webhookUrls.map((item) => item.channelId));
+  const availableWebhookChannels = selectedChannels.filter((channel) => !configuredWebhookChannelIds.has(channel.id));
+
+  function addWebhookRow() {
+    const channelId = availableWebhookChannels[0]?.id;
+    if (!channelId) return;
+    onChange({
+      ...value,
+      webhookUrls: [...value.webhookUrls, { channelId, webhookUrl: "" }],
+    });
+  }
+
+  function updateWebhookRow(index: number, next: { channelId?: string; webhookUrl?: string }) {
+    onChange({
+      ...value,
+      webhookUrls: value.webhookUrls.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...next } : item
+      ),
+    });
+  }
+
+  function removeWebhookRow(index: number) {
+    onChange({
+      ...value,
+      webhookUrls: value.webhookUrls.filter((_, itemIndex) => itemIndex !== index),
+    });
+  }
 
   function toggleChannel(channelId: string) {
     const nextIds = value.channelIds.includes(channelId)
       ? value.channelIds.filter((id) => id !== channelId)
       : [...value.channelIds, channelId];
-    onChange({ ...value, channelIds: nextIds });
+    onChange({
+      ...value,
+      channelIds: nextIds,
+      webhookUrls: value.webhookUrls.filter((item) => nextIds.includes(item.channelId)),
+    });
   }
 
   return (
@@ -389,33 +420,93 @@ function SpamCatcherSectionComponent({
             />
           </div>
           {value.webhookEnabled ? (
-            <label className="space-y-2 text-sm font-medium">
-              Discord webhook URL
-              <Input
-                type="url"
-                value={value.webhookUrl ?? ""}
-                onChange={(event) => onChange({ ...value, webhookUrl: event.target.value })}
-                placeholder="https://discord.com/api/webhooks/..."
-                disabled={formDisabled}
-              />
-              {webhookDestinationCheck.message ? (
-                <div
-                  className={cn(
-                    "text-xs",
-                    webhookDestinationCheck.status === "valid"
-                      ? "text-emerald-400"
-                      : webhookDestinationCheck.status === "checking"
-                        ? "text-muted-foreground"
-                        : "text-destructive"
-                  )}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium">Trap channel webhooks</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addWebhookRow}
+                  disabled={formDisabled || availableWebhookChannels.length === 0}
                 >
-                  {webhookDestinationCheck.status === "checking" ? (
-                    <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-                  ) : null}
-                  {webhookDestinationCheck.message}
+                  Add webhook
+                </Button>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Each webhook must be created in the same trap channel selected for that row.
+              </div>
+
+              {value.webhookUrls.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border/70 p-3 text-xs text-muted-foreground">
+                  Add one webhook for each selected trap channel.
                 </div>
               ) : null}
-            </label>
+
+              {value.webhookUrls.map((item, index) => {
+                const check = webhookDestinationChecks[item.channelId];
+                return (
+                  <div key={`${item.channelId}-${index}`} className="space-y-2 rounded-lg border border-border/70 p-3">
+                    <div className="grid gap-2 lg:grid-cols-[220px_1fr_auto]">
+                      <Select
+                        value={item.channelId}
+                        onValueChange={(channelId) => updateWebhookRow(index, { channelId })}
+                        disabled={formDisabled}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Trap channel" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {selectedChannels.map((channel) => (
+                            <SelectItem
+                              key={channel.id}
+                              value={channel.id}
+                              disabled={value.webhookUrls.some((row, rowIndex) => rowIndex !== index && row.channelId === channel.id)}
+                            >
+                              #{channel.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="url"
+                        value={item.webhookUrl}
+                        onChange={(event) => updateWebhookRow(index, { webhookUrl: event.target.value })}
+                        placeholder="https://discord.com/api/webhooks/..."
+                        disabled={formDisabled}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => removeWebhookRow(index)}
+                        disabled={formDisabled}
+                        aria-label="Remove webhook"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {check?.message ? (
+                      <div
+                        className={cn(
+                          "text-xs",
+                          check.status === "valid"
+                            ? "text-emerald-400"
+                            : check.status === "checking"
+                              ? "text-muted-foreground"
+                              : "text-destructive"
+                        )}
+                      >
+                        {check.status === "checking" ? (
+                          <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                        ) : null}
+                        {check.message}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           ) : null}
         </div>
 

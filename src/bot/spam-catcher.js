@@ -151,13 +151,7 @@ function createSpamCatcherManager({ client, configStore }) {
       .catch(() => null);
     if (!notice?.messageId) return;
 
-    const caughtCount = notice.deliveryMethod === 'webhook' && config.webhookEnabled
-      ? (await Promise.all(
-          (config.channelIds || []).map((channelId) =>
-            configStore.getSpamCatcherCaughtCount(event.guildId, channelId).catch(() => 0)
-          )
-        )).reduce((total, count) => total + count, 0)
-      : await configStore.getSpamCatcherCaughtCount(event.guildId, event.channelId).catch(() => 0);
+    const caughtCount = await configStore.getSpamCatcherCaughtCount(event.guildId, event.channelId).catch(() => 0);
     const payload = buildTrapNoticePayload(caughtCount, config);
 
     if (notice.deliveryMethod === 'webhook' && notice.webhookUrl) {

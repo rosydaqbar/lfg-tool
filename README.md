@@ -74,10 +74,10 @@ Spam Catcher is an optional moderation feature for trap channels. When enabled, 
 - Trap-channel notices:
   - Notices use Discord Component V2 messages.
   - Bot delivery posts/edits notices in each selected trap channel.
-  - Webhook delivery posts/edits one notice in the webhook's own channel.
+  - Webhook delivery posts/edits one notice per configured trap-channel webhook.
   - Webhook URLs are channel-specific Discord webhook URLs.
-  - The dashboard checks webhook URL format before calling Discord, then automatically shows the destination channel after typing stops.
-  - Saving settings also checks the webhook with Discord and rejects webhooks from another server.
+  - The dashboard checks webhook URL format before calling Discord, then automatically verifies that each webhook sends to its selected trap channel after typing stops.
+  - Saving settings rejects missing webhooks, webhooks from another server, and webhooks whose destination channel does not match the selected trap channel.
 
 ## Screenshots and functions
 ### Discord bot

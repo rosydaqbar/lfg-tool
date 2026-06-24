@@ -35,6 +35,7 @@ type SpamCatcherConfigPayload = {
   reviewChannelId: string | null;
   webhookEnabled: boolean;
   webhookUrl: string | null;
+  webhookUrls: { channelId: string; webhookUrl: string }[];
 };
 
 function isDiscordWebhookUrl(value: string) {
@@ -104,6 +105,19 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
     : {};
   const timeoutMinutes = Number(source.timeoutMinutes);
   const banDelayMinutes = Number(source.banDelayMinutes);
+  const webhookUrls = Array.isArray(source.webhookUrls)
+    ? source.webhookUrls
+        .filter((item): item is Record<string, unknown> => item !== null && typeof item === "object")
+        .map((item) => ({
+          channelId: typeof item.channelId === "string" ? item.channelId.trim() : "",
+          webhookUrl: typeof item.webhookUrl === "string" ? item.webhookUrl.trim() : "",
+        }))
+        .filter((item) => item.channelId.length > 0 && item.webhookUrl.length > 0)
+    : [];
+  if (webhookUrls.length === 0 && typeof source.webhookUrl === "string" && source.webhookUrl.trim().length > 0) {
+    const firstChannelId = Array.isArray(source.channelIds) && typeof source.channelIds[0] === "string" ? source.channelIds[0].trim() : "";
+    if (firstChannelId) webhookUrls.push({ channelId: firstChannelId, webhookUrl: source.webhookUrl.trim() });
+  }
 
   return {
     enabled: source.enabled === true,
@@ -139,6 +153,7 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
       typeof source.webhookUrl === "string" && source.webhookUrl.trim().length > 0
         ? source.webhookUrl.trim()
         : null,
+    webhookUrls,
   };
 }
 
@@ -447,13 +462,13 @@ async function sendSpamCatcherTrapChannelNotices({
   channelIds,
   caughtCounts,
   config,
-  webhookUrl,
+  webhookUrls,
 }: {
   guildId: string;
   channelIds: string[];
   caughtCounts: Record<string, number>;
   config: SpamCatcherConfigPayload;
-  webhookUrl?: string | null;
+  webhookUrls?: { channelId: string; webhookUrl: string }[];
 }) {
   if (!channelIds.length) return [];
   const notices: {
@@ -463,39 +478,40 @@ async function sendSpamCatcherTrapChannelNotices({
     webhookUrl?: string | null;
   }[] = [];
 
-  if (webhookUrl) {
-    const totalCaught = channelIds.reduce(
-      (total, channelId) => total + (caughtCounts[channelId] ?? 0),
-      0
-    );
-    const response = await fetch(withWebhookComponentsEnabled(webhookUrl, true), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(buildSpamCatcherNoticePayload(totalCaught, config)),
-    }).catch((error) => {
-      console.error("Failed to send Spam Catcher webhook notice:", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    });
-    if (response && !response.ok) {
-      console.error("Discord webhook rejected Spam Catcher notice:", {
-        status: response.status,
-        detail: await response.text().catch(() => ""),
-      });
-    }
-    if (response?.ok) {
-      const message = (await response.json().catch(() => null)) as { id?: string; channel_id?: string } | null;
-      if (message?.id) {
-        for (const channelId of channelIds) {
-          notices.push({
+  const webhookByChannel = new Map((webhookUrls ?? []).map((item) => [item.channelId, item.webhookUrl]));
+  if (webhookByChannel.size > 0) {
+    for (const channelId of channelIds) {
+      const webhookUrl = webhookByChannel.get(channelId);
+      if (!webhookUrl) continue;
+      const response = await fetch(withWebhookComponentsEnabled(webhookUrl, true), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildSpamCatcherNoticePayload(caughtCounts[channelId] ?? 0, config)),
+      }).catch((error) => {
+        console.error("Failed to send Spam Catcher webhook notice:", {
           channelId,
-          messageId: message.id,
-          deliveryMethod: "webhook",
-          webhookUrl,
+          error: error instanceof Error ? error.message : String(error),
         });
+        return null;
+      });
+      if (response && !response.ok) {
+        console.error("Discord webhook rejected Spam Catcher notice:", {
+          channelId,
+          status: response.status,
+          detail: await response.text().catch(() => ""),
+        });
+      }
+      if (response?.ok) {
+        const message = (await response.json().catch(() => null)) as { id?: string; channel_id?: string } | null;
+        if (message?.id) {
+          notices.push({
+            channelId,
+            messageId: message.id,
+            deliveryMethod: "webhook",
+            webhookUrl,
+          });
         }
       }
     }
@@ -694,37 +710,58 @@ export async function PUT(
     );
   }
 
-  if (
-    spamCatcherConfig.enabled &&
-    spamCatcherConfig.webhookEnabled &&
-    (!spamCatcherConfig.webhookUrl || !isDiscordWebhookUrl(spamCatcherConfig.webhookUrl))
-  ) {
-    return NextResponse.json(
-      { error: "Enter a valid Discord webhook URL or disable webhook delivery." },
-      { status: 400 }
-    );
-  }
-
   let webhookDestination: {
     channelId: string;
     channelName: string | null;
     guildId: string | null;
     name: string | null;
-  } | null = null;
+  }[] = [];
 
-  if (spamCatcherConfig.enabled && spamCatcherConfig.webhookEnabled && spamCatcherConfig.webhookUrl) {
+  if (spamCatcherConfig.enabled && spamCatcherConfig.webhookEnabled) {
+    const trapChannelIds = new Set(spamCatcherConfig.channelIds);
+    const webhookChannelIds = new Set(spamCatcherConfig.webhookUrls.map((item) => item.channelId));
+    const missingChannelId = spamCatcherConfig.channelIds.find((channelId) => !webhookChannelIds.has(channelId));
+    if (missingChannelId) {
+      return NextResponse.json(
+        { error: `Add a webhook URL for trap channel <#${missingChannelId}> or disable webhook delivery.` },
+        { status: 400 }
+      );
+    }
+    const extraMapping = spamCatcherConfig.webhookUrls.find((item) => !trapChannelIds.has(item.channelId));
+    if (extraMapping) {
+      return NextResponse.json(
+        { error: "Remove webhook rows that are not assigned to a selected trap channel." },
+        { status: 400 }
+      );
+    }
+    const invalidWebhook = spamCatcherConfig.webhookUrls.find((item) => !isDiscordWebhookUrl(item.webhookUrl));
+    if (invalidWebhook) {
+      return NextResponse.json(
+        { error: `Enter a valid Discord webhook URL for trap channel <#${invalidWebhook.channelId}>.` },
+        { status: 400 }
+      );
+    }
+
     try {
-      const destination = await getDiscordWebhookDestination(spamCatcherConfig.webhookUrl);
-      if (destination.guildId && destination.guildId !== id) {
-        return NextResponse.json(
-          { error: "That webhook belongs to a different Discord server." },
-          { status: 400 }
-        );
+      for (const mapping of spamCatcherConfig.webhookUrls) {
+        const destination = await getDiscordWebhookDestination(mapping.webhookUrl);
+        if (destination.guildId && destination.guildId !== id) {
+          return NextResponse.json(
+            { error: `The webhook for trap channel <#${mapping.channelId}> belongs to a different Discord server.` },
+            { status: 400 }
+          );
+        }
+        if (destination.channelId !== mapping.channelId) {
+          return NextResponse.json(
+            { error: `The webhook for <#${mapping.channelId}> sends to <#${destination.channelId}>. Use a webhook from the same trap channel.` },
+            { status: 400 }
+          );
+        }
+        webhookDestination.push({
+          ...destination,
+          channelName: await getDiscordChannelName(destination.channelId),
+        });
       }
-      webhookDestination = {
-        ...destination,
-        channelName: await getDiscordChannelName(destination.channelId),
-      };
     } catch (error) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Failed to check Discord webhook." },
@@ -769,7 +806,7 @@ export async function PUT(
         channelIds: spamCatcherConfig.channelIds,
         caughtCounts,
         config: spamCatcherConfig,
-        webhookUrl: spamCatcherConfig.webhookEnabled ? spamCatcherConfig.webhookUrl : null,
+        webhookUrls: spamCatcherConfig.webhookEnabled ? spamCatcherConfig.webhookUrls : [],
       });
     }
   } catch (error) {
@@ -779,5 +816,5 @@ export async function PUT(
     );
   }
 
-  return NextResponse.json({ ok: true, spamCatcherWebhook: webhookDestination });
+  return NextResponse.json({ ok: true, spamCatcherWebhooks: webhookDestination });
 }

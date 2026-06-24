@@ -39,8 +39,9 @@ export async function POST(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  const body = (await request.json().catch(() => null)) as { webhookUrl?: string } | null;
+  const body = (await request.json().catch(() => null)) as { webhookUrl?: string; channelId?: string } | null;
   const webhookUrl = typeof body?.webhookUrl === "string" ? body.webhookUrl.trim() : "";
+  const expectedChannelId = typeof body?.channelId === "string" ? body.channelId.trim() : "";
   if (!webhookUrl || !isDiscordWebhookUrl(webhookUrl)) {
     return NextResponse.json({ error: "Enter a valid Discord webhook URL." }, { status: 400 });
   }
@@ -69,6 +70,12 @@ export async function POST(
   if (webhook.guild_id && webhook.guild_id !== id) {
     return NextResponse.json(
       { error: "That webhook belongs to a different Discord server." },
+      { status: 400 }
+    );
+  }
+  if (expectedChannelId && webhook.channel_id !== expectedChannelId) {
+    return NextResponse.json(
+      { error: `This webhook sends to <#${webhook.channel_id}>, not <#${expectedChannelId}>.` },
       { status: 400 }
     );
   }
