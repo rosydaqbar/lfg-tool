@@ -352,7 +352,7 @@ function SpamCatcherSectionComponent({
             <div>
               <div className="text-sm font-medium">Admin review channel</div>
               <div className="text-xs text-muted-foreground">
-                Required for timeout appeals. Administrators can remove timeouts here.
+                Required. Sends caught-user review cards here with ban and timeout controls.
               </div>
             </div>
             <Popover
@@ -368,7 +368,7 @@ function SpamCatcherSectionComponent({
                   role="combobox"
                   aria-expanded={reviewOpen}
                   className="h-11 w-full justify-between"
-                  disabled={formDisabled || (value.autoBanEnabled && value.banMode === "immediate")}
+                  disabled={formDisabled}
                 >
                   <span className="truncate text-left">
                     {reviewChannel ? `#${reviewChannel.name}` : value.reviewChannelId ? `ID: ${value.reviewChannelId}` : "Select review channel"}

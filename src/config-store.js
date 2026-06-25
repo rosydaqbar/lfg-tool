@@ -1854,6 +1854,7 @@ async function updateSpamCatcherEventStatus(id, status, decidedBy = null) {
       UPDATE spam_catcher_events
       SET status = $2,
           decided_by = COALESCE($3, decided_by),
+          ban_after = CASE WHEN $2 = 'banned' THEN NULL ELSE ban_after END,
           updated_at = NOW(),
           banned_at = CASE WHEN $2 = 'banned' THEN NOW() ELSE banned_at END
       WHERE id = $1

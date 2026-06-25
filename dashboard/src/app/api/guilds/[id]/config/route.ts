@@ -701,11 +701,10 @@ export async function PUT(
 
   if (
     spamCatcherConfig.enabled &&
-    (!spamCatcherConfig.autoBanEnabled || spamCatcherConfig.banMode !== "immediate") &&
     !spamCatcherConfig.reviewChannelId
   ) {
     return NextResponse.json(
-      { error: "Review channel is required for timeout appeals." },
+      { error: "Review channel is required for Spam Catcher review messages." },
       { status: 400 }
     );
   }

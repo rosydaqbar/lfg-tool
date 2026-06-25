@@ -16,7 +16,10 @@ const {
 
 const APPEAL_PREFIX = 'spamcatcher_appeal';
 const APPEAL_MODAL_PREFIX = 'spamcatcher_appeal_modal';
+const BAN_USER_PREFIX = 'spamcatcher_ban_user';
 const REMOVE_TIMEOUT_PREFIX = 'spamcatcher_remove_timeout';
+const REMOVE_TIMEOUT_CONFIRM_PREFIX = 'spamcatcher_remove_timeout_confirm';
+const REMOVE_TIMEOUT_CANCEL_PREFIX = 'spamcatcher_remove_timeout_cancel';
 const DELAYED_BAN_INTERVAL_MS = 30 * 1000;
 const CONFIG_CACHE_TTL_MS = 5000;
 const DISCORD_TIMEOUT_MAX_MS = 28 * 24 * 60 * 60 * 1000;
@@ -205,30 +208,125 @@ function createSpamCatcherManager({ client, configStore }) {
     });
   }
 
+  function timestamp(date, style = 'R') {
+    if (!date) return null;
+    return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
+  }
+
+  function reviewActionLabel(event) {
+    if (event.action === 'ban_immediate') return 'Ban immediately';
+    if (event.action === 'ban_after_timeout') return 'Ban after timeout ends';
+    if (event.action === 'ban_delayed') return 'Ban after appeal window';
+    return 'Timeout only';
+  }
+
+  function reviewStatusLabel(event) {
+    const labels = {
+      caught: 'Caught',
+      timed_out: 'Timed out',
+      ban_pending: 'Ban pending',
+      banned: 'Banned',
+      ban_failed: 'Ban failed',
+      timeout_failed: 'Timeout failed',
+      timeout_removed: 'Timeout removed',
+    };
+    return labels[event.status] || event.status || 'Unknown';
+  }
+
+  function reviewTitle(event) {
+    if (event.status === 'banned') return 'Spam Catcher Banned User';
+    if (event.status === 'ban_failed') return 'Spam Catcher Ban Failed';
+    if (event.status === 'timeout_failed') return 'Spam Catcher Timeout Failed';
+    if (event.status === 'timeout_removed') return 'Spam Catcher Timeout Removed';
+    return 'Spam Catcher Review';
+  }
+
+  function reviewAccentColor(event) {
+    if (event.status === 'banned' || event.status === 'ban_failed' || event.status === 'timeout_failed') return 0xef4444;
+    if (event.status === 'timeout_removed') return 0x22c55e;
+    return 0xf59e0b;
+  }
+
+  function scheduledBanLine(event) {
+    if (event.status === 'banned' || event.status === 'timeout_removed') return null;
+    if (!event.banAfter) return null;
+    const scheduledAt = timestamp(event.banAfter);
+    if (event.action === 'ban_after_timeout') return `- Ban after timeout ends: ${scheduledAt}`;
+    if (event.action === 'ban_delayed') return `- Ban after appeal window: ${scheduledAt}`;
+    return `- Scheduled ban: ${scheduledAt}`;
+  }
+
+  function canReviewTimeout(event) {
+    return event.action !== 'ban_immediate' && (event.status === 'timed_out' || event.status === 'ban_pending');
+  }
+
   function buildReviewComponents(event) {
-    const delayText = event.banAfter
-      ? event.action === 'ban_delayed'
-        ? `- Scheduled ban after appeal window: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
-        : `- Scheduled ban: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
-      : null;
+    const container = new ContainerBuilder()
+      .setAccentColor(reviewAccentColor(event))
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          [
+            `### ${reviewTitle(event)}`,
+            '-# A user was caught by a Spam Catcher trap channel.',
+            '',
+            `- User: <@${event.userId}> (\`${event.userId}\`)`,
+            `- Catcher channel: <#${event.channelId}> (\`${event.channelId}\`)`,
+            event.messageId ? `- Message ID: \`${event.messageId}\`` : null,
+            `- Action: \`${reviewActionLabel(event)}\``,
+            `- Status: **${reviewStatusLabel(event)}**`,
+            event.timeoutUntil && event.status !== 'banned' && event.status !== 'timeout_removed'
+              ? `- Timeout until: ${timestamp(event.timeoutUntil)}`
+              : null,
+            scheduledBanLine(event),
+            event.bannedAt ? `- Banned: ${timestamp(event.bannedAt, 'F')}` : null,
+            event.decidedBy ? `- Decided by: <@${event.decidedBy}>` : null,
+            `- Event ID: \`${event.id}\``,
+            event.appealMessage ? '' : null,
+            event.appealMessage ? `**Appeal:** ${event.appealMessage}` : null,
+          ].filter(Boolean).join('\n')
+        )
+      );
+
+    if (canReviewTimeout(event)) {
+      container
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+        .addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`${BAN_USER_PREFIX}:${event.id}`)
+              .setLabel('Ban User')
+              .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+              .setCustomId(`${REMOVE_TIMEOUT_PREFIX}:${event.id}`)
+              .setLabel('Remove Timeout')
+              .setStyle(ButtonStyle.Success)
+          )
+        );
+    }
+
+    return {
+      flags: MessageFlags.IsComponentsV2,
+      components: [container],
+      allowedMentions: { parse: [], users: [event.userId] },
+    };
+  }
+
+  function buildRemoveTimeoutConfirmationComponents(event, adminId) {
     return {
       flags: MessageFlags.IsComponentsV2,
       components: [
         new ContainerBuilder()
-          .setAccentColor(0xf59e0b)
+          .setAccentColor(0xf97316)
           .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
               [
-                '### Spam Catcher Appeal',
-                '-# A caught user submitted an appeal from DM.',
-                '',
+                '### Confirm Remove Timeout',
                 `- User: <@${event.userId}> (\`${event.userId}\`)`,
-                `- Catcher channel: <#${event.channelId}> (\`${event.channelId}\`)`,
-                event.messageId ? `- Message ID: \`${event.messageId}\`` : null,
-                delayText,
+                `- Requested by: <@${adminId}>`,
                 `- Event ID: \`${event.id}\``,
                 '',
-                `**Appeal:** ${event.appealMessage || '(empty)'}`,
+                'Removing this timeout will let the user send messages again. If they were testing or spamming, they may send spam messages again.',
+                event.banAfter ? 'This also cancels the scheduled Spam Catcher ban for this event.' : null,
               ].filter(Boolean).join('\n')
             )
           )
@@ -236,9 +334,13 @@ function createSpamCatcherManager({ client, configStore }) {
           .addActionRowComponents(
             new ActionRowBuilder().addComponents(
               new ButtonBuilder()
-                .setCustomId(`${REMOVE_TIMEOUT_PREFIX}:${event.id}`)
-                .setLabel('Remove timeout')
-                .setStyle(ButtonStyle.Success)
+                .setCustomId(`${REMOVE_TIMEOUT_CONFIRM_PREFIX}:${event.id}`)
+                .setLabel('Confirm Remove Timeout')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`${REMOVE_TIMEOUT_CANCEL_PREFIX}:${event.id}`)
+                .setLabel('Cancel')
+                .setStyle(ButtonStyle.Secondary)
             )
           ),
       ],
@@ -246,29 +348,36 @@ function createSpamCatcherManager({ client, configStore }) {
     };
   }
 
-  function buildResolvedReviewComponents(event, adminId) {
-    return {
-      flags: MessageFlags.IsComponentsV2,
-      components: [
-        new ContainerBuilder()
-          .setAccentColor(0x22c55e)
-          .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-              [
-                '### Spam Catcher Appeal Resolved',
-                `- User: <@${event.userId}> (\`${event.userId}\`)`,
-                `- Event ID: \`${event.id}\``,
-                `- Timeout removed by <@${adminId}>`,
-                `- Resolved: <t:${Math.floor(Date.now() / 1000)}:F>`,
-              ].join('\n')
-            )
-          ),
-      ],
-      allowedMentions: { parse: [] },
-    };
+  function buildResolvedReviewComponents(event) {
+    return buildReviewComponents(event);
   }
 
-  async function handleImmediateBan(guild, event) {
+  async function sendOrUpdateReviewMessage(guild, event, buildPayload = buildReviewComponents) {
+    if (!guild || !event?.reviewChannelId) return null;
+    const channel = await guild.channels.fetch(event.reviewChannelId).catch(() => null);
+    if (!channel?.isTextBased()) return null;
+
+    const payload = buildPayload(event);
+    if (event.reviewMessageId) {
+      const existing = await channel.messages.fetch(event.reviewMessageId).catch(() => null);
+      if (existing) {
+        const edited = await existing.edit(payload).catch((error) => {
+          console.error('Failed to edit Spam Catcher review message:', error);
+          return null;
+        });
+        if (edited) return event;
+      }
+    }
+
+    const sent = await channel.send(payload).catch((error) => {
+      console.error('Failed to send Spam Catcher review message:', error);
+      return null;
+    });
+    if (!sent) return null;
+    return configStore.updateSpamCatcherReviewMessage(event.id, channel.id, sent.id).catch(() => event);
+  }
+
+  async function handleImmediateBan(guild, event, options = {}) {
     const mode = event.action === 'ban_after_timeout'
       ? 'after_timeout'
       : event.action === 'ban_delayed'
@@ -292,19 +401,29 @@ function createSpamCatcherManager({ client, configStore }) {
 
     if (banError) {
       console.error('Failed Spam Catcher ban:', banError);
-      await configStore.updateSpamCatcherEventStatus(event.id, 'ban_failed').catch(() => null);
-      await logAction(event, 'Spam Catcher Ban Failed', [
+      const updated = await configStore
+        .updateSpamCatcherEventStatus(event.id, 'ban_failed', options.decidedBy)
+        .catch(() => ({ ...event, status: 'ban_failed', decidedBy: options.decidedBy || event.decidedBy }));
+      await logAction(updated || event, 'Spam Catcher Ban Failed', [
         `- Reason: \`${banError.message || banError}\``,
         `- DM before ban: \`${dmSent ? 'sent' : 'failed'}\``,
       ]);
-      return;
+      await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
+      return updated || event;
     }
 
-    const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'banned').catch(() => event);
+    const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'banned', options.decidedBy).catch(() => ({
+      ...event,
+      status: 'banned',
+      decidedBy: options.decidedBy || event.decidedBy,
+      bannedAt: new Date(),
+    }));
     await logAction(updated || event, 'Spam Catcher Banned User', [
       `- Mode: \`${mode}\``,
       `- DM before ban: \`${dmSent ? 'sent' : 'failed'}\``,
     ]);
+    await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
+    return updated || event;
   }
 
   async function handleTimeout(guild, member, config, event) {
@@ -316,8 +435,12 @@ function createSpamCatcherManager({ client, configStore }) {
 
     if (timeoutError) {
       console.error('Failed Spam Catcher timeout:', timeoutError);
-      await configStore.updateSpamCatcherEventStatus(event.id, 'timeout_failed').catch(() => null);
-      await logAction(event, 'Spam Catcher Timeout Failed', [`- Reason: \`${timeoutError.message || timeoutError}\``]);
+      const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'timeout_failed').catch(() => ({
+        ...event,
+        status: 'timeout_failed',
+      }));
+      await logAction(updated || event, 'Spam Catcher Timeout Failed', [`- Reason: \`${timeoutError.message || timeoutError}\``]);
+      await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
       return;
     }
 
@@ -337,6 +460,7 @@ function createSpamCatcherManager({ client, configStore }) {
           : `- Ban after appeal window: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
         : '- Scheduled ban: `off`',
     ]);
+    await sendOrUpdateReviewMessage(guild, event).catch(() => null);
   }
 
   async function handleMessage(message) {
@@ -426,47 +550,130 @@ function createSpamCatcherManager({ client, configStore }) {
       return;
     }
 
-    const sent = await reviewChannel.send(buildReviewComponents(event)).catch((error) => {
-      console.error('Failed to send Spam Catcher appeal review:', error);
-      return null;
-    });
-    if (sent) {
-      await configStore.updateSpamCatcherReviewMessage(event.id, reviewChannel.id, sent.id).catch(() => null);
-    }
-    await interaction.reply({ content: 'Your appeal was sent to the admins.', flags: MessageFlags.Ephemeral }).catch(() => null);
-  }
-
-  async function handleRemoveTimeout(interaction) {
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+    const sent = await sendOrUpdateReviewMessage(guild, event).catch(() => null);
+    if (!sent) {
       await interaction.reply({
-        content: 'Only users with Administrator permission can remove Spam Catcher timeouts.',
+        content: 'Your appeal was saved, but the review message could not be sent. Please contact an admin.',
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return;
     }
+    await interaction.reply({ content: 'Your appeal was sent to the admins.', flags: MessageFlags.Ephemeral }).catch(() => null);
+  }
 
+  async function requireAdmin(interaction, action) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      await interaction.reply({
+        content: `Only users with Administrator permission can ${action}.`,
+        flags: MessageFlags.Ephemeral,
+      }).catch(() => null);
+      return false;
+    }
+    return true;
+  }
+
+  async function getInteractionEvent(interaction) {
     const [, eventIdRaw] = interaction.customId.split(':');
     const eventId = Number(eventIdRaw);
-    const event = await configStore.getSpamCatcherEventById(eventId).catch(() => null);
+    if (!Number.isFinite(eventId)) return null;
+    return configStore.getSpamCatcherEventById(eventId).catch(() => null);
+  }
+
+  async function handleRemoveTimeout(interaction) {
+    if (!await requireAdmin(interaction, 'remove Spam Catcher timeouts')) return;
+
+    const event = await getInteractionEvent(interaction);
     if (!event) {
       await interaction.reply({ content: 'Spam Catcher event not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+
+    if (!canReviewTimeout(event)) {
+      await interaction.reply({ content: 'This Spam Catcher event is no longer waiting for timeout action.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+
+    await interaction.update(buildRemoveTimeoutConfirmationComponents(event, interaction.user.id)).catch(async () => {
+      await interaction.reply({ content: 'Failed to show timeout-removal confirmation.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    });
+  }
+
+  async function handleCancelRemoveTimeout(interaction) {
+    if (!await requireAdmin(interaction, 'cancel Spam Catcher timeout actions')) return;
+
+    const event = await getInteractionEvent(interaction);
+    if (!event) {
+      await interaction.reply({ content: 'Spam Catcher event not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+
+    await interaction.update(buildReviewComponents(event)).catch(async () => {
+      await interaction.reply({ content: 'Failed to restore the review message.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    });
+  }
+
+  async function handleConfirmRemoveTimeout(interaction) {
+    if (!await requireAdmin(interaction, 'remove Spam Catcher timeouts')) return;
+
+    const event = await getInteractionEvent(interaction);
+    if (!event) {
+      await interaction.reply({ content: 'Spam Catcher event not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+
+    if (!canReviewTimeout(event)) {
+      await interaction.update(buildReviewComponents(event)).catch(async () => {
+        await interaction.reply({ content: 'This Spam Catcher event is no longer waiting for timeout action.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      });
       return;
     }
 
     const member = interaction.guild
       ? await interaction.guild.members.fetch(event.userId).catch(() => null)
       : null;
+    let timeoutError = null;
     if (member) {
       await member.timeout(null, `Spam Catcher appeal accepted by ${interaction.user.id}`).catch((error) => {
         console.error('Failed to remove Spam Catcher timeout:', error);
+        timeoutError = error;
       });
     }
 
+    if (timeoutError) {
+      await interaction.reply({
+        content: `Failed to remove timeout: ${timeoutError.message || timeoutError}`,
+        flags: MessageFlags.Ephemeral,
+      }).catch(() => null);
+      return;
+    }
+
     const updated = await configStore.resolveSpamCatcherAppeal(event.id, interaction.user.id).catch(() => event);
-    await interaction.update(buildResolvedReviewComponents(updated || event, interaction.user.id)).catch(async () => {
+    await interaction.update(buildResolvedReviewComponents(updated || event)).catch(async () => {
       await interaction.reply({ content: 'Timeout removed, but failed to update review message.', flags: MessageFlags.Ephemeral }).catch(() => null);
     });
     await logAction(updated || event, 'Spam Catcher Timeout Removed', [`- Removed by: <@${interaction.user.id}>`]);
+  }
+
+  async function handleBanUser(interaction) {
+    if (!await requireAdmin(interaction, 'ban Spam Catcher users')) return;
+
+    const event = await getInteractionEvent(interaction);
+    if (!event) {
+      await interaction.reply({ content: 'Spam Catcher event not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+    if (!canReviewTimeout(event)) {
+      await interaction.reply({ content: 'This Spam Catcher event is no longer waiting for admin action.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+    if (!interaction.guild) {
+      await interaction.reply({ content: 'Guild is not available for this action.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+
+    await interaction.deferUpdate().catch(() => null);
+    const updated = await handleImmediateBan(interaction.guild, event, { decidedBy: interaction.user.id });
+    await interaction.editReply(buildReviewComponents(updated || event)).catch(() => null);
   }
 
   async function handleInteraction(interaction) {
@@ -476,6 +683,18 @@ function createSpamCatcherManager({ client, configStore }) {
     }
     if (interaction.isModalSubmit() && interaction.customId.startsWith(`${APPEAL_MODAL_PREFIX}:`)) {
       await handleAppealModal(interaction);
+      return true;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith(`${BAN_USER_PREFIX}:`)) {
+      await handleBanUser(interaction);
+      return true;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith(`${REMOVE_TIMEOUT_CONFIRM_PREFIX}:`)) {
+      await handleConfirmRemoveTimeout(interaction);
+      return true;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith(`${REMOVE_TIMEOUT_CANCEL_PREFIX}:`)) {
+      await handleCancelRemoveTimeout(interaction);
       return true;
     }
     if (interaction.isButton() && interaction.customId.startsWith(`${REMOVE_TIMEOUT_PREFIX}:`)) {
