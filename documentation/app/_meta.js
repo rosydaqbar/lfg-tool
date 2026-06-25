@@ -1,11 +1,18 @@
 export default {
-  index: 'Introduction',
-  'whats-new': "What's New",
-  changelog: 'Changelog',
+  index: {
+    display: 'hidden'
+  },
+  introduction: 'Introduction',
   setup: 'Setup',
   architecture: 'Architecture',
   api: 'API',
   components: 'Components',
   deployment: 'Deployment',
-  troubleshooting: 'Troubleshooting'
+  troubleshooting: 'Troubleshooting',
+  changelog: {
+    display: 'hidden'
+  },
+  'whats-new': {
+    display: 'hidden'
+  }
 }

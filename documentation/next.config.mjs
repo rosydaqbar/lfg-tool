@@ -8,6 +8,22 @@ const withNextra = nextra({
   }
 })
 
-export default withNextra({
+const nextConfig = withNextra({
   outputFileTracingRoot: docsRoot
 })
+
+const { experimental, turbopack, ...restConfig } = nextConfig
+const { turbo, ...restExperimental } = experimental || {}
+
+export default {
+  ...restConfig,
+  experimental: restExperimental,
+  turbopack: {
+    ...turbo,
+    ...turbopack,
+    rules: {
+      ...turbo?.rules,
+      ...turbopack?.rules
+    }
+  }
+}
