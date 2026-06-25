@@ -1,0 +1,79 @@
+---
+title: Changelog
+description: Recent changes grouped by area and date.
+---
+
+# Changelog
+
+This changelog tracks notable user-facing and operational changes. It is not a full commit log.
+
+## 2026-06-25
+
+### Added
+
+- Added the `Ban after timeout ends` Spam Catcher ban mode.
+- Added `Ban after appeal window` as the clearer dashboard label for the configurable timed ban window.
+- Added dashboard helper text explaining that appeal instructions are sent while the user is timed out.
+- Added bilingual trap-channel warning copy above the caught-event count.
+- Added this Nextra documentation app under `documentation/`.
+- Added the `What's New` documentation page.
+- Added the `Changelog` documentation page.
+
+### Changed
+
+- Renamed user-facing `Ban after delay` wording to `Ban after appeal window` to avoid confusion with timeout-end bans.
+- Updated bot and dashboard Spam Catcher notice copy to describe the appeal window explicitly.
+- Updated Spam Catcher log copy so scheduled bans are labeled by behavior, such as timeout-end bans or appeal-window bans.
+
+### Improved
+
+- Spam Catcher webhook destinations are validated before saving settings.
+- The dashboard auto-checks each trap-channel webhook destination after typing stops.
+- Config save rejects missing webhooks, cross-server webhooks, and webhooks that send to a different channel than the selected trap channel.
+- Webhook notices continue to use Discord Component V2 payloads with `with_components=true`.
+
+## Recent Spam Catcher Work
+
+### Added
+
+- Trap-channel catching for non-admin users.
+- Timeout-only moderation action.
+- Immediate-ban moderation action.
+- Appeal-window ban action.
+- Appeal DMs and admin review messages.
+- Remove-timeout action from the admin review message.
+- Trap-channel notice delivery through the bot.
+- Trap-channel notice delivery through Discord webhooks.
+- Live caught-event counts on trap-channel notices.
+- Minute and hour controls for appeal-window timing.
+
+### Behavior Notes
+
+- Discord Administrators are ignored by Spam Catcher.
+- Caught trap-channel messages are left in place for review.
+- Caught counts are event counts, not distinct-user counts.
+- Immediate-ban DMs are sent before banning because DMs after a ban can fail.
+- Timeout and appeal-window flows can send users appeal instructions during the timeout period.
+
+## Recent Voice And LFG Work
+
+### Added
+
+- `/voicecheck` for Discord Administrators.
+- Cleanup actions for missing or empty temporary channels.
+- Active Temp Channels dashboard state that can show `Exists`, `Empty`, or `Not found`.
+
+### Improved
+
+- Join-to-Create prompt updates remember the intended prompt message.
+- Prompt refreshes retry after voice changes to reduce stale panels.
+- Voice panels check live Discord state before showing active users.
+- Stale voice tracking records are repaired or cleaned up where possible.
+
+## Recent Operations Work
+
+### Improved
+
+- Transient Postgres query failures are retried in the bot data layer.
+- Health and keepalive logging is easier to inspect from hosting logs.
+- Database index verification and voice-query benchmark scripts are available from root npm scripts.

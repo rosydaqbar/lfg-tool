@@ -1,0 +1,63 @@
+---
+title: What's New
+description: Recent user-facing changes in LFG Tool.
+---
+
+# What's New
+
+This page highlights the latest user-facing improvements. For a release-history style list, see [Changelog](/changelog).
+
+## Latest updates
+
+### Spam Catcher ban behavior is clearer
+
+Spam Catcher now separates automatic ban timing into three dashboard choices:
+
+- `Ban immediately`
+- `Ban after timeout ends`
+- `Ban after appeal window`
+
+The appeal-window option happens during the timeout period. The caught user receives appeal instructions while timed out, and the ban only fires if an admin does not remove the timeout before the window ends.
+
+### Webhook notices are safer
+
+Spam Catcher webhook notice delivery now validates the webhook destination before saving settings.
+
+- Webhook URLs must be valid Discord webhook URLs.
+- Webhooks must belong to the selected Discord server when Discord returns `guild_id`.
+- Webhooks must send to the selected trap channel.
+- The dashboard checks the webhook destination after typing stops.
+
+This prevents accidentally sending trap-channel warnings to the wrong channel.
+
+### Trap-channel notices are stronger
+
+Spam Catcher trap notices now include a bilingual warning section above the caught-event count. The message makes it clear that even test messages will be caught.
+
+### Notice counts are live
+
+Trap-channel notices show how many caught events have been recorded for that channel. Bot-delivered notices are per trap channel; webhook notices are sent through the configured webhook destination.
+
+### Documentation site added
+
+The repository now includes this Nextra documentation app under `documentation/`, separate from the bot, dashboard, and landing apps.
+
+## Recently improved areas
+
+### Dashboard setup and management
+
+- Dashboard settings remain guild-scoped.
+- Channel and role selectors lazy-load their Discord data.
+- Bot status checks validate configured bot credentials against Discord.
+
+### Voice and LFG reliability
+
+- Join-to-Create prompt refreshes are more reliable after voice changes.
+- Voice panels repair stale activity records when possible.
+- `/voicecheck` helps admins review and clean up stale temp-channel records.
+
+### Moderation review flow
+
+- Timeout and appeal-window flows can DM users with appeal instructions.
+- Admin review messages include a remove-timeout action.
+- Immediate-ban flow sends the DM before banning so Discord has a better chance to deliver it.
