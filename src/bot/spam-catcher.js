@@ -256,6 +256,11 @@ function createSpamCatcherManager({ client, configStore }) {
     return `- Scheduled ban: ${scheduledAt}`;
   }
 
+  function catcherMessageLine(event) {
+    if (!event.messageId) return `- Catcher message: unavailable in <#${event.channelId}> (\`${event.channelId}\`)`;
+    return `- Catcher message: https://discord.com/channels/${event.guildId}/${event.channelId}/${event.messageId}`;
+  }
+
   function canReviewTimeout(event) {
     return event.action !== 'ban_immediate' && (event.status === 'timed_out' || event.status === 'ban_pending');
   }
@@ -270,8 +275,7 @@ function createSpamCatcherManager({ client, configStore }) {
             '-# A user was caught by a Spam Catcher trap channel.',
             '',
             `- User: <@${event.userId}> (\`${event.userId}\`)`,
-            `- Catcher channel: <#${event.channelId}> (\`${event.channelId}\`)`,
-            event.messageId ? `- Message ID: \`${event.messageId}\`` : null,
+            catcherMessageLine(event),
             `- Action: \`${reviewActionLabel(event)}\``,
             `- Status: **${reviewStatusLabel(event)}**`,
             event.timeoutUntil && event.status !== 'banned' && event.status !== 'timeout_removed'
@@ -325,8 +329,8 @@ function createSpamCatcherManager({ client, configStore }) {
                 `- Requested by: <@${adminId}>`,
                 `- Event ID: \`${event.id}\``,
                 '',
-                'Removing this timeout will let the user send messages again. If they were testing or spamming, they may send spam messages again.',
-                event.banAfter ? 'This also cancels the scheduled Spam Catcher ban for this event.' : null,
+                '⚠️ Removing this timeout will let the user send messages again. If they were testing or spamming, they may send spam messages again.',
+                event.banAfter ? '🛑 This also cancels the scheduled Spam Catcher ban for this event.' : null,
               ].filter(Boolean).join('\n')
             )
           )
