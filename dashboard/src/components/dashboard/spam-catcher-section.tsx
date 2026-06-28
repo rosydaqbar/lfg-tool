@@ -408,6 +408,21 @@ function SpamCatcherSectionComponent({
         <div className={`${panelClass} space-y-3`}>
           <div className="flex items-start justify-between gap-4">
             <div>
+              <div className="text-sm font-medium">Integrity Checked</div>
+              <div className="text-xs text-muted-foreground">
+                It&apos;s a fun button to add integrity who reads this message.
+              </div>
+            </div>
+            <Switch
+              checked={value.integrityCheckEnabled}
+              onCheckedChange={(integrityCheckEnabled) => onChange({ ...value, integrityCheckEnabled })}
+              disabled={formDisabled}
+            />
+          </div>
+          <Separator />
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
               <div className="text-sm font-medium">Send notice with webhook</div>
               <div className="text-xs text-muted-foreground">
                 Optional. Posts one warning through the webhook&apos;s channel instead of the bot account.
@@ -416,9 +431,14 @@ function SpamCatcherSectionComponent({
             <Switch
               checked={value.webhookEnabled}
               onCheckedChange={(webhookEnabled) => onChange({ ...value, webhookEnabled })}
-              disabled={formDisabled}
+              disabled={formDisabled || value.integrityCheckEnabled}
             />
           </div>
+          {value.integrityCheckEnabled ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+              Integrity Checked uses bot-delivered notices so button clicks can be counted. Webhook delivery is temporarily disabled, and your webhook settings are kept but read-only until Integrity Checked is turned off.
+            </div>
+          ) : null}
           {value.webhookEnabled ? (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -428,7 +448,7 @@ function SpamCatcherSectionComponent({
                   variant="outline"
                   size="sm"
                   onClick={addWebhookRow}
-                  disabled={formDisabled || availableWebhookChannels.length === 0}
+                  disabled={formDisabled || value.integrityCheckEnabled || availableWebhookChannels.length === 0}
                 >
                   Add webhook
                 </Button>
@@ -451,7 +471,7 @@ function SpamCatcherSectionComponent({
                       <Select
                         value={item.channelId}
                         onValueChange={(channelId) => updateWebhookRow(index, { channelId })}
-                        disabled={formDisabled}
+                        disabled={formDisabled || value.integrityCheckEnabled}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Trap channel" />
@@ -473,14 +493,14 @@ function SpamCatcherSectionComponent({
                         value={item.webhookUrl}
                         onChange={(event) => updateWebhookRow(index, { webhookUrl: event.target.value })}
                         placeholder="https://discord.com/api/webhooks/..."
-                        disabled={formDisabled}
+                        disabled={formDisabled || value.integrityCheckEnabled}
                       />
                       <Button
                         type="button"
                         variant="outline"
                         size="icon"
                         onClick={() => removeWebhookRow(index)}
-                        disabled={formDisabled}
+                        disabled={formDisabled || value.integrityCheckEnabled}
                         aria-label="Remove webhook"
                       >
                         <X className="h-4 w-4" />

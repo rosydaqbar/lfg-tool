@@ -20,6 +20,8 @@ const BAN_USER_PREFIX = 'spamcatcher_ban_user';
 const REMOVE_TIMEOUT_PREFIX = 'spamcatcher_remove_timeout';
 const REMOVE_TIMEOUT_CONFIRM_PREFIX = 'spamcatcher_remove_timeout_confirm';
 const REMOVE_TIMEOUT_CANCEL_PREFIX = 'spamcatcher_remove_timeout_cancel';
+const INTEGRITY_ID_PREFIX = 'spamcatcher_integrity_id';
+const INTEGRITY_EN_PREFIX = 'spamcatcher_integrity_en';
 const DELAYED_BAN_INTERVAL_MS = 30 * 1000;
 const CONFIG_CACHE_TTL_MS = 5000;
 const DISCORD_TIMEOUT_MAX_MS = 28 * 24 * 60 * 60 * 1000;
@@ -44,6 +46,10 @@ function createSpamCatcherManager({ client, configStore }) {
         .setLabel('It was a mistake')
         .setStyle(ButtonStyle.Secondary)
     );
+  }
+
+  function integrityCustomId(prefix, guildId, channelId) {
+    return `${prefix}:${guildId}:${channelId}`;
   }
 
   async function dmUser(userId, payload) {
@@ -80,8 +86,9 @@ function createSpamCatcherManager({ client, configStore }) {
     return `${safeMinutes} minute${safeMinutes === 1 ? '' : 's'}`;
   }
 
-  function buildTrapNoticePayload(caughtCount, config) {
+  function buildTrapNoticePayload(caughtCount, integrityCount, config, context = {}) {
     const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
+    const safeIntegrityCount = Math.max(0, Math.floor(Number(integrityCount) || 0));
     const timeoutText = formatNoticeMinutes(config.timeoutMinutes);
     const banDelayText = formatNoticeMinutes(config.banDelayMinutes);
     const actionId = config.autoBanEnabled
@@ -105,38 +112,65 @@ function createSpamCatcherManager({ client, configStore }) {
       ? 'If this was a mistake, please contact a server admin.'
       : 'If you are timed out, please send a private message to one of the online admins or use the appeal button if available.';
 
+    const container = new ContainerBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          [
+            '# 🚫 Dilarang Mengirim Pesan di Channel Ini',
+            `⚠️ Channel ini dibuat untuk menangkap spammer. Jika kamu mengirim pesan di channel ini, ${actionId} ${appealId}`,
+            '',
+            '## 😈 Jangan Berani-Berani Mencoba',
+            'Kalau cuma mau tes, sistem tetap akan menangkap kamu.',
+            '',
+            `-# Jumlah user yang sudah tertangkap di channel ini: \`${safeCount}\``,
+            `-# Manusia yang membaca pesan ini: \`${safeIntegrityCount}\``,
+          ].join('\n')
+        )
+      );
+
+    if (config.integrityCheckEnabled) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(integrityCustomId(INTEGRITY_ID_PREFIX, context.guildId || 'unknown', context.channelId || 'unknown'))
+            .setLabel('Saya sudah membaca ✅')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      );
+    }
+
+    container
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          [
+            '# 🚫 Do Not Send Messages in This Channel',
+            `⚠️ This channel is made to catch spammers. If you send a message in this channel, ${actionEn} ${appealEn}`,
+            '',
+            "## 😈 Don't Even Think About Trying",
+            'Even if you are just testing, the system will still catch you.',
+            '',
+            `-# Caught users in this channel: \`${safeCount}\``,
+            `-# Humans who read this message: \`${safeIntegrityCount}\``,
+          ].join('\n')
+        )
+      );
+
+    if (config.integrityCheckEnabled) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(integrityCustomId(INTEGRITY_EN_PREFIX, context.guildId || 'unknown', context.channelId || 'unknown'))
+            .setLabel('I have read this message')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      );
+    }
+    const components = [container];
+
     return {
       flags: MessageFlags.IsComponentsV2,
-      components: [
-        new ContainerBuilder()
-          .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-              [
-                '# 🚫 Dilarang Mengirim Pesan di Channel Ini',
-                `⚠️ Channel ini dibuat untuk menangkap spammer. Jika kamu mengirim pesan di channel ini, ${actionId} ${appealId}`,
-                '',
-                '## 😈 Jangan Berani-Berani Mencoba',
-                'Kalau cuma mau tes, sistem tetap akan menangkap kamu.',
-                '',
-                `-# Jumlah user yang sudah tertangkap di channel ini: \`${safeCount}\``,
-              ].join('\n')
-            )
-          )
-          .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
-          .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-              [
-                '# 🚫 Do Not Send Messages in This Channel',
-                `⚠️ This channel is made to catch spammers. If you send a message in this channel, ${actionEn} ${appealEn}`,
-                '',
-                "## 😈 Don't Even Think About Trying",
-                'Even if you are just testing, the system will still catch you.',
-                '',
-                `-# Caught users in this channel: \`${safeCount}\``,
-              ].join('\n')
-            )
-          ),
-      ],
+      components,
       allowedMentions: { parse: [] },
     };
   }
@@ -148,14 +182,24 @@ function createSpamCatcherManager({ client, configStore }) {
     return url.toString();
   }
 
-  async function refreshTrapNoticeCount(guild, config, event) {
+  async function refreshTrapNoticeForChannel(guild, config, guildId, channelId) {
     const notice = await configStore
-      .getSpamCatcherNoticeMessage(event.guildId, event.channelId)
+      .getSpamCatcherNoticeMessage(guildId, channelId)
       .catch(() => null);
     if (!notice?.messageId) return;
 
-    const caughtCount = await configStore.getSpamCatcherCaughtCount(event.guildId, event.channelId).catch(() => 0);
-    const payload = buildTrapNoticePayload(caughtCount, config);
+    const [caughtCount, integrityCount] = await Promise.all([
+      configStore.getSpamCatcherCaughtCount(guildId, channelId).catch(() => 0),
+      configStore.getSpamCatcherIntegrityCount(guildId, channelId).catch(() => 0),
+    ]);
+    const payload = buildTrapNoticePayload(
+      caughtCount,
+      integrityCount,
+      notice.deliveryMethod === 'webhook'
+        ? { ...config, integrityCheckEnabled: false }
+        : config,
+      { guildId, channelId }
+    );
 
     if (notice.deliveryMethod === 'webhook' && notice.webhookUrl) {
       await fetch(webhookEditUrl(notice.webhookUrl, notice.messageId), {
@@ -175,6 +219,10 @@ function createSpamCatcherManager({ client, configStore }) {
     await message.edit(payload).catch((error) => {
       console.error('Failed to edit Spam Catcher trap notice:', error);
     });
+  }
+
+  async function refreshTrapNoticeCount(guild, config, event) {
+    await refreshTrapNoticeForChannel(guild, config, event.guildId, event.channelId);
   }
 
   async function logAction(event, title, details = []) {
@@ -680,7 +728,77 @@ function createSpamCatcherManager({ client, configStore }) {
     await interaction.editReply(buildReviewComponents(updated || event)).catch(() => null);
   }
 
+  async function handleIntegrityCheck(interaction) {
+    const customId = typeof interaction.customId === 'string' ? interaction.customId : '';
+    const [prefix, customGuildId, customChannelId] = customId.split(':');
+    const guildId = customGuildId && customGuildId !== 'unknown' ? customGuildId : interaction.guildId;
+    const channelId = customChannelId && customChannelId !== 'unknown' ? customChannelId : interaction.channelId;
+    console.info('Handling Spam Catcher integrity button:', {
+      customId: interaction.customId,
+      guildId,
+      channelId,
+      userId: interaction.user?.id,
+    });
+    const acked = await (typeof interaction.deferUpdate === 'function'
+      ? interaction.deferUpdate()
+      : interaction.deferReply({ ephemeral: true })
+    ).then(() => true).catch((error) => {
+      console.error('Failed to acknowledge Spam Catcher integrity button:', error);
+      return false;
+    });
+    if (!acked) return;
+
+    async function followUp(content) {
+      await interaction.followUp({ content, flags: MessageFlags.Ephemeral }).catch((error) => {
+        console.error('Failed to follow up Spam Catcher integrity button:', error);
+      });
+    }
+
+    if (!guildId || !channelId) {
+      await followUp('This integrity check is only available in a server channel.');
+      return;
+    }
+
+    const config = await getConfig(guildId).catch(() => null);
+    if (!config?.enabled || !config.integrityCheckEnabled || !config.channelIds.includes(channelId)) {
+      await followUp('Integrity check is not enabled for this notice.');
+      return;
+    }
+
+    const inserted = await configStore
+      .recordSpamCatcherIntegrityCheck(guildId, channelId, interaction.user.id, interaction.message?.id || null)
+      .catch((error) => {
+        console.error('Failed to record Spam Catcher integrity check:', error);
+        return null;
+      });
+
+    if (inserted === null) {
+      await followUp('Failed to record integrity check. Please try again.');
+      return;
+    }
+
+    await followUp(
+      inserted
+        ? 'Integrity checked. Thanks for reading.'
+        : 'You already checked integrity for this message.'
+    );
+
+    if (inserted && interaction.guild) {
+      await refreshTrapNoticeForChannel(interaction.guild, config, guildId, channelId).catch((error) => {
+        console.error('Failed to refresh Spam Catcher integrity count:', error);
+      });
+    }
+  }
+
   async function handleInteraction(interaction) {
+    const customId = typeof interaction.customId === 'string' ? interaction.customId : '';
+    if (
+      customId.startsWith(INTEGRITY_ID_PREFIX) ||
+      customId.startsWith(INTEGRITY_EN_PREFIX)
+    ) {
+      await handleIntegrityCheck(interaction);
+      return true;
+    }
     if (interaction.isButton() && interaction.customId.startsWith(`${APPEAL_PREFIX}:`)) {
       await handleAppealButton(interaction);
       return true;

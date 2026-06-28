@@ -205,13 +205,24 @@ client.once(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    const customId = typeof interaction.customId === 'string' ? interaction.customId : '';
+    if (customId.startsWith('spamcatcher_')) {
+      console.info('Spam Catcher button interaction received:', {
+        customId,
+        type: interaction.type,
+        componentType: interaction.componentType,
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        userId: interaction.user?.id,
+      });
+    }
+    if (await spamCatcherManager.handleInteraction(interaction)) {
+      return;
+    }
     if (await statsManager.handleInteraction(interaction)) {
       return;
     }
     if (await autoRoleManager.handleInteraction(interaction)) {
-      return;
-    }
-    if (await spamCatcherManager.handleInteraction(interaction)) {
       return;
     }
     await lfgManager.handleInteraction(interaction);

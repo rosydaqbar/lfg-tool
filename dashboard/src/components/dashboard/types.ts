@@ -67,6 +67,7 @@ export type SpamCatcherConfig = {
   webhookEnabled: boolean;
   webhookUrl: string | null;
   webhookUrls: { channelId: string; webhookUrl: string }[];
+  integrityCheckEnabled: boolean;
 };
 
 export type AutoRoleRequestStatus = "pending" | "approved" | "denied";

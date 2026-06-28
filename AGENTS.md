@@ -32,7 +32,7 @@
 - `src/config-store.js` auto-adds several bot-needed columns with `ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT EXISTS`; fresh schema is in `scripts/schema-postgres.sql`.
 - When adding DB fields used by both bot and dashboard, update all relevant places: `src/config-store.js`, `scripts/schema-postgres.sql`, and `dashboard/src/lib/db.ts`.
 - Existing deployments may not have old data for newly tracked message IDs; cleanup code should tolerate missing/null IDs.
-- Spam Catcher data spans `spam_catcher_config`, `spam_catcher_events`, and `spam_catcher_notice_messages`; keep root store, dashboard DB helpers, and fresh schema aligned.
+- Spam Catcher data spans `spam_catcher_config`, `spam_catcher_events`, `spam_catcher_notice_messages`, and `spam_catcher_integrity_checks`; keep root store, dashboard DB helpers, and fresh schema aligned.
 
 ## Dashboard Behavior Gotchas
 - Guild selection is persisted in browser `localStorage` (`lfg-tool:selected-guild-id`) and `/api/guilds` is paginated; avoid reverting to eager loading every manageable guild.
@@ -48,5 +48,7 @@
 - Spam Catcher ignores Discord Administrators and leaves caught trap-channel messages in place.
 - Spam Catcher trap-channel notices use Component V2. Webhook delivery must include `with_components=true`; use `wait=true` when sending if the message ID must be persisted.
 - Spam Catcher notice counts are caught event rows/IDs, not distinct users. Bot-delivered notices are per trap channel; webhook notices are one message in the webhook's channel.
+- Spam Catcher Integrity Checked buttons count one row per `(guild_id, channel_id, user_id)` using `ON CONFLICT DO NOTHING`; do not disable the public button for everyone after one user clicks it.
+- Integrity Checked temporarily bypasses webhook delivery and uses bot-delivered notices, but webhook settings should be preserved read-only so turning Integrity Checked off restores the prior webhook setup.
 - Dashboard validates webhook URL format before calling Discord, auto-checks each per-trap-channel webhook after typing stops, and config save rejects missing/mismatched webhooks or webhooks whose `guild_id` does not match the selected guild.
 - Immediate-ban DM delivery sends the DM before banning; keep this order because DMs after a ban can fail.

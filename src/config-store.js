@@ -95,6 +95,7 @@ let voiceLeaderboardOverridesEnsured = false;
 let spamCatcherConfigEnsured = false;
 let spamCatcherEventsEnsured = false;
 let spamCatcherNoticeMessagesEnsured = false;
+let spamCatcherIntegrityChecksEnsured = false;
 
 const TEMP_OWNER_CACHE_TTL_MS = 15_000;
 const tempOwnerByOwnerKeyCache = new Map();
@@ -959,6 +960,7 @@ const DEFAULT_SPAM_CATCHER_CONFIG = {
   webhookEnabled: false,
   webhookUrl: null,
   webhookUrls: [],
+  integrityCheckEnabled: false,
 };
 
 function normalizeSpamCatcherConfig(value) {
@@ -1013,6 +1015,7 @@ function normalizeSpamCatcherConfig(value) {
         ? value.webhookUrl.trim()
         : null,
     webhookUrls,
+    integrityCheckEnabled: value.integrityCheckEnabled === true,
   };
 }
 
@@ -1140,6 +1143,30 @@ async function ensureSpamCatcherNoticeMessagesTable() {
     spamCatcherNoticeMessagesEnsured = true;
   } catch (error) {
     console.error('Failed to ensure spam_catcher_notice_messages table:', error);
+  }
+}
+
+async function ensureSpamCatcherIntegrityChecksTable() {
+  if (spamCatcherIntegrityChecksEnsured) return;
+  try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_integrity_checks (
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          message_id TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (guild_id, channel_id, user_id)
+        )
+      `
+    );
+    await query(
+      'CREATE INDEX IF NOT EXISTS idx_spam_catcher_integrity_checks_channel ON spam_catcher_integrity_checks(guild_id, channel_id)'
+    );
+    spamCatcherIntegrityChecksEnsured = true;
+  } catch (error) {
+    console.error('Failed to ensure spam_catcher_integrity_checks table:', error);
   }
 }
 
@@ -1938,6 +1965,34 @@ async function getSpamCatcherCaughtCount(guildId, channelId) {
   return Number(res.rows[0]?.count || 0);
 }
 
+async function recordSpamCatcherIntegrityCheck(guildId, channelId, userId, messageId = null) {
+  await ensureSpamCatcherIntegrityChecksTable();
+  const res = await query(
+    `
+      INSERT INTO spam_catcher_integrity_checks (guild_id, channel_id, user_id, message_id)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (guild_id, channel_id, user_id) DO NOTHING
+      RETURNING user_id
+    `,
+    [guildId, channelId, userId, messageId]
+  );
+  return res.rowCount > 0;
+}
+
+async function getSpamCatcherIntegrityCount(guildId, channelId) {
+  await ensureSpamCatcherIntegrityChecksTable();
+  const res = await query(
+    `
+      SELECT COUNT(user_id)::bigint AS count
+      FROM spam_catcher_integrity_checks
+      WHERE guild_id = $1
+        AND channel_id = $2
+    `,
+    [guildId, channelId]
+  );
+  return Number(res.rows[0]?.count || 0);
+}
+
 async function getSpamCatcherNoticeMessage(guildId, channelId) {
   await ensureSpamCatcherNoticeMessagesTable();
   const res = await query(
@@ -1977,6 +2032,8 @@ module.exports = {
   resolveSpamCatcherAppeal,
   getDueSpamCatcherBanEvents,
   getSpamCatcherCaughtCount,
+  recordSpamCatcherIntegrityCheck,
+  getSpamCatcherIntegrityCount,
   getSpamCatcherNoticeMessage,
   addTempChannel,
   clearPersistentLfgMessage,

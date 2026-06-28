@@ -59,6 +59,7 @@ type SpamCatcherConfig = {
   webhookEnabled: boolean;
   webhookUrl: string | null;
   webhookUrls: { channelId: string; webhookUrl: string }[];
+  integrityCheckEnabled: boolean;
 };
 
 const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
@@ -72,6 +73,7 @@ const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
   webhookEnabled: false,
   webhookUrl: null,
   webhookUrls: [],
+  integrityCheckEnabled: false,
 };
 
 function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
@@ -131,6 +133,7 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfig {
         ? source.webhookUrl.trim()
         : null,
     webhookUrls,
+    integrityCheckEnabled: source.integrityCheckEnabled === true,
   };
 }
 
@@ -3771,6 +3774,195 @@ export async function saveSpamCatcherNoticeMessages(
       ]
     );
   }
+}
+
+export async function getSpamCatcherNoticeMessages(
+  guildId: string,
+  channelIds: string[]
+): Promise<{
+  channelId: string;
+  messageId: string;
+  deliveryMethod: "bot" | "webhook";
+  webhookUrl: string | null;
+}[]> {
+  const uniqueChannelIds = Array.from(new Set(channelIds.filter((id) => id.trim().length > 0)));
+  if (uniqueChannelIds.length === 0) return [];
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        const res = await client.query(
+          `
+            SELECT channel_id, message_id, delivery_method, webhook_url
+            FROM spam_catcher_notice_messages
+            WHERE guild_id = $1
+              AND channel_id = ANY($2::text[])
+          `,
+          [guildId, uniqueChannelIds]
+        );
+        return (res.rows as { channel_id: string; message_id: string; delivery_method: string; webhook_url: string | null }[]).map((row) => ({
+          channelId: row.channel_id,
+          messageId: row.message_id,
+          deliveryMethod: row.delivery_method === "webhook" ? "webhook" : "bot",
+          webhookUrl: row.webhook_url ?? null,
+        }));
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    const placeholders = uniqueChannelIds.map(() => "?").join(", ");
+    const rows = db
+      .prepare(
+        `
+          SELECT channel_id, message_id, delivery_method, webhook_url
+          FROM spam_catcher_notice_messages
+          WHERE guild_id = ?
+            AND channel_id IN (${placeholders})
+        `
+      )
+      .all(guildId, ...uniqueChannelIds) as { channel_id: string; message_id: string; delivery_method: string; webhook_url: string | null }[];
+    return rows.map((row) => ({
+      channelId: row.channel_id,
+      messageId: row.message_id,
+      deliveryMethod: row.delivery_method === "webhook" ? "webhook" : "bot",
+      webhookUrl: row.webhook_url ?? null,
+    }));
+  }
+
+  await ensureCoreConfigTables();
+  const res = await query(
+    `
+      SELECT channel_id, message_id, delivery_method, webhook_url
+      FROM spam_catcher_notice_messages
+      WHERE guild_id = $1
+        AND channel_id = ANY($2::text[])
+    `,
+    [guildId, uniqueChannelIds]
+  );
+  return (res.rows as { channel_id: string; message_id: string; delivery_method: string; webhook_url: string | null }[]).map((row) => ({
+    channelId: row.channel_id,
+    messageId: row.message_id,
+    deliveryMethod: row.delivery_method === "webhook" ? "webhook" : "bot",
+    webhookUrl: row.webhook_url ?? null,
+  }));
+}
+
+export async function getSpamCatcherIntegrityCounts(
+  guildId: string,
+  channelIds: string[]
+): Promise<Record<string, number>> {
+  const uniqueChannelIds = Array.from(new Set(channelIds.filter((id) => id.trim().length > 0)));
+  const emptyCounts = Object.fromEntries(uniqueChannelIds.map((id) => [id, 0]));
+  if (uniqueChannelIds.length === 0) return {};
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          `
+            CREATE TABLE IF NOT EXISTS spam_catcher_integrity_checks (
+              guild_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              message_id TEXT,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              PRIMARY KEY (guild_id, channel_id, user_id)
+            )
+          `
+        );
+        const res = await client.query(
+          `
+            SELECT channel_id, COUNT(user_id)::bigint AS count
+            FROM spam_catcher_integrity_checks
+            WHERE guild_id = $1
+              AND channel_id = ANY($2::text[])
+            GROUP BY channel_id
+          `,
+          [guildId, uniqueChannelIds]
+        );
+        return (res.rows as { channel_id: string; count: string | number }[]).reduce(
+          (counts, row) => ({ ...counts, [row.channel_id]: Number(row.count ?? 0) }),
+          emptyCounts
+        );
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+    }
+
+    const db = getSqliteDb();
+    db.prepare(
+      `
+        CREATE TABLE IF NOT EXISTS spam_catcher_integrity_checks (
+          guild_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          message_id TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (guild_id, channel_id, user_id)
+        )
+      `
+    ).run();
+    const placeholders = uniqueChannelIds.map(() => "?").join(", ");
+    const rows = db
+      .prepare(
+        `
+          SELECT channel_id, COUNT(user_id) AS count
+          FROM spam_catcher_integrity_checks
+          WHERE guild_id = ?
+            AND channel_id IN (${placeholders})
+          GROUP BY channel_id
+        `
+      )
+      .all(guildId, ...uniqueChannelIds) as { channel_id: string; count: number }[];
+    return rows.reduce(
+      (counts, row) => ({ ...counts, [row.channel_id]: Number(row.count ?? 0) }),
+      emptyCounts
+    );
+  }
+
+  await ensureCoreConfigTables();
+  await query(
+    `
+      CREATE TABLE IF NOT EXISTS spam_catcher_integrity_checks (
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        message_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (guild_id, channel_id, user_id)
+      )
+    `
+  );
+  const res = await query(
+    `
+      SELECT channel_id, COUNT(user_id)::bigint AS count
+      FROM spam_catcher_integrity_checks
+      WHERE guild_id = $1
+        AND channel_id = ANY($2::text[])
+      GROUP BY channel_id
+    `,
+    [guildId, uniqueChannelIds]
+  );
+  return (res.rows as { channel_id: string; count: string | number }[]).reduce(
+    (counts, row) => ({ ...counts, [row.channel_id]: Number(row.count ?? 0) }),
+    emptyCounts
+  );
 }
 
 export async function deleteVoiceAutoRoleRequest(guildId: string, id: number) {

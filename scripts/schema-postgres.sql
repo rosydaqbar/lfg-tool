@@ -124,6 +124,15 @@ CREATE TABLE IF NOT EXISTS spam_catcher_notice_messages (
   PRIMARY KEY (guild_id, channel_id)
 );
 
+CREATE TABLE IF NOT EXISTS spam_catcher_integrity_checks (
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  message_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (guild_id, channel_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS voice_leaderboard_overrides (
   guild_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
@@ -205,3 +214,4 @@ CREATE INDEX IF NOT EXISTS idx_voice_leaderboard_overrides_guild_updated ON voic
 CREATE INDEX IF NOT EXISTS idx_spam_catcher_events_guild_created ON spam_catcher_events(guild_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spam_catcher_events_ban_due ON spam_catcher_events(status, ban_after);
 CREATE INDEX IF NOT EXISTS idx_spam_catcher_notice_messages_guild ON spam_catcher_notice_messages(guild_id);
+CREATE INDEX IF NOT EXISTS idx_spam_catcher_integrity_checks_channel ON spam_catcher_integrity_checks(guild_id, channel_id);

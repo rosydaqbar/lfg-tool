@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   getGuildConfig,
+  getSpamCatcherNoticeMessages,
   getSpamCatcherCaughtUserCounts,
+  getSpamCatcherIntegrityCounts,
   saveGuildConfig,
   saveSpamCatcherNoticeMessages,
 } from "@/lib/db";
@@ -36,6 +38,7 @@ type SpamCatcherConfigPayload = {
   webhookEnabled: boolean;
   webhookUrl: string | null;
   webhookUrls: { channelId: string; webhookUrl: string }[];
+  integrityCheckEnabled: boolean;
 };
 
 function isDiscordWebhookUrl(value: string) {
@@ -154,7 +157,15 @@ function normalizeSpamCatcherConfig(value: unknown): SpamCatcherConfigPayload {
         ? source.webhookUrl.trim()
         : null,
     webhookUrls,
+    integrityCheckEnabled: source.integrityCheckEnabled === true,
   };
+}
+
+function webhookMessageUrl(webhookUrl: string, messageId: string) {
+  const url = new URL(webhookUrl);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/messages/${messageId}`;
+  url.searchParams.set("with_components", "true");
+  return url.toString();
 }
 
 function normalizeAutoRoleConfig(value: unknown): AutoRoleConfigPayload {
@@ -397,9 +408,12 @@ function formatNoticeMinutes(minutes: number) {
 
 function buildSpamCatcherNoticePayload(
   caughtCount: number,
-  config: SpamCatcherConfigPayload
+  integrityCount: number,
+  config: SpamCatcherConfigPayload,
+  context: { guildId: string; channelId: string }
 ) {
   const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
+  const safeIntegrityCount = Math.max(0, Math.floor(Number(integrityCount) || 0));
   const timeoutText = formatNoticeMinutes(config.timeoutMinutes);
   const banDelayText = formatNoticeMinutes(config.banDelayMinutes);
   const actionId = config.autoBanEnabled
@@ -430,6 +444,7 @@ function buildSpamCatcherNoticePayload(
     "Kalau cuma mau tes, sistem tetap akan menangkap kamu.",
     "",
     `-# Jumlah user yang sudah tertangkap di channel ini: \`${safeCount}\``,
+    `-# Manusia yang membaca pesan ini: \`${safeIntegrityCount}\``,
   ].join("\n");
   const contentEn = [
     "# 🚫 Do Not Send Messages in This Channel",
@@ -439,20 +454,47 @@ function buildSpamCatcherNoticePayload(
     "Even if you are just testing, the system will still catch you.",
     "",
     `-# Caught users in this channel: \`${safeCount}\``,
+    `-# Humans who read this message: \`${safeIntegrityCount}\``,
   ].join("\n");
+
+  const containerComponents: Record<string, unknown>[] = [{ type: 10, content: contentId }];
+  if (config.integrityCheckEnabled) {
+    containerComponents.push({
+      type: 1,
+      components: [
+        {
+          type: 2,
+          custom_id: `spamcatcher_integrity_id:${context.guildId}:${context.channelId}`,
+          label: "Saya sudah membaca ✅",
+          style: 2,
+        },
+      ],
+    });
+  }
+  containerComponents.push({ type: 14, divider: true, spacing: 1 }, { type: 10, content: contentEn });
+  if (config.integrityCheckEnabled) {
+    containerComponents.push({
+      type: 1,
+      components: [
+        {
+          type: 2,
+          custom_id: `spamcatcher_integrity_en:${context.guildId}:${context.channelId}`,
+          label: "I have read this message",
+          style: 2,
+        },
+      ],
+    });
+  }
+  const components: Record<string, unknown>[] = [
+    {
+      type: 17,
+      components: containerComponents,
+    },
+  ];
 
   return {
     flags: 32768,
-    components: [
-      {
-        type: 17,
-        components: [
-          { type: 10, content: contentId },
-          { type: 14, divider: true, spacing: 1 },
-          { type: 10, content: contentEn },
-        ],
-      },
-    ],
+    components,
     allowed_mentions: { parse: [] },
   };
 }
@@ -461,12 +503,14 @@ async function sendSpamCatcherTrapChannelNotices({
   guildId,
   channelIds,
   caughtCounts,
+  integrityCounts,
   config,
   webhookUrls,
 }: {
   guildId: string;
   channelIds: string[];
   caughtCounts: Record<string, number>;
+  integrityCounts: Record<string, number>;
   config: SpamCatcherConfigPayload;
   webhookUrls?: { channelId: string; webhookUrl: string }[];
 }) {
@@ -479,7 +523,7 @@ async function sendSpamCatcherTrapChannelNotices({
   }[] = [];
 
   const webhookByChannel = new Map((webhookUrls ?? []).map((item) => [item.channelId, item.webhookUrl]));
-  if (webhookByChannel.size > 0) {
+  if (webhookByChannel.size > 0 && !config.integrityCheckEnabled) {
     for (const channelId of channelIds) {
       const webhookUrl = webhookByChannel.get(channelId);
       if (!webhookUrl) continue;
@@ -488,7 +532,12 @@ async function sendSpamCatcherTrapChannelNotices({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildSpamCatcherNoticePayload(caughtCounts[channelId] ?? 0, config)),
+        body: JSON.stringify(buildSpamCatcherNoticePayload(
+          caughtCounts[channelId] ?? 0,
+          integrityCounts[channelId] ?? 0,
+          config,
+          { guildId, channelId }
+        )),
       }).catch((error) => {
         console.error("Failed to send Spam Catcher webhook notice:", {
           channelId,
@@ -531,7 +580,12 @@ async function sendSpamCatcherTrapChannelNotices({
         Authorization: `Bot ${botToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildSpamCatcherNoticePayload(caughtCounts[channelId] ?? 0, config)),
+        body: JSON.stringify(buildSpamCatcherNoticePayload(
+          caughtCounts[channelId] ?? 0,
+          integrityCounts[channelId] ?? 0,
+          config,
+          { guildId, channelId }
+        )),
     }).catch((error) => {
       console.error("Failed to send Spam Catcher trap-channel notice:", {
         channelId,
@@ -550,6 +604,24 @@ async function sendSpamCatcherTrapChannelNotices({
     console.error("Failed to save Spam Catcher notice messages:", error);
   });
   return notices;
+}
+
+async function deletePreviousWebhookNotices(guildId: string, channelIds: string[]) {
+  const previousNotices = await getSpamCatcherNoticeMessages(guildId, channelIds).catch((error) => {
+    console.error("Failed to load previous Spam Catcher notices:", error);
+    return [];
+  });
+  await Promise.all(previousNotices
+    .filter((notice) => notice.deliveryMethod === "webhook" && notice.webhookUrl)
+    .map((notice) => fetch(webhookMessageUrl(notice.webhookUrl!, notice.messageId), {
+      method: "DELETE",
+    }).catch((error) => {
+      console.error("Failed to delete previous Spam Catcher webhook notice:", {
+        channelId: notice.channelId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }))
+  );
 }
 
 export const dynamic = "force-dynamic";
@@ -716,7 +788,7 @@ export async function PUT(
     name: string | null;
   }[] = [];
 
-  if (spamCatcherConfig.enabled && spamCatcherConfig.webhookEnabled) {
+  if (spamCatcherConfig.enabled && spamCatcherConfig.webhookEnabled && !spamCatcherConfig.integrityCheckEnabled) {
     const trapChannelIds = new Set(spamCatcherConfig.channelIds);
     const webhookChannelIds = new Set(spamCatcherConfig.webhookUrls.map((item) => item.channelId));
     const missingChannelId = spamCatcherConfig.channelIds.find((channelId) => !webhookChannelIds.has(channelId));
@@ -793,6 +865,10 @@ export async function PUT(
     });
 
     if (spamCatcherConfig.enabled && spamCatcherConfig.channelIds.length > 0) {
+      if (spamCatcherConfig.integrityCheckEnabled) {
+        await deletePreviousWebhookNotices(id, spamCatcherConfig.channelIds);
+      }
+
       const caughtCounts = await getSpamCatcherCaughtUserCounts(
         id,
         spamCatcherConfig.channelIds
@@ -800,12 +876,22 @@ export async function PUT(
         console.error("Failed to count Spam Catcher caught users:", error);
         return {} as Record<string, number>;
       });
+      const integrityCounts = await getSpamCatcherIntegrityCounts(
+        id,
+        spamCatcherConfig.channelIds
+      ).catch((error) => {
+        console.error("Failed to count Spam Catcher integrity checks:", error);
+        return {} as Record<string, number>;
+      });
       await sendSpamCatcherTrapChannelNotices({
         guildId: id,
         channelIds: spamCatcherConfig.channelIds,
         caughtCounts,
+        integrityCounts,
         config: spamCatcherConfig,
-        webhookUrls: spamCatcherConfig.webhookEnabled ? spamCatcherConfig.webhookUrls : [],
+        webhookUrls: spamCatcherConfig.webhookEnabled && !spamCatcherConfig.integrityCheckEnabled
+          ? spamCatcherConfig.webhookUrls
+          : [],
       });
     }
   } catch (error) {

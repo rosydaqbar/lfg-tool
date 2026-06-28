@@ -78,6 +78,8 @@ Spam Catcher is an optional moderation feature for trap channels. When enabled, 
   - Webhook URLs are channel-specific Discord webhook URLs.
   - The dashboard checks webhook URL format before calling Discord, then automatically verifies that each webhook sends to its selected trap channel after typing stops.
   - Saving settings rejects missing webhooks, webhooks from another server, and webhooks whose destination channel does not match the selected trap channel.
+  - Optional `Integrity Checked` adds read-confirmation buttons and counts one integrity check per Discord user per trap channel.
+  - `Integrity Checked` temporarily uses bot-delivered notices because Discord webhook notices cannot route button clicks to the bot; existing webhook settings are kept read-only until it is turned off.
 
 ## Screenshots and functions
 ### Discord bot

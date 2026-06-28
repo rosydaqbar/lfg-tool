@@ -51,6 +51,7 @@ const DEFAULT_SPAM_CATCHER_CONFIG: SpamCatcherConfig = {
   webhookEnabled: false,
   webhookUrl: null,
   webhookUrls: [],
+  integrityCheckEnabled: false,
 };
 
 const SELECTED_GUILD_STORAGE_KEY = "lfg-tool:selected-guild-id";
@@ -167,6 +168,7 @@ function normalizeSpamCatcherConfig(
         ? value.webhookUrl.trim()
         : null,
     webhookUrls,
+    integrityCheckEnabled: value.integrityCheckEnabled === true,
   };
 }
 
@@ -318,7 +320,12 @@ export default function DashboardClient({
 
   useEffect(() => {
     const webhookRows = spamCatcherConfig.webhookUrls ?? [];
-    if (!selectedGuildId || !spamCatcherConfig.webhookEnabled || webhookRows.length === 0) {
+    if (
+      !selectedGuildId ||
+      !spamCatcherConfig.webhookEnabled ||
+      spamCatcherConfig.integrityCheckEnabled ||
+      webhookRows.length === 0
+    ) {
       setWebhookDestinationChecks({});
       return;
     }
@@ -388,7 +395,12 @@ export default function DashboardClient({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [selectedGuildId, spamCatcherConfig.webhookEnabled, spamCatcherConfig.webhookUrls]);
+  }, [
+    selectedGuildId,
+    spamCatcherConfig.integrityCheckEnabled,
+    spamCatcherConfig.webhookEnabled,
+    spamCatcherConfig.webhookUrls,
+  ]);
 
   useEffect(() => {
     if (!selectedGuildId) {
