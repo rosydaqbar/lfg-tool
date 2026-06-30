@@ -333,11 +333,17 @@ function createSpamCatcherManager({ client, configStore }) {
             event.bannedAt ? `- Banned: ${timestamp(event.bannedAt, 'F')}` : null,
             event.decidedBy ? `- Decided by: <@${event.decidedBy}>` : null,
             `- Event ID: \`${event.id}\``,
-            event.appealMessage ? '' : null,
-            event.appealMessage ? `**Appeal:** ${event.appealMessage}` : null,
           ].filter(Boolean).join('\n')
         )
       );
+
+    if (event.appealMessage) {
+      container
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`## Appeal by user\n${event.appealMessage}`)
+        );
+    }
 
     if (canReviewTimeout(event)) {
       container
