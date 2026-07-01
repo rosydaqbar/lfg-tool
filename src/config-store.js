@@ -1892,6 +1892,25 @@ async function updateSpamCatcherEventStatus(id, status, decidedBy = null) {
   return mapSpamCatcherEvent(res.rows[0]);
 }
 
+async function updateSpamCatcherEventModerationState(id, { status, timeoutUntil, banAfter, decidedBy = null }) {
+  await ensureSpamCatcherEventsTable();
+  const res = await query(
+    `
+      UPDATE spam_catcher_events
+      SET status = COALESCE($2, status),
+          timeout_until = COALESCE($3, timeout_until),
+          ban_after = $4,
+          decided_by = COALESCE($5, decided_by),
+          updated_at = NOW(),
+          banned_at = CASE WHEN $2 = 'banned' THEN NOW() ELSE banned_at END
+      WHERE id = $1
+      RETURNING *
+    `,
+    [id, status || null, timeoutUntil || null, banAfter || null, decidedBy]
+  );
+  return mapSpamCatcherEvent(res.rows[0]);
+}
+
 async function markSpamCatcherAppealed(id, appealMessage) {
   await ensureSpamCatcherEventsTable();
   const res = await query(
@@ -2027,6 +2046,7 @@ module.exports = {
   createSpamCatcherEvent,
   getSpamCatcherEventById,
   updateSpamCatcherEventStatus,
+  updateSpamCatcherEventModerationState,
   markSpamCatcherAppealed,
   updateSpamCatcherReviewMessage,
   resolveSpamCatcherAppeal,

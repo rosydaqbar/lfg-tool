@@ -46,6 +46,7 @@
 - JTC temp-channel cleanup paths are split across voice-state cleanup, watchdog reconciliation, and `/voicecheck` delete; update all relevant paths when adding cleanup side effects.
 - Spam Catcher requires `GuildMessages`; timeout actions require `Moderate Members`; ban actions require `Ban Members`.
 - Spam Catcher ignores Discord Administrators and leaves caught trap-channel messages in place.
+- Spam Catcher explicitly handles users who are already timed out, unavailable in the guild, or already banned; preserve these statuses in review/log flows instead of collapsing them into generic timeout/ban failures.
 - Spam Catcher trap-channel notices use Component V2. Webhook delivery must include `with_components=true`; use `wait=true` when sending if the message ID must be persisted.
 - Spam Catcher notice counts are caught event rows/IDs, not distinct users. Bot-delivered notices are per trap channel; webhook notices are one message in the webhook's channel.
 - Spam Catcher Integrity Checked buttons count one row per `(guild_id, channel_id, user_id)` using `ON CONFLICT DO NOTHING`; do not disable the public button for everyone after one user clicks it.

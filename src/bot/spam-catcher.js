@@ -277,6 +277,8 @@ function createSpamCatcherManager({ client, configStore }) {
       ban_failed: 'Ban failed',
       timeout_failed: 'Timeout failed',
       timeout_removed: 'Timeout removed',
+      already_timed_out: 'Already timed out',
+      member_unavailable: 'Member unavailable',
     };
     return labels[event.status] || event.status || 'Unknown';
   }
@@ -286,11 +288,14 @@ function createSpamCatcherManager({ client, configStore }) {
     if (event.status === 'ban_failed') return 'Spam Catcher Ban Failed';
     if (event.status === 'timeout_failed') return 'Spam Catcher Timeout Failed';
     if (event.status === 'timeout_removed') return 'Spam Catcher Timeout Removed';
+    if (event.status === 'already_timed_out') return 'Spam Catcher Already Timed Out User';
+    if (event.status === 'member_unavailable') return 'Spam Catcher Member Unavailable';
     return 'Spam Catcher Review';
   }
 
   function reviewAccentColor(event) {
     if (event.status === 'banned' || event.status === 'ban_failed' || event.status === 'timeout_failed') return 0xef4444;
+    if (event.status === 'member_unavailable') return 0x64748b;
     if (event.status === 'timeout_removed') return 0x22c55e;
     return 0xf59e0b;
   }
@@ -449,6 +454,23 @@ function createSpamCatcherManager({ client, configStore }) {
       ? await dmChannel.send(dmPayload).then(() => true).catch(() => false)
       : await dmUser(event.userId, dmPayload);
 
+    const existingBan = await guild.bans.fetch(event.userId).catch(() => null);
+    if (existingBan) {
+      const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'banned', options.decidedBy).catch(() => ({
+        ...event,
+        status: 'banned',
+        decidedBy: options.decidedBy || event.decidedBy,
+        bannedAt: new Date(),
+      }));
+      await logAction(updated || event, 'Spam Catcher User Already Banned', [
+        `- Mode: \`${mode}\``,
+        '- Result: `already banned`',
+        `- DM before ban: \`${dmSent ? 'sent' : 'failed'}\``,
+      ]);
+      await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
+      return updated || event;
+    }
+
     let banError = null;
     await guild.members.ban(event.userId, {
       reason: `Spam Catcher ${mode} ban, event ${event.id}`,
@@ -485,6 +507,51 @@ function createSpamCatcherManager({ client, configStore }) {
   }
 
   async function handleTimeout(guild, member, config, event) {
+    if (!member) {
+      const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'member_unavailable').catch(() => ({
+        ...event,
+        status: 'member_unavailable',
+        banAfter: null,
+      }));
+      await logAction(updated || event, 'Spam Catcher Member Unavailable', [
+        '- Reason: `User is no longer available in the guild, so timeout could not be applied.`',
+      ]);
+      await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
+      return updated || event;
+    }
+
+    const existingTimeoutUntilMs = member.communicationDisabledUntilTimestamp || 0;
+    if (existingTimeoutUntilMs > Date.now()) {
+      const existingTimeoutUntil = new Date(existingTimeoutUntilMs);
+      const updated = await configStore.updateSpamCatcherEventModerationState(event.id, {
+        status: event.action === 'timeout' ? 'already_timed_out' : 'ban_pending',
+        timeoutUntil: existingTimeoutUntil,
+        banAfter: event.action === 'ban_after_timeout' ? existingTimeoutUntil : event.banAfter,
+      }).catch(() => ({
+        ...event,
+        status: event.action === 'timeout' ? 'already_timed_out' : event.status,
+        timeoutUntil: existingTimeoutUntil,
+        banAfter: event.action === 'ban_after_timeout' ? existingTimeoutUntil : event.banAfter,
+      }));
+      await dmUser(member.id, {
+        content: [
+          `You were caught by Spam Catcher in ${guild.name} while you were already timed out.`,
+          event.action === 'ban_after_timeout'
+            ? 'Your existing timeout end is now being used as the ban timer.'
+            : 'If this was a mistake, click the button below and explain what happened.',
+        ].join('\n'),
+        components: [appealButton(event.id)],
+      });
+      await logAction(updated || event, 'Spam Catcher User Already Timed Out', [
+        `- Existing timeout until: ${timestamp(existingTimeoutUntil, 'F')}`,
+        event.action === 'ban_after_timeout'
+          ? `- Ban after existing timeout: ${timestamp(existingTimeoutUntil)}`
+          : null,
+      ].filter(Boolean));
+      await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
+      return updated || event;
+    }
+
     const timeoutMs = Math.min(config.timeoutMinutes * 60 * 1000, DISCORD_TIMEOUT_MAX_MS);
     let timeoutError = null;
     await member.timeout(timeoutMs, `Spam Catcher event ${event.id}`).catch((error) => {
@@ -499,7 +566,7 @@ function createSpamCatcherManager({ client, configStore }) {
       }));
       await logAction(updated || event, 'Spam Catcher Timeout Failed', [`- Reason: \`${timeoutError.message || timeoutError}\``]);
       await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
-      return;
+      return updated || event;
     }
 
     await dmUser(member.id, {
@@ -519,6 +586,7 @@ function createSpamCatcherManager({ client, configStore }) {
         : '- Scheduled ban: `off`',
     ]);
     await sendOrUpdateReviewMessage(guild, event).catch(() => null);
+    return event;
   }
 
   async function handleMessage(message) {
@@ -565,7 +633,8 @@ function createSpamCatcherManager({ client, configStore }) {
       return;
     }
 
-    await handleTimeout(message.guild, message.member, config, event);
+    const freshMember = await message.guild.members.fetch(message.author.id).catch(() => null);
+    await handleTimeout(message.guild, freshMember, config, event);
   }
 
   async function handleAppealButton(interaction) {
@@ -689,13 +758,26 @@ function createSpamCatcherManager({ client, configStore }) {
     const member = interaction.guild
       ? await interaction.guild.members.fetch(event.userId).catch(() => null)
       : null;
-    let timeoutError = null;
-    if (member) {
-      await member.timeout(null, `Spam Catcher appeal accepted by ${interaction.user.id}`).catch((error) => {
-        console.error('Failed to remove Spam Catcher timeout:', error);
-        timeoutError = error;
+    if (!member) {
+      const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'member_unavailable', interaction.user.id).catch(() => ({
+        ...event,
+        status: 'member_unavailable',
+        decidedBy: interaction.user.id,
+      }));
+      await interaction.update(buildReviewComponents(updated || event)).catch(async () => {
+        await interaction.reply({ content: 'User is no longer available in this guild.', flags: MessageFlags.Ephemeral }).catch(() => null);
       });
+      await logAction(updated || event, 'Spam Catcher Member Unavailable', [
+        '- Reason: `Admin tried to remove timeout, but the user is no longer in the guild.`',
+      ]);
+      return;
     }
+
+    let timeoutError = null;
+    await member.timeout(null, `Spam Catcher appeal accepted by ${interaction.user.id}`).catch((error) => {
+      console.error('Failed to remove Spam Catcher timeout:', error);
+      timeoutError = error;
+    });
 
     if (timeoutError) {
       await interaction.reply({

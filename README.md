@@ -63,6 +63,8 @@ Spam Catcher is an optional moderation feature for trap channels. When enabled, 
   - Timeout only.
   - Immediate ban.
   - Delayed ban after an appeal window.
+  - Already-timed-out users are detected; timeout-end bans reuse the existing timeout end as the ban timer.
+  - Users who leave, are kicked, or are already unavailable are marked in review instead of failing silently.
 - Delay settings:
   - Minutes mode supports `1-60` minutes.
   - Hours mode supports `2-24` hours.
@@ -371,6 +373,7 @@ Optional, depending on your setup:
   - Added Component V2 trap-channel notices with bot or webhook delivery.
   - Added live caught-event counts on trap-channel notices.
   - Added ban delay unit controls for `1-60` minutes or `2-24` hours.
+  - Added handling for already-timed-out, unavailable, and already-banned users.
 - Temp channel controls and checks
   - Added `/voicecheck` for Discord Administrators.
   - Added cleanup for temporary channels that are missing or empty.
