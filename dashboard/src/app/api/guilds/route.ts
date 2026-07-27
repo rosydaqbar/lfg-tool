@@ -3,10 +3,9 @@ import { getGuildConfig, getSetupState } from "@/lib/db";
 import { getManageableDiscordGuilds } from "@/lib/session";
 import type { DashboardManageableGuild } from "@/lib/session";
 import { getDashboardBotToken } from "@/lib/runtime-secrets";
+import { BOT_INVITE_PERMISSIONS } from "@/lib/discord-bot-permissions";
 
 export const dynamic = "force-dynamic";
-
-const BOT_INVITE_PERMISSIONS = "288427024";
 
 function createBotInviteUrl(clientId: string, guildId: string) {
   const params = new URLSearchParams({

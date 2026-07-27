@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { getSetupSecretPayload, getSetupState } from "@/lib/db";
 import { decryptSetupValue } from "@/lib/setup-crypto";
 import { requireSetupSession } from "@/lib/setup-session";
+import { BOT_INVITE_PERMISSIONS } from "@/lib/discord-bot-permissions";
 
 export const dynamic = "force-dynamic";
-
-const BOT_INVITE_PERMISSIONS = "1099800054804";
 
 function createBotInviteUrl(clientId: string, guildId?: string | null) {
   const params = new URLSearchParams({

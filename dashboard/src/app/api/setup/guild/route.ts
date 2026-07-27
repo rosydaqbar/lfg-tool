@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import { getGuildConfig, getSetupState, updateSetupState } from "@/lib/db";
 import { getDashboardBotToken } from "@/lib/runtime-secrets";
 import { requireSetupSession } from "@/lib/setup-session";
+import { BOT_INVITE_PERMISSIONS } from "@/lib/discord-bot-permissions";
 
 export const dynamic = "force-dynamic";
 
 const ADMINISTRATOR_PERMISSION_BIT = BigInt(8);
-const BOT_INVITE_PERMISSIONS = "288427024";
-
 type DiscordGuild = {
   id: string;
   name: string;

@@ -639,6 +639,7 @@ export async function GET(
   try {
     const config = await getGuildConfig(id);
     return NextResponse.json({
+      configVersion: config.configVersion,
       logChannelId: config.logChannelId,
       lfgChannelId: config.lfgChannelId,
       enabledVoiceChannelIds: config.enabledVoiceChannelIds,
@@ -665,6 +666,7 @@ export async function PUT(
   }
 
   const body = (await request.json()) as {
+    configVersion?: string | null;
     logChannelId?: string;
     lfgChannelId?: string | null;
     enabledVoiceChannelIds?: string[];
@@ -683,6 +685,12 @@ export async function PUT(
     return NextResponse.json(
       { error: "logChannelId is required" },
       { status: 400 }
+    );
+  }
+  if (body.configVersion !== null && typeof body.configVersion !== "string") {
+    return NextResponse.json(
+      { error: "Configuration version is missing. Reload settings and try again." },
+      { status: 409 }
     );
   }
 
@@ -841,10 +849,12 @@ export async function PUT(
     }
   }
 
+  let savedConfigVersion: string | null = null;
   try {
     const previousConfig = await getGuildConfig(id);
 
-    await saveGuildConfig(id, {
+    savedConfigVersion = await saveGuildConfig(id, {
+      configVersion: body.configVersion,
       logChannelId: body.logChannelId,
       lfgChannelId,
       enabledVoiceChannelIds,
@@ -901,5 +911,9 @@ export async function PUT(
     );
   }
 
-  return NextResponse.json({ ok: true, spamCatcherWebhooks: webhookDestination });
+  return NextResponse.json({
+    ok: true,
+    configVersion: savedConfigVersion,
+    spamCatcherWebhooks: webhookDestination,
+  });
 }

@@ -15,6 +15,7 @@ import {
 import { SetupResetDiscordButton } from "@/components/setup/setup-reset-discord";
 import { StatusBadge, guildStatusLabel, guildStatusTone } from "@/components/status-badge";
 import { dashboardCodeBlock, dashboardError, dashboardInset, dashboardPanel, dashboardSuccess, dashboardWarning } from "@/components/ui/patterns";
+import { BOT_INVITE_PERMISSIONS } from "@/lib/discord-bot-permissions";
 
 type SetupState = {
   ownerDiscordId: string | null;
@@ -44,7 +45,6 @@ type SetupGuild = {
 };
 type SetupPhase = "A" | "B" | "C" | "FINAL";
 
-const BOT_INVITE_PERMISSIONS = "288427024";
 const SETUP_ACTIVE_STORAGE_KEY = "lfg-tool.setup-active";
 const SETUP_ABANDON_ENDPOINT = "/api/setup/abandon";
 const OAUTH_REDIRECT_URI = "http://localhost:3000/api/auth/callback/discord";

@@ -298,7 +298,7 @@ Who can access the dashboard:
 
 Root `.env` is used by both the bot and the dashboard.
 
-Use the Local/VPS section if you are setting up through `/setup`.
+Use the Local/VPS section if you are setting up through the dashboard `/setup` page.
 Use the Cloud Env section if you are deploying to Vercel or another cloud host.
 
 ## Commands
@@ -329,6 +329,20 @@ npm run landing:build
 npm run landing:start
 ```
 
+Discord commands:
+
+- `/setup` runs a two-step Discord setup wizard for server Administrators.
+  - Step 1 configures two different Log and LFG text or announcement channels.
+  - Step 2 requires at least one Join-to-Create lobby.
+  - Quick Setup asks for a category, creates a synced `+ New Group Channel` voice lobby and a mentionable `LFG` notification role, then adds them to the dashboard configuration.
+  - Manual Setup adds or updates an existing voice lobby and notification role without removing other lobbies.
+- `/stats` shows voice statistics and the leaderboard.
+- `/voicecheck` lets server Administrators inspect and clean up temporary voice channels.
+
+The `/setup` wizard requires the bot to have `View Channel` and `Send Messages` in the Log channel. In the LFG channel, it also requires `Read Message History` and `Embed Links`. Join-to-Create setup requires `Manage Channels`, `Manage Roles`, `Move Members`, and `Connect` in the selected lobby/category.
+
+The `LFG` role is a notification role. Quick Setup does not assign it to members; server Administrators choose who should receive LFG notifications.
+
 ## Discord Permissions Needed
 
 Enable these Discord bot intents in the Discord Developer Portal:
@@ -341,16 +355,16 @@ Give the bot these permissions when inviting it to your server:
 
 - `View Channel`
 - `Send Messages`
+- `Read Message History`
+- `Embed Links`
 - `Manage Channels`
+- `Manage Roles`
+- `Connect`
 - `Move Members`
 - `Moderate Members`
 - `Ban Members`
 
 Spam Catcher needs `GuildMessages` intent to see trap-channel posts. Timeout mode needs `Moderate Members`; ban modes need `Ban Members`.
-
-Optional, depending on your setup:
-
-- `Manage Roles`
 
 ## Notes
 

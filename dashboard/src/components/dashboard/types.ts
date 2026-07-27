@@ -130,6 +130,7 @@ export type VoiceDeleteLeaderboardEntry = {
 };
 
 export type ConfigResponse = {
+  configVersion: string | null;
   logChannelId: string | null;
   lfgChannelId: string | null;
   enabledVoiceChannelIds: string[];

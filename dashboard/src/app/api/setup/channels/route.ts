@@ -120,6 +120,7 @@ export async function POST(request: Request) {
   try {
     const existingConfig = await getGuildConfig(setup.selectedGuildId);
     await saveGuildConfig(setup.selectedGuildId, {
+      configVersion: existingConfig.configVersion,
       logChannelId,
       lfgChannelId,
       enabledVoiceChannelIds: existingConfig.enabledVoiceChannelIds,

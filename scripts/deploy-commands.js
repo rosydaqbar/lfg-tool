@@ -1,8 +1,11 @@
 require('dotenv').config();
 
+const { applyRuntimeConfig } = require('../src/bot/runtime-config');
+applyRuntimeConfig();
+
 const { Client, GatewayIntentBits } = require('discord.js');
 const { DISCORD_TOKEN, requireToken } = require('../src/bot/env');
-const { buildStatsCommand } = require('../src/bot/stats');
+const { registerGuildCommands } = require('../src/bot/command-registry');
 
 requireToken();
 
@@ -11,7 +14,6 @@ const client = new Client({
 });
 
 async function deployGuildCommands() {
-  const command = buildStatsCommand();
   const guilds = [...client.guilds.cache.values()];
 
   if (!guilds.length) {
@@ -23,7 +25,7 @@ async function deployGuildCommands() {
 
   for (const guild of guilds) {
     try {
-      await guild.commands.set([command]);
+      await registerGuildCommands(guild);
       successCount += 1;
       console.log(`Deployed commands to guild ${guild.name} (${guild.id})`);
     } catch (error) {

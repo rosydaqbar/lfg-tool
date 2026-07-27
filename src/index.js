@@ -20,6 +20,8 @@ const { createLogChannelFetcher } = require('./bot/log-channel');
 const { createErrorLogReporter } = require('./bot/error-log');
 const { createVoiceLogger } = require('./bot/voice-log');
 const { createHealthServer } = require('./bot/health-server');
+const { registerGuildCommands } = require('./bot/command-registry');
+const { createSetupManager } = require('./bot/setup');
 const { createStatsManager } = require('./bot/stats');
 const { createAutoRoleManager } = require('./bot/auto-role');
 const { createSpamCatcherManager } = require('./bot/spam-catcher');
@@ -42,6 +44,11 @@ const client = new Client({
   ],
 });
 
+const GUILD_CONFIG_TTL_MS = 5000;
+const guildConfigCache = new Map();
+const guildConfigInFlight = new Map();
+const guildConfigVersions = new Map();
+
 const debugLog = createDebugLogger(DEBUG === 'true');
 const { getLogChannel } = createLogChannelFetcher(client);
 const errorLogReporter = createErrorLogReporter({
@@ -54,6 +61,14 @@ errorLogReporter.installConsoleErrorBridge();
 const statsManager = createStatsManager({
   client,
   configStore,
+});
+const setupManager = createSetupManager({
+  configStore,
+  onGuildConfigUpdated: (guildId) => {
+    guildConfigVersions.set(guildId, (guildConfigVersions.get(guildId) || 0) + 1);
+    guildConfigCache.delete(guildId);
+    guildConfigInFlight.delete(guildId);
+  },
 });
 const lfgManager = createLfgManager({
   client,
@@ -87,10 +102,6 @@ const spamCatcherManager = createSpamCatcherManager({
 
 healthServer.start();
 
-const GUILD_CONFIG_TTL_MS = 5000;
-const guildConfigCache = new Map();
-const guildConfigInFlight = new Map();
-
 async function getCachedGuildConfig(guildId) {
   const now = Date.now();
   const cached = guildConfigCache.get(guildId);
@@ -103,21 +114,38 @@ async function getCachedGuildConfig(guildId) {
     return pending;
   }
 
+  const version = guildConfigVersions.get(guildId) || 0;
   const loadPromise = configStore
     .getGuildConfig(guildId)
     .then((value) => {
-      guildConfigCache.set(guildId, {
-        value,
-        expiresAt: Date.now() + GUILD_CONFIG_TTL_MS,
-      });
+      if ((guildConfigVersions.get(guildId) || 0) === version) {
+        guildConfigCache.set(guildId, {
+          value,
+          expiresAt: Date.now() + GUILD_CONFIG_TTL_MS,
+        });
+      }
       return value;
     })
     .finally(() => {
-      guildConfigInFlight.delete(guildId);
+      if (guildConfigInFlight.get(guildId) === loadPromise) {
+        guildConfigInFlight.delete(guildId);
+      }
     });
 
   guildConfigInFlight.set(guildId, loadPromise);
   return loadPromise;
+}
+
+async function registerGuildCommandsSafely(guild) {
+  try {
+    await registerGuildCommands(guild);
+  } catch (error) {
+    if (error?.code === 50001) {
+      logger.warn(`Skipped command registration for guild ${guild.id}: missing access.`);
+      return;
+    }
+    logger.error(`Failed to register commands for guild ${guild.id}:`, error);
+  }
 }
 
 let shuttingDown = false;
@@ -198,8 +226,17 @@ client.once(Events.ClientReady, () => {
   joinToCreateManager.startStuckLobbyWatchdog?.();
   autoRoleManager.startLoop?.();
   spamCatcherManager.startLoop?.();
-  statsManager.registerCommands().catch((error) => {
+  Promise.allSettled(
+    [...client.guilds.cache.values()].map(registerGuildCommandsSafely)
+  ).catch((error) => {
     logger.error('Failed to register slash commands:', error);
+  });
+});
+
+client.on(Events.GuildCreate, (guild) => {
+  if (!client.isReady()) return;
+  registerGuildCommandsSafely(guild).catch((error) => {
+    logger.error(`Failed to register commands for new guild ${guild.id}:`, error);
   });
 });
 
@@ -217,6 +254,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     }
     if (await spamCatcherManager.handleInteraction(interaction)) {
+      return;
+    }
+    if (await setupManager.handleInteraction(interaction)) {
       return;
     }
     if (await statsManager.handleInteraction(interaction)) {

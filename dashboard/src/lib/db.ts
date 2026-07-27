@@ -5,6 +5,7 @@ import { Pool } from "pg";
 import { buildPgSslConfig, sanitizePgConnectionString } from "@/lib/pg-ssl";
 
 type GuildConfig = {
+  configVersion: string | null;
   logChannelId: string | null;
   lfgChannelId: string | null;
   enabledVoiceChannelIds: string[];
@@ -316,7 +317,8 @@ function getSqliteDb() {
       role_id TEXT,
       lfg_enabled INTEGER NOT NULL DEFAULT 1,
       lfg_reminder_enabled INTEGER NOT NULL DEFAULT 0,
-      lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30
+      lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30,
+      UNIQUE (guild_id, lobby_channel_id)
     );
     CREATE TABLE IF NOT EXISTS voice_auto_role_config (
       guild_id TEXT PRIMARY KEY,
@@ -419,6 +421,16 @@ function getSqliteDb() {
   ensureColumn("join_to_create_lobbies", "lfg_enabled", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn("join_to_create_lobbies", "lfg_reminder_enabled", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn("join_to_create_lobbies", "lfg_reminder_seconds", "INTEGER NOT NULL DEFAULT 30");
+  db.exec(`
+    DELETE FROM join_to_create_lobbies
+    WHERE rowid NOT IN (
+      SELECT MAX(rowid)
+      FROM join_to_create_lobbies
+      GROUP BY guild_id, lobby_channel_id
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_jtc_lobbies_guild_channel
+      ON join_to_create_lobbies(guild_id, lobby_channel_id);
+  `);
   ensureColumn("temp_voice_channels", "role_id", "TEXT");
   ensureColumn("temp_voice_channels", "lfg_enabled", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn("temp_voice_channels", "prompt_message_id", "TEXT");
@@ -437,6 +449,21 @@ async function getPool() {
 async function query(text: string, params?: unknown[]) {
   const db = await getPool();
   return db.query(text, params);
+}
+
+async function ensureJoinToCreateLobbyUniqueness(
+  execute: (text: string) => Promise<unknown>
+) {
+  await execute(`
+    DELETE FROM join_to_create_lobbies older
+    USING join_to_create_lobbies newer
+    WHERE older.guild_id = newer.guild_id
+      AND older.lobby_channel_id = newer.lobby_channel_id
+      AND older.ctid < newer.ctid
+  `);
+  await execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_jtc_lobbies_guild_channel ON join_to_create_lobbies(guild_id, lobby_channel_id)"
+  );
 }
 
 function readSetupStateFallback(): Record<string, unknown> {
@@ -620,10 +647,12 @@ async function ensureCoreConfigTables() {
           role_id TEXT,
           lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
           lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-          lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30
+          lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30,
+          UNIQUE (guild_id, lobby_channel_id)
         )
       `
     );
+    await ensureJoinToCreateLobbyUniqueness((sql) => query(sql));
     await query(
       `
         CREATE TABLE IF NOT EXISTS voice_auto_role_config (
@@ -1177,10 +1206,12 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
           role_id TEXT,
           lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
           lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-          lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30
+          lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30,
+          UNIQUE (guild_id, lobby_channel_id)
         )
       `
     );
+    await ensureJoinToCreateLobbyUniqueness((sql) => client.query(sql));
     await client.query(
       `
         CREATE TABLE IF NOT EXISTS voice_auto_role_config (
@@ -1214,7 +1245,14 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
     );
 
     const configRes = await client.query(
-      "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1",
+      `
+        SELECT
+          log_channel_id,
+          lfg_channel_id,
+          (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+        FROM guild_config
+        WHERE guild_id = $1
+      `,
       [guildId]
     );
     const configRow = configRes.rows[0] ?? {};
@@ -1248,6 +1286,7 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
     }
 
     return {
+      configVersion: configRow.config_version ?? null,
       logChannelId: configRow.log_channel_id ?? null,
       lfgChannelId: configRow.lfg_channel_id ?? null,
       enabledVoiceChannelIds: watchlistRes.rows.map(
@@ -1279,9 +1318,9 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
     const db = getSqliteDb();
     const configRow = db
       .prepare(
-        "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = ?"
+        "SELECT log_channel_id, lfg_channel_id, updated_at FROM guild_config WHERE guild_id = ?"
       )
-      .get(guildId) as { log_channel_id?: string | null; lfg_channel_id?: string | null } | undefined;
+      .get(guildId) as { log_channel_id?: string | null; lfg_channel_id?: string | null; updated_at?: string | null } | undefined;
 
     const watchRows = db
       .prepare(
@@ -1323,6 +1362,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
     }
 
     return {
+      configVersion: configRow?.updated_at ?? null,
       logChannelId: configRow?.log_channel_id ?? null,
       lfgChannelId: configRow?.lfg_channel_id ?? null,
       enabledVoiceChannelIds: watchRows.map((row) => row.voice_channel_id),
@@ -1342,7 +1382,14 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
   await ensureJoinToCreateLfgEnabledColumn();
   await ensureJoinToCreateReminderColumns();
   const configRes = await query(
-    "SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1",
+    `
+      SELECT
+        log_channel_id,
+        lfg_channel_id,
+        (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+      FROM guild_config
+      WHERE guild_id = $1
+    `,
     [guildId]
   );
   const configRow = configRes.rows[0] ?? {};
@@ -1376,6 +1423,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
   }
 
   return {
+    configVersion: configRow.config_version ?? null,
     logChannelId: configRow.log_channel_id ?? null,
     lfgChannelId: configRow.lfg_channel_id ?? null,
     enabledVoiceChannelIds: watchlistRes.rows.map(
@@ -1458,6 +1506,44 @@ async function saveGuildConfigWithClient(
   }
 
   await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [guildId]
+  );
+  const currentVersionResult = await client.query(
+    `
+      SELECT (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+      FROM guild_config
+      WHERE guild_id = $1
+    `,
+    [guildId]
+  );
+  const currentVersion = (currentVersionResult.rows[0]?.config_version as string | undefined) ?? null;
+  if (currentVersion !== config.configVersion) {
+    throw new Error(
+      "Configuration changed after this page loaded. Reload the latest settings and try again."
+    );
+  }
+  const setupTable = await client.query(
+    "SELECT to_regclass('guild_setup_operations') AS table_name"
+  );
+  if (setupTable.rows[0]?.table_name) {
+    const operation = await client.query(
+      `
+        SELECT operation_id
+        FROM guild_setup_operations
+        WHERE guild_id = $1
+        LIMIT 1
+      `,
+      [guildId]
+    );
+    if (operation.rows[0]) {
+      throw new Error(
+        "Quick Setup is still running or recovering for this server. Wait for it to finish, then save again."
+      );
+    }
+  }
+
+  await client.query(
     "ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE"
   );
   await client.query(
@@ -1523,6 +1609,15 @@ async function saveGuildConfigWithClient(
     `,
     [guildId, JSON.stringify(normalizeSpamCatcherConfig(config.spamCatcherConfig))]
   );
+  const savedVersion = await client.query(
+    `
+      SELECT (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+      FROM guild_config
+      WHERE guild_id = $1
+    `,
+    [guildId]
+  );
+  return (savedVersion.rows[0]?.config_version as string | undefined) ?? null;
 }
 
 async function runDeleteIgnoreMissingTable(
@@ -1670,8 +1765,7 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
   if (!DATABASE_URL) {
     const setupDatabaseUrl = getSetupDatabaseUrlFallback();
     if (setupDatabaseUrl) {
-      await saveGuildConfigWithDatabaseUrl(setupDatabaseUrl, guildId, config);
-      return;
+      return saveGuildConfigWithDatabaseUrl(setupDatabaseUrl, guildId, config);
     }
 
     const db = getSqliteDb();
@@ -1682,6 +1776,14 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
       }
       if (config.joinToCreateLobbies.some((item) => !item.roleId)) {
         throw new Error("joinToCreateLobbies requires a role for each lobby");
+      }
+      const current = db
+        .prepare("SELECT updated_at FROM guild_config WHERE guild_id = ?")
+        .get(guildId) as { updated_at?: string | null } | undefined;
+      if ((current?.updated_at ?? null) !== config.configVersion) {
+        throw new Error(
+          "Configuration changed after this page loaded. Reload the latest settings and try again."
+        );
       }
 
       db.prepare(
@@ -1743,19 +1845,20 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
         JSON.stringify(normalizeSpamCatcherConfig(config.spamCatcherConfig)),
         now
       );
+      return now;
     });
 
-    tx();
-    return;
+    return tx() as string;
   }
 
   await ensureCoreConfigTables();
   await ensureJoinToCreateLfgEnabledColumn();
   const db = await getPool();
   const client = await db.connect();
+  let savedVersion: string | null = null;
   try {
     await client.query("BEGIN");
-    await saveGuildConfigWithClient(client, guildId, config);
+    savedVersion = await saveGuildConfigWithClient(client, guildId, config);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -1763,6 +1866,7 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
   } finally {
     client.release();
   }
+  return savedVersion;
 }
 
 export async function saveGuildConfigWithDatabaseUrl(
@@ -1775,6 +1879,7 @@ export async function saveGuildConfigWithDatabaseUrl(
     ssl: buildPgSslConfig(),
   });
   const client = await scopedPool.connect();
+  let savedVersion: string | null = null;
   try {
     await client.query(
       `
@@ -1803,10 +1908,12 @@ export async function saveGuildConfigWithDatabaseUrl(
           guild_id TEXT NOT NULL,
           lobby_channel_id TEXT NOT NULL,
           role_id TEXT,
-          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          UNIQUE (guild_id, lobby_channel_id)
         )
       `
     );
+    await ensureJoinToCreateLobbyUniqueness((sql) => client.query(sql));
     await client.query(
       `
         CREATE TABLE IF NOT EXISTS voice_auto_role_config (
@@ -1839,7 +1946,7 @@ export async function saveGuildConfigWithDatabaseUrl(
       `
     );
     await client.query("BEGIN");
-    await saveGuildConfigWithClient(client, guildId, config);
+    savedVersion = await saveGuildConfigWithClient(client, guildId, config);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -1848,6 +1955,7 @@ export async function saveGuildConfigWithDatabaseUrl(
     client.release();
     await scopedPool.end().catch(() => null);
   }
+  return savedVersion;
 }
 
 async function getTempChannelsWithDatabaseUrl(databaseUrl: string, guildId: string) {

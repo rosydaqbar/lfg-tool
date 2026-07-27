@@ -46,8 +46,63 @@ const BASELINE_SCHEMA = [
       guild_id TEXT NOT NULL,
       lobby_channel_id TEXT NOT NULL,
       role_id TEXT,
-      lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+      lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30,
+      UNIQUE (guild_id, lobby_channel_id)
     )
+  `,
+  `
+    ALTER TABLE IF EXISTS join_to_create_lobbies
+      ADD COLUMN IF NOT EXISTS role_id TEXT
+  `,
+  `
+    ALTER TABLE IF EXISTS join_to_create_lobbies
+      ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE
+  `,
+  `
+    ALTER TABLE IF EXISTS join_to_create_lobbies
+      ADD COLUMN IF NOT EXISTS lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE
+  `,
+  `
+    ALTER TABLE IF EXISTS join_to_create_lobbies
+      ADD COLUMN IF NOT EXISTS lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30
+  `,
+  `
+    DELETE FROM join_to_create_lobbies older
+    USING join_to_create_lobbies newer
+    WHERE older.guild_id = newer.guild_id
+      AND older.lobby_channel_id = newer.lobby_channel_id
+      AND older.ctid < newer.ctid
+  `,
+  `
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_jtc_lobbies_guild_channel
+      ON join_to_create_lobbies(guild_id, lobby_channel_id)
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS guild_setup_operations (
+      guild_id TEXT PRIMARY KEY,
+      operation_id TEXT NOT NULL,
+      resource_marker TEXT NOT NULL,
+      status TEXT NOT NULL,
+      role_id TEXT,
+      channel_id TEXT,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `,
+  `
+    ALTER TABLE IF EXISTS guild_setup_operations
+      ADD COLUMN IF NOT EXISTS resource_marker TEXT
+  `,
+  `
+    UPDATE guild_setup_operations
+    SET resource_marker = operation_id
+    WHERE resource_marker IS NULL
+  `,
+  `
+    ALTER TABLE IF EXISTS guild_setup_operations
+      ALTER COLUMN resource_marker SET NOT NULL
   `,
   `
     CREATE TABLE IF NOT EXISTS voice_auto_role_config (

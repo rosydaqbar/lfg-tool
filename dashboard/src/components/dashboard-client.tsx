@@ -189,6 +189,7 @@ export default function DashboardClient({
   const [voiceChannels, setVoiceChannels] = useState<Channel[]>([]);
   const [textChannels, setTextChannels] = useState<Channel[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [configVersion, setConfigVersion] = useState<string | null>(null);
   const [logChannelId, setLogChannelId] = useState("");
   const [lfgChannelId, setLfgChannelId] = useState("");
   const [enabledVoiceIds, setEnabledVoiceIds] = useState<string[]>([]);
@@ -439,6 +440,7 @@ export default function DashboardClient({
     setJoinToCreateLobbies([]);
     setAutoRoleConfig(DEFAULT_AUTO_ROLE_CONFIG);
     setSpamCatcherConfig(DEFAULT_SPAM_CATCHER_CONFIG);
+    setConfigVersion(null);
     setLogChannelId("");
     setLfgChannelId("");
 
@@ -452,6 +454,7 @@ export default function DashboardClient({
       })
       .then((config) => {
         if (!active) return;
+        setConfigVersion(config.configVersion ?? null);
         setLogChannelId(config.logChannelId ?? "");
         setLfgChannelId(config.lfgChannelId ?? "");
         setEnabledVoiceIds(config.enabledVoiceChannelIds ?? []);
@@ -597,6 +600,7 @@ export default function DashboardClient({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          configVersion,
           logChannelId: trimmedLogChannelId,
           lfgChannelId: trimmedLfgChannelId.length > 0 ? trimmedLfgChannelId : null,
           enabledVoiceChannelIds,
@@ -614,11 +618,13 @@ export default function DashboardClient({
       }
 
       const payload = (await response.json().catch(() => null)) as {
+        configVersion?: string | null;
         spamCatcherWebhooks?: {
           channelId?: string;
           channelName?: string | null;
         }[];
       } | null;
+      setConfigVersion(payload?.configVersion ?? configVersion);
       const webhookCount = payload?.spamCatcherWebhooks?.length ?? 0;
 
       toast.success("Configuration saved", {
@@ -642,6 +648,7 @@ export default function DashboardClient({
       setSaving(false);
     }
   }, [
+    configVersion,
     enabledVoiceIds,
     joinToCreateLobbies,
     lfgChannelId,

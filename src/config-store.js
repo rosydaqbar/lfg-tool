@@ -76,8 +76,27 @@ async function query(text, params) {
   throw new Error('Postgres query failed without an error.');
 }
 
-let lfgEnabledColumnEnsured = false;
-let lfgReminderColumnsEnsured = false;
+async function withGuildSetupTransaction(guildId, callback) {
+  const db = await getPool();
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      [guildId]
+    );
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => null);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+let joinToCreateSetupEnsured = false;
 let tempVoiceLfgEnabledColumnEnsured = false;
 let tempVoicePromptMessageColumnEnsured = false;
 let tempVoiceReminderMessageColumnEnsured = false;
@@ -159,18 +178,6 @@ function getCachedTempChannelByOwner(guildId, ownerId) {
   return cached.channelId;
 }
 
-async function ensureJoinToCreateLfgEnabledColumn() {
-  if (lfgEnabledColumnEnsured) return;
-  try {
-    await query(
-      'ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE'
-    );
-    lfgEnabledColumnEnsured = true;
-  } catch (error) {
-    console.error('Failed to ensure join_to_create_lobbies.lfg_enabled column:', error);
-  }
-}
-
 async function ensureTempVoiceLfgEnabledColumn() {
   if (tempVoiceLfgEnabledColumnEnsured) return;
   try {
@@ -183,18 +190,73 @@ async function ensureTempVoiceLfgEnabledColumn() {
   }
 }
 
-async function ensureJoinToCreateReminderColumns() {
-  if (lfgReminderColumnsEnsured) return;
+async function ensureJoinToCreateSetup() {
+  if (joinToCreateSetupEnsured) return;
   try {
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS join_to_create_lobbies (
+          guild_id TEXT NOT NULL,
+          lobby_channel_id TEXT NOT NULL,
+          role_id TEXT,
+          lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+          lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30,
+          PRIMARY KEY (guild_id, lobby_channel_id)
+        )
+      `
+    );
+    await query(
+      'ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS role_id TEXT'
+    );
+    await query(
+      'ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_enabled BOOLEAN NOT NULL DEFAULT TRUE'
+    );
     await query(
       'ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE'
     );
     await query(
       'ALTER TABLE IF EXISTS join_to_create_lobbies ADD COLUMN IF NOT EXISTS lfg_reminder_seconds INTEGER NOT NULL DEFAULT 30'
     );
-    lfgReminderColumnsEnsured = true;
+    await query(
+      `
+        DELETE FROM join_to_create_lobbies older
+        USING join_to_create_lobbies newer
+        WHERE older.guild_id = newer.guild_id
+          AND older.lobby_channel_id = newer.lobby_channel_id
+          AND older.ctid < newer.ctid
+      `
+    );
+    await query(
+      'CREATE UNIQUE INDEX IF NOT EXISTS uq_jtc_lobbies_guild_channel ON join_to_create_lobbies(guild_id, lobby_channel_id)'
+    );
+    await query(
+      `
+        CREATE TABLE IF NOT EXISTS guild_setup_operations (
+          guild_id TEXT PRIMARY KEY,
+          operation_id TEXT NOT NULL,
+          resource_marker TEXT NOT NULL,
+          status TEXT NOT NULL,
+          role_id TEXT,
+          channel_id TEXT,
+          started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
+    );
+    await query(
+      'ALTER TABLE IF EXISTS guild_setup_operations ADD COLUMN IF NOT EXISTS resource_marker TEXT'
+    );
+    await query(
+      'UPDATE guild_setup_operations SET resource_marker = operation_id WHERE resource_marker IS NULL'
+    );
+    await query(
+      'ALTER TABLE IF EXISTS guild_setup_operations ALTER COLUMN resource_marker SET NOT NULL'
+    );
+    joinToCreateSetupEnsured = true;
   } catch (error) {
-    console.error('Failed to ensure join_to_create_lobbies LFG reminder columns:', error);
+    console.error('Failed to ensure Join-to-Create setup storage:', error);
+    throw error;
   }
 }
 
@@ -376,10 +438,16 @@ async function ensurePersistentLfgMessageTable() {
 }
 
 async function getGuildConfig(guildId) {
-  await ensureJoinToCreateLfgEnabledColumn();
-  await ensureJoinToCreateReminderColumns();
+  await ensureJoinToCreateSetup();
   const configRes = await query(
-    'SELECT log_channel_id, lfg_channel_id FROM guild_config WHERE guild_id = $1',
+    `
+      SELECT
+        log_channel_id,
+        lfg_channel_id,
+        (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+      FROM guild_config
+      WHERE guild_id = $1
+    `,
     [guildId]
   );
   const configRow = configRes.rows[0] ?? {};
@@ -418,6 +486,7 @@ async function getGuildConfig(guildId) {
   return {
     logChannelId: configRow.log_channel_id ?? null,
     lfgChannelId: configRow.lfg_channel_id ?? null,
+    configVersion: configRow.config_version ?? null,
     enabledVoiceChannelIds: watchlistRes.rows.map(
       (row) => row.voice_channel_id
     ),
@@ -425,6 +494,401 @@ async function getGuildConfig(guildId) {
     joinToCreateLobbyIds,
     joinToCreateLobbies,
   };
+}
+
+async function setGuildChannels(
+  guildId,
+  logChannelId,
+  lfgChannelId,
+  expectedConfigVersion
+) {
+  const result = await query(
+    `
+      WITH updated AS (
+        UPDATE guild_config
+        SET
+          log_channel_id = $2,
+          lfg_channel_id = $3,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE guild_id = $1
+          AND (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT = $4
+        RETURNING
+          guild_id,
+          (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+      ),
+      inserted AS (
+        INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, updated_at)
+        SELECT $1, $2, $3, CURRENT_TIMESTAMP
+        WHERE $4::TEXT IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM guild_config WHERE guild_id = $1
+          )
+        ON CONFLICT (guild_id) DO NOTHING
+        RETURNING
+          guild_id,
+          (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+      ),
+      already_applied AS (
+        SELECT
+          guild_id,
+          (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+        FROM guild_config
+        WHERE guild_id = $1
+          AND log_channel_id IS NOT DISTINCT FROM $2
+          AND lfg_channel_id IS NOT DISTINCT FROM $3
+      )
+      SELECT guild_id, config_version
+      FROM (
+        SELECT guild_id, config_version, 1 AS priority FROM updated
+        UNION ALL
+        SELECT guild_id, config_version, 2 AS priority FROM inserted
+        UNION ALL
+        SELECT guild_id, config_version, 3 AS priority FROM already_applied
+      ) AS result
+      ORDER BY priority
+      LIMIT 1
+    `,
+    [
+      guildId,
+      logChannelId,
+      lfgChannelId,
+      expectedConfigVersion,
+    ]
+  );
+  return result.rows[0]?.config_version ?? null;
+}
+
+async function upsertJoinToCreateLobby({
+  guildId,
+  channelId,
+  roleId,
+  lfgEnabled = true,
+  lfgReminderEnabled = false,
+  lfgReminderSeconds = 30,
+  operationId = null,
+}) {
+  await ensureJoinToCreateSetup();
+  const result = await withGuildSetupTransaction(
+    guildId,
+    async (client) => {
+      const recovery = await client.query(
+        `
+          SELECT operation_id
+          FROM guild_setup_operations
+          WHERE guild_id = $1
+            AND operation_id IS DISTINCT FROM $2
+          LIMIT 1
+        `,
+        [guildId, operationId]
+      );
+      if (recovery.rows.length > 0) {
+        const error = new Error('Quick Setup is still running or recovering for this server.');
+        error.code = 'SETUP_RESOURCE_RECOVERY';
+        throw error;
+      }
+      const result = await client.query(
+        `
+        INSERT INTO join_to_create_lobbies (
+          guild_id,
+          lobby_channel_id,
+          role_id,
+          lfg_enabled,
+          lfg_reminder_enabled,
+          lfg_reminder_seconds
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (guild_id, lobby_channel_id) DO UPDATE SET
+          role_id = EXCLUDED.role_id
+        RETURNING
+          lobby_channel_id,
+          role_id,
+          lfg_enabled,
+          lfg_reminder_enabled,
+          lfg_reminder_seconds
+        `,
+        [
+          guildId,
+          channelId,
+          roleId,
+          lfgEnabled,
+          lfgReminderEnabled,
+          lfgReminderSeconds,
+        ]
+      );
+      await client.query(
+        'UPDATE guild_config SET updated_at = NOW() WHERE guild_id = $1',
+        [guildId]
+      );
+      return result;
+    }
+  );
+  const row = result.rows[0];
+  return row ? {
+    channelId: row.lobby_channel_id,
+    roleId: row.role_id,
+    lfgEnabled: row.lfg_enabled ?? true,
+    lfgReminderEnabled: row.lfg_reminder_enabled ?? false,
+    lfgReminderSeconds: row.lfg_reminder_seconds ?? 30,
+  } : null;
+}
+
+async function withGuildSetupResourceProtection(guildId, callback) {
+  await Promise.all([
+    ensureJoinToCreateSetup(),
+    ensurePersistentLfgMessageTable(),
+    ensureManualVoiceActivityTable(),
+    ensureManualVoicePanelMessageTable(),
+    ensureVoiceAutoRoleConfigTable(),
+    ensureVoiceAutoRoleRequestsTable(),
+    ensureSpamCatcherConfigTable(),
+    ensureSpamCatcherNoticeMessagesTable(),
+    ensureSpamCatcherIntegrityChecksTable(),
+  ]);
+  return withGuildSetupTransaction(guildId, async (client) => {
+    const [resourceResult, autoRoleResult, spamCatcherResult] = await Promise.all([
+      client.query(
+      `
+        SELECT 'channel' AS resource_type, log_channel_id AS resource_id
+        FROM guild_config WHERE guild_id = $1
+        UNION ALL
+        SELECT 'channel', lfg_channel_id
+        FROM guild_config WHERE guild_id = $1
+        UNION ALL
+        SELECT 'channel', voice_channel_id
+        FROM voice_watchlist WHERE guild_id = $1 AND enabled = TRUE
+        UNION ALL
+        SELECT 'channel', lobby_channel_id
+        FROM join_to_create_lobbies WHERE guild_id = $1
+        UNION ALL
+        SELECT 'role', role_id
+        FROM join_to_create_lobbies WHERE guild_id = $1
+        UNION ALL
+        SELECT 'channel', channel_id
+        FROM temp_voice_channels WHERE guild_id = $1
+        UNION ALL
+        SELECT 'channel', lfg_channel_id
+        FROM temp_voice_channels WHERE guild_id = $1
+        UNION ALL
+        SELECT 'role', role_id
+        FROM temp_voice_channels WHERE guild_id = $1
+        UNION ALL
+        SELECT 'channel', channel_id
+        FROM lfg_persistent_message WHERE guild_id = $1
+        UNION ALL
+        SELECT 'channel', channel_id
+        FROM manual_voice_activity WHERE guild_id = $1
+        UNION ALL
+        SELECT 'channel', channel_id
+        FROM manual_voice_panel_message WHERE guild_id = $1
+        UNION ALL
+        SELECT 'role', role_id
+        FROM voice_auto_role_requests WHERE guild_id = $1 AND status = 'pending'
+        UNION ALL
+        SELECT 'channel', message_channel_id
+        FROM voice_auto_role_requests WHERE guild_id = $1 AND status = 'pending'
+        UNION ALL
+        SELECT 'channel', channel_id
+        FROM spam_catcher_notice_messages WHERE guild_id = $1
+        UNION ALL
+        SELECT 'channel', channel_id
+        FROM spam_catcher_integrity_checks WHERE guild_id = $1
+      `,
+      [guildId]
+      ),
+      client.query(
+        'SELECT config_json FROM voice_auto_role_config WHERE guild_id = $1',
+        [guildId]
+      ),
+      client.query(
+        'SELECT config_json FROM spam_catcher_config WHERE guild_id = $1',
+        [guildId]
+      ),
+    ]);
+    const channelIds = new Set();
+    const roleIds = new Set();
+    for (const row of resourceResult.rows) {
+      if (!row.resource_id) continue;
+      if (row.resource_type === 'role') roleIds.add(row.resource_id);
+      else channelIds.add(row.resource_id);
+    }
+
+    const autoRoleConfig = normalizeAutoRoleConfig(autoRoleResult.rows[0]?.config_json);
+    for (const roleId of autoRoleConfig.requiredRoleIds) roleIds.add(roleId);
+    for (const rule of autoRoleConfig.rules) {
+      roleIds.add(rule.roleId);
+      if (rule.requiredRoleId) roleIds.add(rule.requiredRoleId);
+    }
+    if (autoRoleConfig.approvalChannelId) {
+      channelIds.add(autoRoleConfig.approvalChannelId);
+    }
+
+    const spamCatcherConfig = normalizeSpamCatcherConfig(
+      spamCatcherResult.rows[0]?.config_json
+    );
+    for (const channelId of spamCatcherConfig.channelIds) channelIds.add(channelId);
+    for (const webhook of spamCatcherConfig.webhookUrls) {
+      channelIds.add(webhook.channelId);
+    }
+    if (spamCatcherConfig.reviewChannelId) {
+      channelIds.add(spamCatcherConfig.reviewChannelId);
+    }
+
+    return callback({
+      channelIds: [...channelIds],
+      roleIds: [...roleIds],
+    });
+  });
+}
+
+function normalizeGuildSetupOperation(row) {
+  if (!row) return null;
+  return {
+    guildId: row.guild_id,
+    operationId: row.operation_id,
+    resourceMarker: row.resource_marker || row.operation_id,
+    status: row.status,
+    roleId: row.role_id ?? null,
+    channelId: row.channel_id ?? null,
+    startedAt: row.started_at ?? null,
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+async function getGuildSetupOperation(guildId) {
+  await ensureJoinToCreateSetup();
+  const result = await query(
+    `
+      SELECT guild_id, operation_id, resource_marker, status, role_id, channel_id, started_at, updated_at
+      FROM guild_setup_operations
+      WHERE guild_id = $1
+    `,
+    [guildId]
+  );
+  return normalizeGuildSetupOperation(result.rows[0]);
+}
+
+async function beginGuildSetupOperation(guildId, operationId, expectedConfigVersion) {
+  await ensureJoinToCreateSetup();
+  return withGuildSetupTransaction(guildId, async (client) => {
+    const versionResult = await client.query(
+      `
+        SELECT (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
+        FROM guild_config
+        WHERE guild_id = $1
+      `,
+      [guildId]
+    );
+    const currentVersion = versionResult.rows[0]?.config_version ?? null;
+    if (currentVersion !== expectedConfigVersion) {
+      return {
+        acquired: false,
+        configChanged: true,
+        operation: null,
+      };
+    }
+    await client.query(
+      `
+        INSERT INTO guild_setup_operations (
+          guild_id,
+          operation_id,
+          resource_marker,
+          status,
+          updated_at
+        )
+        VALUES ($1, $2, $2, 'starting', NOW())
+        ON CONFLICT (guild_id) DO NOTHING
+      `,
+      [guildId, operationId]
+    );
+    const operationResult = await client.query(
+      `
+        SELECT guild_id, operation_id, resource_marker, status, role_id, channel_id, started_at, updated_at
+        FROM guild_setup_operations
+        WHERE guild_id = $1
+      `,
+      [guildId]
+    );
+    const operation = normalizeGuildSetupOperation(operationResult.rows[0]);
+    return {
+      acquired: operation?.operationId === operationId,
+      configChanged: false,
+      operation,
+    };
+  });
+}
+
+async function updateGuildSetupOperation({
+  guildId,
+  operationId,
+  status,
+  roleId = null,
+  channelId = null,
+}) {
+  await ensureJoinToCreateSetup();
+  const result = await query(
+    `
+      UPDATE guild_setup_operations
+      SET status = $3,
+          role_id = $4,
+          channel_id = $5,
+          updated_at = NOW()
+      WHERE guild_id = $1
+        AND operation_id = $2
+      RETURNING guild_id
+    `,
+    [guildId, operationId, status, roleId, channelId]
+  );
+  return result.rows.length > 0;
+}
+
+async function claimGuildSetupOperationRecovery(
+  guildId,
+  operationId,
+  recoveryOperationId
+) {
+  await ensureJoinToCreateSetup();
+  const result = await query(
+    `
+      WITH claimed AS (
+        UPDATE guild_setup_operations
+        SET operation_id = $3,
+            status = 'recovering',
+            updated_at = NOW()
+        WHERE guild_id = $1
+          AND operation_id = $2
+          AND (
+            status IN ('cleanup_required', 'verify_save')
+            OR updated_at < NOW() - INTERVAL '15 minutes'
+          )
+        RETURNING guild_id, operation_id, resource_marker, status, role_id, channel_id, started_at, updated_at
+      )
+      SELECT guild_id, operation_id, resource_marker, status, role_id, channel_id, started_at, updated_at
+      FROM claimed
+      UNION ALL
+      SELECT guild_id, operation_id, resource_marker, status, role_id, channel_id, started_at, updated_at
+      FROM guild_setup_operations
+      WHERE guild_id = $1
+        AND operation_id = $3
+        AND NOT EXISTS (SELECT 1 FROM claimed)
+      LIMIT 1
+    `,
+    [guildId, operationId, recoveryOperationId]
+  );
+  return normalizeGuildSetupOperation(result.rows[0]);
+}
+
+async function clearGuildSetupOperation(guildId, operationId) {
+  await ensureJoinToCreateSetup();
+  const result = await query(
+    `
+      DELETE FROM guild_setup_operations
+      WHERE guild_id = $1
+        AND operation_id = $2
+      RETURNING guild_id
+    `,
+    [guildId, operationId]
+  );
+  return result.rows.length > 0;
 }
 
 async function getVoiceAutoRoleConfig(guildId) {
@@ -2035,6 +2499,14 @@ async function getSpamCatcherNoticeMessage(guildId, channelId) {
 
 module.exports = {
   getGuildConfig,
+  setGuildChannels,
+  upsertJoinToCreateLobby,
+  withGuildSetupResourceProtection,
+  getGuildSetupOperation,
+  beginGuildSetupOperation,
+  updateGuildSetupOperation,
+  claimGuildSetupOperationRecovery,
+  clearGuildSetupOperation,
   getVoiceAutoRoleConfig,
   getSpamCatcherConfig,
   getGuildVoiceTotals,

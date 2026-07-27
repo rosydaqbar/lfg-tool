@@ -314,26 +314,6 @@ function createStatsManager({ client, configStore }) {
     }
   }
 
-  async function registerCommands() {
-    const statsCommand = buildStatsCommand();
-    const voicecheckCommand = buildVoicecheckCommand();
-    const guilds = [...client.guilds.cache.values()];
-
-    await Promise.allSettled(
-      guilds.map(async (guild) => {
-        try {
-          await guild.commands.set([statsCommand, voicecheckCommand]);
-        } catch (error) {
-          if (error?.code === 50001) {
-            console.warn(`Skipped command registration for guild ${guild.id}: missing access.`);
-            return;
-          }
-          console.error(`Failed to register commands for guild ${guild.id}:`, error);
-        }
-      })
-    );
-  }
-
   async function replyVoicecheck(interaction) {
     if (!interaction.guildId || !interaction.guild) {
       await interaction.reply({
@@ -587,7 +567,6 @@ function createStatsManager({ client, configStore }) {
     handleInteraction,
     replyLeaderboard,
     replyMyStats,
-    registerCommands,
   };
 }
 
