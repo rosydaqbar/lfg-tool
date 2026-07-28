@@ -20,6 +20,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dashboardCard } from "@/components/ui/patterns";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 import { cn } from "@/lib/utils";
 import type { Channel } from "./types";
 
@@ -48,6 +49,7 @@ function ChannelConfigCardsComponent({
   onLfgChannelChange,
   onOpenTextChannels,
 }: ChannelConfigCardsProps) {
+  const { t } = useDashboardI18n();
   const [logChannelOpen, setLogChannelOpen] = useState(false);
   const [lfgChannelOpen, setLfgChannelOpen] = useState(false);
 
@@ -57,8 +59,8 @@ function ChannelConfigCardsComponent({
   const logChannelLabel = selectedLogChannel
     ? `#${selectedLogChannel.name}`
     : logChannelId
-      ? `ID: ${logChannelId}`
-      : "Pick a text channel";
+      ? t("settings.channels.channelId", "ID: {id}", { id: logChannelId })
+      : t("settings.channels.log.placeholder", "Pick a text channel");
 
   const selectedLfgChannel = textChannels.find(
     (channel) => channel.id === lfgChannelId
@@ -66,8 +68,12 @@ function ChannelConfigCardsComponent({
   const lfgChannelLabel = selectedLfgChannel
     ? `#${selectedLfgChannel.name}`
     : lfgChannelId
-      ? `ID: ${lfgChannelId}`
-      : "Use log channel";
+      ? t("settings.channels.channelId", "ID: {id}", { id: lfgChannelId })
+      : t("settings.channels.lfg.useLogChannel", "Use log channel");
+  const useLogChannelLabel = t(
+    "settings.channels.lfg.useLogChannel",
+    "Use log channel"
+  );
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr_0.9fr]">
@@ -75,21 +81,28 @@ function ChannelConfigCardsComponent({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Building2 className="h-4 w-4" />
-            Guild (locked)
+            {t("settings.channels.guild.title", "Guild (locked)")}
           </CardTitle>
           <CardDescription>
-            This dashboard is scoped to a single server.
+            {t(
+              "settings.channels.guild.description",
+              "This dashboard is scoped to a single server."
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Badge variant="secondary" className="rounded-full px-3 py-1">
-            Locked
+            {t("common.locked", "Locked")}
           </Badge>
           <div className="text-sm text-foreground">
-            Guild ID: <span className="font-mono">{selectedGuildId}</span>
+            {t("settings.channels.guild.idLabel", "Guild ID:")} {" "}
+            <span className="font-mono">{selectedGuildId}</span>
           </div>
           <div className="text-xs text-muted-foreground">
-            Update this ID in the dashboard component if you ever migrate.
+            {t(
+              "settings.channels.guild.help",
+              "Update this ID in the dashboard component if you ever migrate."
+            )}
           </div>
         </CardContent>
       </Card>
@@ -98,10 +111,13 @@ function ChannelConfigCardsComponent({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <MessageSquareText className="h-4 w-4" />
-            Log channel
+            {t("settings.channels.log.title", "Log channel")}
           </CardTitle>
           <CardDescription>
-            Choose where join events should be posted.
+            {t(
+              "settings.channels.log.description",
+              "Choose where join events should be posted."
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -129,8 +145,12 @@ function ChannelConfigCardsComponent({
               </PopoverTrigger>
               <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                 <Command>
-                  <CommandInput placeholder="Search channels..." />
-                  <CommandEmpty>No channels found.</CommandEmpty>
+                  <CommandInput
+                    placeholder={t("settings.channels.searchPlaceholder", "Search channels...")}
+                  />
+                  <CommandEmpty>
+                    {t("settings.channels.noneFound", "No channels found.")}
+                  </CommandEmpty>
                   <CommandList>
                     <CommandGroup>
                       {textChannels.map((channel) => (
@@ -164,11 +184,17 @@ function ChannelConfigCardsComponent({
           )}
           {!loadingConfig && channelsLoaded && textChannels.length === 0 ? (
             <div className="text-xs text-muted-foreground">
-              No text channels were found for this guild.
+              {t(
+                "settings.channels.noTextChannels",
+                "No text channels were found for this guild."
+              )}
             </div>
           ) : null}
           <div className="text-xs text-muted-foreground">
-            This channel receives the join messages.
+            {t(
+              "settings.channels.log.help",
+              "This channel receives the join messages."
+            )}
           </div>
         </CardContent>
       </Card>
@@ -177,10 +203,13 @@ function ChannelConfigCardsComponent({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <MessageSquareText className="h-4 w-4" />
-            LFG channel
+            {t("settings.channels.lfg.title", "LFG channel")}
           </CardTitle>
           <CardDescription>
-            Optional. Defaults to the log channel.
+            {t(
+              "settings.channels.lfg.description",
+              "Optional. Defaults to the log channel."
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -208,12 +237,16 @@ function ChannelConfigCardsComponent({
               </PopoverTrigger>
               <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                 <Command>
-                  <CommandInput placeholder="Search channels..." />
-                  <CommandEmpty>No channels found.</CommandEmpty>
+                  <CommandInput
+                    placeholder={t("settings.channels.searchPlaceholder", "Search channels...")}
+                  />
+                  <CommandEmpty>
+                    {t("settings.channels.noneFound", "No channels found.")}
+                  </CommandEmpty>
                   <CommandList>
                     <CommandGroup>
                       <CommandItem
-                        value="Use log channel"
+                        value={useLogChannelLabel}
                         onSelect={() => {
                           onLfgChannelChange("");
                           setLfgChannelOpen(false);
@@ -225,7 +258,7 @@ function ChannelConfigCardsComponent({
                             lfgChannelId === "" ? "opacity-100" : "opacity-0"
                           )}
                         />
-                        <span>Use log channel</span>
+                        <span>{useLogChannelLabel}</span>
                       </CommandItem>
                       {textChannels.map((channel) => (
                         <CommandItem
@@ -258,11 +291,17 @@ function ChannelConfigCardsComponent({
           )}
           {!loadingConfig && channelsLoaded && textChannels.length === 0 ? (
             <div className="text-xs text-muted-foreground">
-              No text channels were found for this guild.
+              {t(
+                "settings.channels.noTextChannels",
+                "No text channels were found for this guild."
+              )}
             </div>
           ) : null}
           <div className="text-xs text-muted-foreground">
-            LFG posts go here when set; otherwise they use the log channel.
+            {t(
+              "settings.channels.lfg.help",
+              "LFG posts go here when set; otherwise they use the log channel."
+            )}
           </div>
         </CardContent>
       </Card>

@@ -87,10 +87,7 @@ function createSpamCatcherManager({ client, configStore }) {
     return t(locale, safeMinutes === 1 ? 'spamCatcher.minuteOne' : 'spamCatcher.minuteOther', { count: safeMinutes });
   }
 
-  function buildTrapNoticePayload(caughtCount, integrityCount, config, context = {}) {
-    const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
-    const safeIntegrityCount = Math.max(0, Math.floor(Number(integrityCount) || 0));
-    const locale = context.locale || 'en';
+  function buildTrapNoticeContent(caughtCount, integrityCount, config, locale) {
     const timeoutText = formatNoticeMinutes(config.timeoutMinutes, locale);
     const banDelayText = formatNoticeMinutes(config.banDelayMinutes, locale);
     const action = config.autoBanEnabled
@@ -104,21 +101,39 @@ function createSpamCatcherManager({ client, configStore }) {
       ? 'spamCatcher.appealImmediate'
       : 'spamCatcher.appealTimeout');
 
+    return [
+      t(locale, 'spamCatcher.noticeTitle'),
+      t(locale, 'spamCatcher.noticeBody', { action, appeal }),
+      '',
+      t(locale, 'spamCatcher.warningTitle'),
+      t(locale, 'spamCatcher.warningBody'),
+      '',
+      t(locale, 'spamCatcher.caughtCount', { count: caughtCount }),
+      t(locale, 'spamCatcher.integrityCount', { count: integrityCount }),
+    ].join('\n');
+  }
+
+  function buildTrapNoticePayload(caughtCount, integrityCount, config, context = {}) {
+    const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
+    const safeIntegrityCount = Math.max(0, Math.floor(Number(integrityCount) || 0));
+    const locale = context.locale || 'en';
+
     const container = new ContainerBuilder()
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-          [
-            t(locale, 'spamCatcher.noticeTitle'),
-            t(locale, 'spamCatcher.noticeBody', { action, appeal }),
-            '',
-            t(locale, 'spamCatcher.warningTitle'),
-            t(locale, 'spamCatcher.warningBody'),
-            '',
-            t(locale, 'spamCatcher.caughtCount', { count: safeCount }),
-            t(locale, 'spamCatcher.integrityCount', { count: safeIntegrityCount }),
-          ].join('\n')
+          buildTrapNoticeContent(safeCount, safeIntegrityCount, config, locale)
         )
       );
+
+    if (locale !== 'en') {
+      container
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            buildTrapNoticeContent(safeCount, safeIntegrityCount, config, 'en')
+          )
+        );
+    }
 
     if (config.integrityCheckEnabled) {
       container.addActionRowComponents(

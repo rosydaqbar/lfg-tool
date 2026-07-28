@@ -23,6 +23,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { dashboardCard, dashboardEmpty, dashboardInset, dashboardPanel } from "@/components/ui/patterns";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 import {
   Table,
   TableBody,
@@ -81,6 +82,7 @@ function VoiceSettingsSectionComponent({
   onOpenRoles,
   onSave,
 }: VoiceSettingsSectionProps) {
+  const { t } = useDashboardI18n();
   const [lobbyPickerOpen, setLobbyPickerOpen] = useState(false);
   const [lobbyRolePickerOpen, setLobbyRolePickerOpen] = useState(false);
   const [selectedLobbyVoiceId, setSelectedLobbyVoiceId] = useState("");
@@ -95,8 +97,8 @@ function VoiceSettingsSectionComponent({
   const lobbyVoiceLabel = selectedLobbyVoiceChannel
     ? selectedLobbyVoiceChannel.name
     : selectedLobbyVoiceId
-      ? `ID: ${selectedLobbyVoiceId}`
-      : "Select a lobby channel";
+      ? t("settings.voice.channelId", "ID: {id}", { id: selectedLobbyVoiceId })
+      : t("settings.voice.lobbies.channelPlaceholder", "Select a lobby channel");
 
   const selectedLobbyRole = useMemo(
     () => roles.find((role) => role.id === selectedLobbyRoleId),
@@ -105,8 +107,8 @@ function VoiceSettingsSectionComponent({
   const lobbyRoleLabel = selectedLobbyRole
     ? selectedLobbyRole.name
     : selectedLobbyRoleId
-      ? `ID: ${selectedLobbyRoleId}`
-      : "Select a role";
+      ? t("settings.voice.roleId", "ID: {id}", { id: selectedLobbyRoleId })
+      : t("settings.voice.lobbies.rolePlaceholder", "Select a role");
 
   const joinToCreateLobbyIds = useMemo(
     () => joinToCreateLobbies.map((item) => item.channelId),
@@ -125,8 +127,8 @@ function VoiceSettingsSectionComponent({
   const voiceLogChannelLabel = selectedVoiceLogChannel
     ? selectedVoiceLogChannel.name
     : selectedVoiceLogId
-      ? `ID: ${selectedVoiceLogId}`
-      : "Select a voice channel";
+      ? t("settings.voice.channelId", "ID: {id}", { id: selectedVoiceLogId })
+      : t("settings.voice.logs.channelPlaceholder", "Select a voice channel");
 
   const availableVoiceLogChannels = useMemo(
     () =>
@@ -143,18 +145,27 @@ function VoiceSettingsSectionComponent({
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Radio className="h-4 w-4" />
-              Voice channel settings
+              {t("settings.voice.title", "Voice channel settings")}
             </CardTitle>
             <CardDescription>
-              Select channels for logging and Join-to-Create lobbies.
+              {t(
+                "settings.voice.description",
+                "Select channels for logging and Join-to-Create lobbies."
+              )}
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary" className="rounded-full px-4 py-1">
-              Join-to-Create {joinToCreateLobbyIds.length}
+              {t(
+                "settings.voice.lobbies.countBadge",
+                "Join-to-Create {count}",
+                { count: joinToCreateLobbyIds.length }
+              )}
             </Badge>
             <Badge variant="secondary" className="rounded-full px-4 py-1">
-              Voice Log {enabledVoiceChannelIds.length}
+              {t("settings.voice.logs.countBadge", "Voice Log {count}", {
+                count: enabledVoiceChannelIds.length,
+              })}
             </Badge>
           </div>
         </div>
@@ -171,9 +182,13 @@ function VoiceSettingsSectionComponent({
           <div className="space-y-6">
             <div className={`space-y-4 ${dashboardPanel}`}>
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Join-to-Create lobbies</div>
+                <div className="text-sm font-medium">
+                  {t("settings.voice.lobbies.title", "Join-to-Create lobbies")}
+                </div>
                 <Badge variant="secondary" className="rounded-full px-3 py-1">
-                  Selected {joinToCreateLobbyIds.length}
+                  {t("settings.voice.selectedCount", "Selected {count}", {
+                    count: joinToCreateLobbyIds.length,
+                  })}
                 </Badge>
               </div>
               <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
@@ -198,8 +213,15 @@ function VoiceSettingsSectionComponent({
                 </PopoverTrigger>
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                   <Command>
-                    <CommandInput placeholder="Search voice channels..." />
-                    <CommandEmpty>No channels available.</CommandEmpty>
+                    <CommandInput
+                      placeholder={t(
+                        "settings.voice.searchChannelsPlaceholder",
+                        "Search voice channels..."
+                      )}
+                    />
+                    <CommandEmpty>
+                      {t("settings.voice.noChannelsAvailable", "No channels available.")}
+                    </CommandEmpty>
                     <CommandList>
                       <CommandGroup>
                         {availableLobbyChannels.map((channel) => (
@@ -251,8 +273,12 @@ function VoiceSettingsSectionComponent({
                 </PopoverTrigger>
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                   <Command>
-                    <CommandInput placeholder="Search roles..." />
-                    <CommandEmpty>No roles available.</CommandEmpty>
+                    <CommandInput
+                      placeholder={t("settings.voice.searchRolesPlaceholder", "Search roles...")}
+                    />
+                    <CommandEmpty>
+                      {t("settings.voice.noRolesAvailable", "No roles available.")}
+                    </CommandEmpty>
                     <CommandList>
                       <CommandGroup>
                         {roles.map((role) => (
@@ -294,19 +320,19 @@ function VoiceSettingsSectionComponent({
                 className="sm:shrink-0"
               >
                 <Plus className="h-4 w-4" />
-                Add
+                {t("common.add", "Add")}
               </Button>
               </div>
               {joinToCreateLobbies.length ? (
                 <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Lobby channel</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Enable LFG</TableHead>
-                    <TableHead>Enable Reminder</TableHead>
-                    <TableHead>Reminder Time</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead>{t("settings.voice.lobbies.channelColumn", "Lobby channel")}</TableHead>
+                    <TableHead>{t("settings.voice.lobbies.roleColumn", "Role")}</TableHead>
+                    <TableHead>{t("settings.voice.lobbies.lfgColumn", "Enable LFG")}</TableHead>
+                    <TableHead>{t("settings.voice.lobbies.reminderColumn", "Enable Reminder")}</TableHead>
+                    <TableHead>{t("settings.voice.lobbies.reminderTimeColumn", "Reminder Time")}</TableHead>
+                    <TableHead className="text-right">{t("common.action", "Action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -327,7 +353,9 @@ function VoiceSettingsSectionComponent({
                         </TableCell>
                         <TableCell>
                           <div className="text-sm font-medium">
-                            {role?.name ?? lobby.roleId ?? "Missing role"}
+                            {role?.name ??
+                              lobby.roleId ??
+                              t("settings.voice.lobbies.missingRole", "Missing role")}
                           </div>
                           {lobby.roleId ? (
                             <div className="text-xs text-muted-foreground font-mono">
@@ -342,10 +370,16 @@ function VoiceSettingsSectionComponent({
                               onCheckedChange={(checked) =>
                                 onToggleLobbyLfg(lobby.channelId, checked)
                               }
-                              aria-label={`Enable LFG for ${channel?.name ?? lobby.channelId}`}
+                              aria-label={t(
+                                "settings.voice.lobbies.enableLfgAria",
+                                "Enable LFG for {channel}",
+                                { channel: channel?.name ?? lobby.channelId }
+                              )}
                             />
                             <span className="text-xs text-muted-foreground">
-                              {lobby.lfgEnabled ? "Enabled" : "Disabled"}
+                              {lobby.lfgEnabled
+                                ? t("common.enabled", "Enabled")
+                                : t("common.disabled", "Disabled")}
                             </span>
                           </div>
                         </TableCell>
@@ -357,10 +391,16 @@ function VoiceSettingsSectionComponent({
                               onCheckedChange={(checked) =>
                                 onToggleLobbyReminder(lobby.channelId, checked)
                               }
-                              aria-label={`Enable LFG reminder for ${channel?.name ?? lobby.channelId}`}
+                              aria-label={t(
+                                "settings.voice.lobbies.enableReminderAria",
+                                "Enable LFG reminder for {channel}",
+                                { channel: channel?.name ?? lobby.channelId }
+                              )}
                             />
                             <span className="text-xs text-muted-foreground">
-                              {lobby.lfgReminderEnabled ? "Enabled" : "Disabled"}
+                              {lobby.lfgReminderEnabled
+                                ? t("common.enabled", "Enabled")
+                                : t("common.disabled", "Disabled")}
                             </span>
                           </div>
                         </TableCell>
@@ -376,9 +416,15 @@ function VoiceSettingsSectionComponent({
                                 onLobbyReminderSecondsChange(lobby.channelId, Number(event.target.value))
                               }
                               className="h-8 w-24"
-                              aria-label={`Reminder time for ${channel?.name ?? lobby.channelId}`}
+                              aria-label={t(
+                                "settings.voice.lobbies.reminderTimeAria",
+                                "Reminder time for {channel}",
+                                { channel: channel?.name ?? lobby.channelId }
+                              )}
                             />
-                            <span className="text-xs text-muted-foreground">sec</span>
+                            <span className="text-xs text-muted-foreground">
+                              {t("common.secondsAbbreviation", "sec")}
+                            </span>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -386,7 +432,11 @@ function VoiceSettingsSectionComponent({
                             variant="ghost"
                             size="icon-xs"
                             onClick={() => onRemoveLobbyChannel(lobby.channelId)}
-                            aria-label={`Remove ${channel?.name ?? lobby.channelId}`}
+                            aria-label={t(
+                              "settings.voice.removeChannelAria",
+                              "Remove {channel}",
+                              { channel: channel?.name ?? lobby.channelId }
+                            )}
                           >
                             <X className="h-3 w-3" />
                           </Button>
@@ -398,29 +448,44 @@ function VoiceSettingsSectionComponent({
                 </Table>
               ) : (
                 <div className="text-xs text-muted-foreground">
-                  No lobbies selected yet. Users will need a lobby to create squads.
+                  {t(
+                    "settings.voice.lobbies.empty",
+                    "No lobbies selected yet. Users will need a lobby to create squads."
+                  )}
                 </div>
               )}
               {rolesLoaded && roles.length === 0 ? (
                 <div className="text-xs text-muted-foreground">
-                  No roles were found. The bot token needs permission to read roles.
+                  {t(
+                    "settings.voice.lobbies.noRoles",
+                    "No roles were found. The bot token needs permission to read roles."
+                  )}
                 </div>
               ) : null}
               <div className="text-xs text-muted-foreground">
-                Join-to-Create lobbies create a temporary channel per user.
+                {t(
+                  "settings.voice.lobbies.help",
+                  "Join-to-Create lobbies create a temporary channel per user."
+                )}
               </div>
             </div>
 
             <div className={`space-y-4 ${dashboardPanel}`}>
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Voice Log channels</div>
+                <div className="text-sm font-medium">
+                  {t("settings.voice.logs.title", "Voice Log channels")}
+                </div>
                 <Badge variant="secondary" className="rounded-full px-3 py-1">
-                  Manual {enabledVoiceChannelIds.length}
+                  {t("settings.voice.logs.manualCount", "Manual {count}", {
+                    count: enabledVoiceChannelIds.length,
+                  })}
                 </Badge>
               </div>
               <div className={`${dashboardInset} text-xs text-muted-foreground`}>
-                Temp voice channels are logged automatically. Add manual channels here for
-                log-only tracking (no voice settings panel).
+                {t(
+                  "settings.voice.logs.description",
+                  "Temp voice channels are logged automatically. Add manual channels here for log-only tracking (no voice settings panel)."
+                )}
               </div>
               <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
               <Popover
@@ -444,8 +509,15 @@ function VoiceSettingsSectionComponent({
                 </PopoverTrigger>
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                   <Command>
-                    <CommandInput placeholder="Search voice channels..." />
-                    <CommandEmpty>No channels available.</CommandEmpty>
+                    <CommandInput
+                      placeholder={t(
+                        "settings.voice.searchChannelsPlaceholder",
+                        "Search voice channels..."
+                      )}
+                    />
+                    <CommandEmpty>
+                      {t("settings.voice.noChannelsAvailable", "No channels available.")}
+                    </CommandEmpty>
                     <CommandList>
                       <CommandGroup>
                         {availableVoiceLogChannels.map((channel) => (
@@ -486,32 +558,37 @@ function VoiceSettingsSectionComponent({
                 className="sm:shrink-0"
               >
                 <Plus className="h-4 w-4" />
-                Add
+                {t("common.add", "Add")}
               </Button>
               </div>
               <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Voice channel</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                  <TableHead>{t("settings.voice.logs.channelColumn", "Voice channel")}</TableHead>
+                  <TableHead>{t("common.type", "Type")}</TableHead>
+                  <TableHead className="text-right">{t("common.action", "Action")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow>
                   <TableCell>
-                    <div className="text-sm font-medium">Temp voice channels</div>
+                    <div className="text-sm font-medium">
+                      {t("settings.voice.logs.tempChannels", "Temp voice channels")}
+                    </div>
                     <div className="text-xs text-muted-foreground">
-                      Automatically logged when created
+                      {t(
+                        "settings.voice.logs.tempChannelsHelp",
+                        "Automatically logged when created"
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary" className="rounded-full px-3 py-1">
-                      Auto
+                      {t("common.auto", "Auto")}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">
-                    Locked
+                    {t("common.locked", "Locked")}
                   </TableCell>
                 </TableRow>
                 {enabledVoiceChannelIds.map((channelId) => {
@@ -528,7 +605,7 @@ function VoiceSettingsSectionComponent({
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="rounded-full px-3 py-1">
-                          Manual
+                          {t("common.manual", "Manual")}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
@@ -536,7 +613,11 @@ function VoiceSettingsSectionComponent({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => onRemoveEnabledVoiceChannel(channelId)}
-                          aria-label={`Remove ${channel?.name ?? channelId}`}
+                          aria-label={t(
+                            "settings.voice.removeChannelAria",
+                            "Remove {channel}",
+                            { channel: channel?.name ?? channelId }
+                          )}
                         >
                           <X className="h-3 w-3" />
                         </Button>
@@ -548,7 +629,10 @@ function VoiceSettingsSectionComponent({
               </Table>
               {!enabledVoiceChannelIds.length ? (
                 <div className="text-xs text-muted-foreground">
-                  No manual voice log channels selected.
+                  {t(
+                    "settings.voice.logs.empty",
+                    "No manual voice log channels selected."
+                  )}
                 </div>
               ) : null}
             </div>
@@ -556,17 +640,26 @@ function VoiceSettingsSectionComponent({
         )}
         {!loadingConfig && channelsLoaded && voiceChannels.length === 0 ? (
           <div className={dashboardEmpty}>
-            No voice channels were found for this guild.
+            {t(
+              "settings.voice.noGuildChannels",
+              "No voice channels were found for this guild."
+            )}
           </div>
         ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">
-            Add channels and roles with the dropdowns, then save.
+            {t(
+              "settings.voice.saveHelp",
+              "Add channels and roles with the dropdowns, then save."
+            )}
           </div>
           {hasMissingLobbyRole ? (
             <div className="text-xs text-destructive">
-              Each Join-to-Create lobby requires a role.
+              {t(
+                "settings.voice.lobbies.roleRequired",
+                "Each Join-to-Create lobby requires a role."
+              )}
             </div>
           ) : null}
           <Button
@@ -581,10 +674,10 @@ function VoiceSettingsSectionComponent({
             {saving ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Saving
+                {t("common.saving", "Saving")}
               </span>
             ) : (
-              "Save configuration"
+              t("common.saveConfiguration", "Save configuration")
             )}
           </Button>
         </div>

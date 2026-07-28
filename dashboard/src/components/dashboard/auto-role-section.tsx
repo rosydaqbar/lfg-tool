@@ -30,6 +30,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { dashboardCard, dashboardPanel } from "@/components/ui/patterns";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 import { cn } from "@/lib/utils";
 import type { AutoRoleCondition, AutoRoleConfig, Channel, Role } from "./types";
 
@@ -49,10 +50,14 @@ type AutoRoleSectionProps = {
   onSave: () => void;
 };
 
-const CONDITION_OPTIONS: { value: AutoRoleCondition; label: string }[] = [
-  { value: "more_than", label: "More than" },
-  { value: "less_than", label: "Less than" },
-  { value: "equal_to", label: "Equal to" },
+const CONDITION_OPTIONS: {
+  value: AutoRoleCondition;
+  key: string;
+  fallback: string;
+}[] = [
+  { value: "more_than", key: "settings.autoRole.conditions.moreThan", fallback: "More than" },
+  { value: "less_than", key: "settings.autoRole.conditions.lessThan", fallback: "Less than" },
+  { value: "equal_to", key: "settings.autoRole.conditions.equalTo", fallback: "Equal to" },
 ];
 
 function createRuleId() {
@@ -83,10 +88,11 @@ function SearchableSelect({
   options,
   placeholder,
   disabled,
-  emptyText = "No options found.",
+  emptyText,
   loading,
   onOpen,
 }: SearchableSelectProps) {
+  const { t } = useDashboardI18n();
   const [open, setOpen] = useState(false);
   const selected = options.find((item) => item.value === value) || null;
 
@@ -124,8 +130,10 @@ function SearchableSelect({
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
         <Command>
-          <CommandInput placeholder="Search..." />
-          <CommandEmpty>{emptyText}</CommandEmpty>
+          <CommandInput placeholder={t("common.searchPlaceholder", "Search...")} />
+          <CommandEmpty>
+            {emptyText ?? t("common.noOptionsFound", "No options found.")}
+          </CommandEmpty>
           <CommandList className="max-h-64 overflow-auto">
             <CommandGroup>
               {options.map((option) => (
@@ -176,6 +184,7 @@ function AutoRoleSectionComponent({
   onOpenRoles,
   onSave,
 }: AutoRoleSectionProps) {
+  const { t } = useDashboardI18n();
   const [requiredRolePickerOpen, setRequiredRolePickerOpen] = useState(false);
 
   const roleById = useMemo(
@@ -188,8 +197,14 @@ function AutoRoleSectionComponent({
     ? value.requiredRoleIds
     : [];
   const requiredRoleButtonLabel = selectedRequiredRoleIds.length
-    ? `${selectedRequiredRoleIds.length} role${selectedRequiredRoleIds.length === 1 ? "" : "s"} selected`
-    : "All roles";
+    ? selectedRequiredRoleIds.length === 1
+      ? t("settings.autoRole.requiredRole.oneSelected", "{count} role selected", {
+          count: selectedRequiredRoleIds.length,
+        })
+      : t("settings.autoRole.requiredRole.manySelected", "{count} roles selected", {
+          count: selectedRequiredRoleIds.length,
+        })
+    : t("settings.autoRole.requiredRole.allRoles", "All roles");
   const roleOptions = useMemo(
     () =>
       roles.map((role) => ({
@@ -201,16 +216,23 @@ function AutoRoleSectionComponent({
     [roles]
   );
   const requiredRoleRuleOptions = useMemo(
-    () => [
-      { value: "__any_role__", label: "Any role", search: "any role" },
-      ...roles.map((role) => ({
-        value: role.id,
-        label: role.name,
-        sublabel: role.id,
-        search: `${role.name} ${role.id}`,
-      })),
-    ],
-    [roles]
+    () => {
+      const anyRoleLabel = t("settings.autoRole.rules.anyRole", "Any role");
+      return [
+        {
+          value: "__any_role__",
+          label: anyRoleLabel,
+          search: `${anyRoleLabel} any role`,
+        },
+        ...roles.map((role) => ({
+          value: role.id,
+          label: role.name,
+          sublabel: role.id,
+          search: `${role.name} ${role.id}`,
+        })),
+      ];
+    },
+    [roles, t]
   );
   const approvalChannelOptions = useMemo(
     () =>
@@ -238,20 +260,25 @@ function AutoRoleSectionComponent({
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
               <ShieldCheck className="h-4 w-4" />
-              Auto role by voice time
+              {t("settings.autoRole.title", "Auto role by voice time")}
             </CardTitle>
             <CardDescription>
-              Assign server roles based on total voice time in JTC and Voice Log channels.
+              {t(
+                "settings.autoRole.description",
+                "Assign server roles based on total voice time in JTC and Voice Log channels."
+              )}
             </CardDescription>
           </div>
           <div className="flex items-center gap-3">
             <Badge variant={value.enabled ? "default" : "secondary"} className="rounded-full px-3 py-1">
-              {value.enabled ? "Enabled" : "Disabled"}
+              {value.enabled
+                ? t("common.enabled", "Enabled")
+                : t("common.disabled", "Disabled")}
             </Badge>
             <Switch
               checked={value.enabled}
               onCheckedChange={(enabled) => onChange({ ...value, enabled })}
-              aria-label="Enable auto role"
+              aria-label={t("settings.autoRole.enableAria", "Enable auto role")}
               disabled={loadingConfig}
             />
           </div>
@@ -261,9 +288,17 @@ function AutoRoleSectionComponent({
       <CardContent className="space-y-6">
         <div className={`space-y-4 ${dashboardPanel}`}>
           <div>
-            <div className="text-sm font-medium">Global role required to apply</div>
+            <div className="text-sm font-medium">
+              {t(
+                "settings.autoRole.requiredRole.title",
+                "Global role required to apply"
+              )}
+            </div>
             <div className="text-xs text-muted-foreground">
-              Choose who can be evaluated by auto-role rules. Pick All roles, or select one or more required guild roles.
+              {t(
+                "settings.autoRole.requiredRole.description",
+                "Choose who can be evaluated by auto-role rules. Pick All roles, or select one or more required guild roles."
+              )}
             </div>
           </div>
 
@@ -289,12 +324,19 @@ function AutoRoleSectionComponent({
             </PopoverTrigger>
             <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
               <Command>
-                <CommandInput placeholder="Search roles..." />
-                <CommandEmpty>No roles found.</CommandEmpty>
+                <CommandInput
+                  placeholder={t("settings.autoRole.searchRolesPlaceholder", "Search roles...")}
+                />
+                <CommandEmpty>
+                  {t("settings.autoRole.noRolesFound", "No roles found.")}
+                </CommandEmpty>
                 <CommandList className="max-h-72 overflow-auto">
                   <CommandGroup>
                     <CommandItem
-                      value="all roles everyone no requirement"
+                      value={`${t("settings.autoRole.requiredRole.allRoles", "All roles")} ${t(
+                        "settings.autoRole.requiredRole.allRolesHelp",
+                        "Everyone can be evaluated by auto-role rules."
+                      )} all roles everyone no requirement`}
                       onSelect={() => {
                         onChange({
                           ...value,
@@ -311,15 +353,22 @@ function AutoRoleSectionComponent({
                         )}
                       />
                       <span className="min-w-0">
-                        <span className="block truncate">All roles</span>
+                        <span className="block truncate">
+                          {t("settings.autoRole.requiredRole.allRoles", "All roles")}
+                        </span>
                         <span className="block truncate text-[10px] text-muted-foreground">
-                          Everyone can be evaluated by auto-role rules.
+                          {t(
+                            "settings.autoRole.requiredRole.allRolesHelp",
+                            "Everyone can be evaluated by auto-role rules."
+                          )}
                         </span>
                       </span>
                     </CommandItem>
                   </CommandGroup>
                   <CommandSeparator />
-                  <CommandGroup heading="Guild roles">
+                  <CommandGroup
+                    heading={t("settings.autoRole.requiredRole.guildRoles", "Guild roles")}
+                  >
                     {roles.map((role) => {
                       const selected = selectedRequiredRoleIds.includes(role.id);
                       return (
@@ -358,7 +407,9 @@ function AutoRoleSectionComponent({
             </PopoverContent>
           </Popover>
           {rolesLoaded && roles.length === 0 ? (
-            <div className="text-xs text-muted-foreground">No roles found.</div>
+            <div className="text-xs text-muted-foreground">
+              {t("settings.autoRole.noRolesFound", "No roles found.")}
+            </div>
           ) : null}
 
           {selectedRequiredRoleIds.length ? (
@@ -401,7 +452,9 @@ function AutoRoleSectionComponent({
 
         <div className={`space-y-4 ${dashboardPanel}`}>
           <div className="flex items-center justify-between">
-            <div className="text-sm font-medium">Time logic rules</div>
+            <div className="text-sm font-medium">
+              {t("settings.autoRole.rules.title", "Time logic rules")}
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -425,15 +478,15 @@ function AutoRoleSectionComponent({
               }
             >
               <Plus className="h-4 w-4" />
-              Add rule
+              {t("settings.autoRole.rules.add", "Add rule")}
             </Button>
           </div>
 
           <div className="hidden md:grid md:grid-cols-[1fr_170px_120px_1fr_auto] gap-2 px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
-            <span>Required role</span>
-            <span>Condition</span>
-            <span>Hours</span>
-            <span>Role given</span>
+            <span>{t("settings.autoRole.rules.requiredRoleColumn", "Required role")}</span>
+            <span>{t("settings.autoRole.rules.conditionColumn", "Condition")}</span>
+            <span>{t("settings.autoRole.rules.hoursColumn", "Hours")}</span>
+            <span>{t("settings.autoRole.rules.roleGivenColumn", "Role given")}</span>
             <span />
           </div>
 
@@ -452,8 +505,8 @@ function AutoRoleSectionComponent({
                     }
                     disabled={formDisabled}
                     options={requiredRoleRuleOptions}
-                    placeholder="Any role"
-                    emptyText="No roles found."
+                    placeholder={t("settings.autoRole.rules.anyRole", "Any role")}
+                    emptyText={t("settings.autoRole.noRolesFound", "No roles found.")}
                     loading={loadingRoles}
                     onOpen={onOpenRoles}
                     onChange={(selectedValue) =>
@@ -496,7 +549,7 @@ function AutoRoleSectionComponent({
                     <SelectContent className="max-h-64 overflow-auto">
                       {CONDITION_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
-                          {option.label}
+                          {t(option.key, option.fallback)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -525,15 +578,18 @@ function AutoRoleSectionComponent({
                         ),
                       });
                     }}
-                    placeholder="Hours"
+                    placeholder={t("settings.autoRole.rules.hoursPlaceholder", "Hours")}
                   />
 
                   <SearchableSelect
                     value={rule.roleId}
                     disabled={formDisabled}
                     options={roleOptions}
-                    placeholder="Select role to give"
-                    emptyText="No roles found."
+                    placeholder={t(
+                      "settings.autoRole.rules.roleToGivePlaceholder",
+                      "Select role to give"
+                    )}
+                    emptyText={t("settings.autoRole.noRolesFound", "No roles found.")}
                     loading={loadingRoles}
                     onOpen={onOpenRoles}
                     onChange={(roleId) =>
@@ -558,7 +614,7 @@ function AutoRoleSectionComponent({
                         rules: value.rules.filter((item) => item.id !== rule.id),
                       })
                     }
-                    aria-label="Remove rule"
+                    aria-label={t("settings.autoRole.rules.removeAria", "Remove rule")}
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -567,7 +623,10 @@ function AutoRoleSectionComponent({
             </div>
           ) : (
             <div className="text-xs text-muted-foreground">
-              No rules yet. Add at least one rule to assign roles by voice time.
+              {t(
+                "settings.autoRole.rules.empty",
+                "No rules yet. Add at least one rule to assign roles by voice time."
+              )}
             </div>
           )}
         </div>
@@ -575,9 +634,14 @@ function AutoRoleSectionComponent({
         <div className={`space-y-4 ${dashboardPanel}`}>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium">Require admin permission</div>
+              <div className="text-sm font-medium">
+                {t("settings.autoRole.approval.title", "Require admin permission")}
+              </div>
               <div className="text-xs text-muted-foreground">
-                If enabled, matched users will wait for admin approval before receiving roles.
+                {t(
+                  "settings.autoRole.approval.description",
+                  "If enabled, matched users will wait for admin approval before receiving roles."
+                )}
               </div>
             </div>
             <Switch
@@ -591,7 +655,10 @@ function AutoRoleSectionComponent({
                     : null,
                 })
               }
-              aria-label="Require admin approval"
+              aria-label={t(
+                "settings.autoRole.approval.requireAria",
+                "Require admin approval"
+              )}
               disabled={formDisabled}
             />
           </div>
@@ -601,8 +668,14 @@ function AutoRoleSectionComponent({
               value={value.approvalChannelId ?? ""}
               disabled={formDisabled}
               options={approvalChannelOptions}
-              placeholder="Select approval channel"
-              emptyText="No text channels found."
+              placeholder={t(
+                "settings.autoRole.approval.channelPlaceholder",
+                "Select approval channel"
+              )}
+              emptyText={t(
+                "settings.autoRole.approval.noChannels",
+                "No text channels found."
+              )}
               loading={loadingChannels}
               onOpen={onOpenTextChannels}
               onChange={(channelId) =>
@@ -614,7 +687,12 @@ function AutoRoleSectionComponent({
             />
           ) : null}
           {value.requireAdminApproval && channelsLoaded && textChannels.length === 0 ? (
-            <div className="text-xs text-muted-foreground">No text channels found.</div>
+            <div className="text-xs text-muted-foreground">
+              {t(
+                "settings.autoRole.approval.noChannels",
+                "No text channels found."
+              )}
+            </div>
           ) : null}
         </div>
 
@@ -628,12 +706,24 @@ function AutoRoleSectionComponent({
             )}
           >
             {!value.enabled
-              ? "Auto role is disabled. Enable it to edit role logic and approval settings."
+              ? t(
+                  "settings.autoRole.status.disabled",
+                  "Auto role is disabled. Enable it to edit role logic and approval settings."
+                )
               : hasInvalidRules
-              ? "Each rule needs valid hours, role to give, and required role (when enabled)."
+              ? t(
+                  "settings.autoRole.status.invalidRules",
+                  "Each rule needs valid hours, role to give, and required role (when enabled)."
+                )
               : needsApprovalChannel
-                ? "Approval channel is required when admin approval is enabled."
-                : "Changes are saved with the dashboard configuration."}
+                ? t(
+                    "settings.autoRole.status.approvalChannelRequired",
+                    "Approval channel is required when admin approval is enabled."
+                  )
+                : t(
+                    "settings.autoRole.status.ready",
+                    "Changes are saved with the dashboard configuration."
+                  )}
           </div>
           <Button
             onClick={onSave}
@@ -650,10 +740,10 @@ function AutoRoleSectionComponent({
             {saving ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Saving
+                {t("common.saving", "Saving")}
               </span>
             ) : (
-              "Save configuration"
+              t("common.saveConfiguration", "Save configuration")
             )}
           </Button>
         </div>

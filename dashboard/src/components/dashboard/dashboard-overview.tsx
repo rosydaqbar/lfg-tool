@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 import { dashboardCard, dashboardEmptyCompact, dashboardError, dashboardInset, dashboardWarningCard } from "@/components/ui/patterns";
 import type {
   AutoRoleRequest,
@@ -58,61 +59,109 @@ type DashboardOverviewProps = {
   onOpenDetail: (view: DetailView) => void;
 };
 
-function formatDuration(totalMs: number) {
+type DashboardTranslate = ReturnType<typeof useDashboardI18n>["t"];
+type DashboardLocale = ReturnType<typeof useDashboardI18n>["locale"];
+
+function formatDuration(totalMs: number, t: DashboardTranslate) {
   const safeMs = Math.max(0, Number(totalMs) || 0);
   const totalMinutes = Math.floor(safeMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours <= 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
+  if (hours <= 0) {
+    return t("dashboard.overview.duration.minutes", "{minutes}m", { minutes });
+  }
+  return t(
+    "dashboard.overview.duration.hoursMinutes",
+    "{hours}h {minutes}m",
+    { hours, minutes }
+  );
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString();
+function formatDate(
+  value: string | null | undefined,
+  t: DashboardTranslate,
+  locale: DashboardLocale
+) {
+  if (!value) return t("dashboard.overview.common.notAvailable", "-");
+  return new Date(value).toLocaleString(locale === "id" ? "id-ID" : "en-US");
 }
 
-function formatActiveDuration(value: string) {
+function formatActiveDuration(value: string, t: DashboardTranslate) {
   const startedAt = new Date(value).getTime();
-  if (!Number.isFinite(startedAt)) return "-";
+  if (!Number.isFinite(startedAt)) {
+    return t("dashboard.overview.common.notAvailable", "-");
+  }
   const totalMinutes = Math.max(0, Math.floor((Date.now() - startedAt) / 60000));
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor((totalMinutes % 1440) / 60);
   const minutes = totalMinutes % 60;
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+  if (days > 0) {
+    return t("dashboard.overview.duration.daysHours", "{days}d {hours}h", {
+      days,
+      hours,
+    });
+  }
+  if (hours > 0) {
+    return t(
+      "dashboard.overview.duration.hoursMinutes",
+      "{hours}h {minutes}m",
+      { hours, minutes }
+    );
+  }
+  return t("dashboard.overview.duration.minutes", "{minutes}m", { minutes });
 }
 
-function formatRuleKey(ruleKey: string) {
+function formatRuleKey(ruleKey: string, t: DashboardTranslate) {
   const [condition, hours, roleId] = ruleKey.split(":");
   const conditionLabel =
     condition === "more_than"
-      ? "More than"
+      ? t("dashboard.overview.rule.moreThan", "More than")
       : condition === "less_than"
-        ? "Less than"
+        ? t("dashboard.overview.rule.lessThan", "Less than")
         : condition === "equal_to"
-          ? "Equal to"
+          ? t("dashboard.overview.rule.equalTo", "Equal to")
           : condition;
   if (!hours) return ruleKey;
-  if (!roleId) return `${conditionLabel} ${hours}h`;
-  return `${conditionLabel} ${hours}h -> ${roleId}`;
+  if (!roleId) {
+    return t("dashboard.overview.rule.withHours", "{condition} {hours}h", {
+      condition: conditionLabel,
+      hours,
+    });
+  }
+  return t(
+    "dashboard.overview.rule.withHoursAndRole",
+    "{condition} {hours}h -> {roleId}",
+    { condition: conditionLabel, hours, roleId }
+  );
 }
 
-function statusBadge(status: AutoRoleRequest["status"]) {
+function statusBadge(status: AutoRoleRequest["status"], t: DashboardTranslate) {
   if (status === "pending") {
-    return <StatusBadge tone="warning">Needs action</StatusBadge>;
+    return (
+      <StatusBadge tone="warning">
+        {t("dashboard.overview.requestStatus.pending", "Needs action")}
+      </StatusBadge>
+    );
   }
   if (status === "approved") {
-    return <StatusBadge tone="success">Approved</StatusBadge>;
+    return (
+      <StatusBadge tone="success">
+        {t("dashboard.overview.requestStatus.approved", "Approved")}
+      </StatusBadge>
+    );
   }
-  return <StatusBadge tone="danger">Denied</StatusBadge>;
+  return (
+    <StatusBadge tone="danger">
+      {t("dashboard.overview.requestStatus.denied", "Denied")}
+    </StatusBadge>
+  );
 }
 
 function DashboardOverviewComponent({
   selectedGuildId,
   onOpenDetail,
 }: DashboardOverviewProps) {
+  const { locale, t } = useDashboardI18n();
   const [tempChannels, setTempChannels] = useState<SummaryTempChannel[]>([]);
   const [tempChannelCount, setTempChannelCount] = useState(0);
   const [voiceLogs, setVoiceLogs] = useState<TempVoiceDeleteLog[]>([]);
@@ -138,7 +187,14 @@ function DashboardOverviewComponent({
       const response = await fetch(`/api/guilds/${selectedGuildId}/dashboard-summary`, {
         cache: "no-store",
       });
-      if (!response.ok) throw new Error("Failed to load dashboard summary");
+      if (!response.ok) {
+        throw new Error(
+          t(
+            "dashboard.overview.errors.loadSummary",
+            "Failed to load dashboard summary"
+          )
+        );
+      }
 
       const data = (await response.json()) as DashboardSummaryResponse;
 
@@ -161,7 +217,14 @@ function DashboardOverviewComponent({
       loadedOnce.current = true;
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load dashboard summary");
+      setError(
+        err instanceof Error
+          ? err.message
+          : t(
+              "dashboard.overview.errors.loadSummary",
+              "Failed to load dashboard summary"
+            )
+      );
       return false;
     } finally {
       setLoading(false);
@@ -179,11 +242,24 @@ function DashboardOverviewComponent({
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || "Failed to process auto-role request");
+        throw new Error(
+          payload?.error ||
+            t(
+              "dashboard.overview.errors.processAutoRoleRequest",
+              "Failed to process auto-role request"
+            )
+        );
       }
       await loadDashboard(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to process auto-role request");
+      setError(
+        err instanceof Error
+          ? err.message
+          : t(
+              "dashboard.overview.errors.processAutoRoleRequest",
+              "Failed to process auto-role request"
+            )
+      );
     } finally {
       setActingRequestId(null);
     }
@@ -205,14 +281,22 @@ function DashboardOverviewComponent({
             <div>
               <CardTitle className="flex items-center gap-2 text-lg text-amber-900 dark:text-amber-100">
                 <AlertTriangle className="h-4 w-4" />
-                Take Action
+                {t("dashboard.overview.pending.title", "Take Action")}
               </CardTitle>
               <CardDescription className="text-amber-800/80 dark:text-amber-100/80">
-                {counts.pending} auto-role request{counts.pending === 1 ? "" : "s"} waiting for approval.
+                {t(
+                  counts.pending === 1
+                    ? "dashboard.overview.pending.description.one"
+                    : "dashboard.overview.pending.description.many",
+                  counts.pending === 1
+                    ? "{count} auto-role request waiting for approval."
+                    : "{count} auto-role requests waiting for approval.",
+                  { count: counts.pending }
+                )}
               </CardDescription>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenDetail("auto-role")}>
-              Full Log
+              {t("dashboard.overview.actions.fullLog", "Full Log")}
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -224,10 +308,10 @@ function DashboardOverviewComponent({
                     <div className="space-y-1">
                       <div className="font-medium">{request.userName || request.userId}</div>
                       <div className="text-xs text-muted-foreground">
-                        Role <span className="font-mono">{request.roleId}</span> • Voice {formatDuration(request.totalMs)}
+                        {t("dashboard.overview.labels.role", "Role")} <span className="font-mono">{request.roleId}</span> • {t("dashboard.overview.labels.voice", "Voice")} {formatDuration(request.totalMs, t)}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {formatRuleKey(request.ruleKey)} • Requested {formatDate(request.createdAt)}
+                         {formatRuleKey(request.ruleKey, t)} • {t("dashboard.overview.labels.requested", "Requested")} {formatDate(request.createdAt, t, locale)}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -237,7 +321,7 @@ function DashboardOverviewComponent({
                         disabled={actingRequestId === request.id}
                         onClick={() => void handleRequestAction(request.id, "approve")}
                       >
-                        Approve
+                        {t("dashboard.overview.actions.approve", "Approve")}
                       </Button>
                       <Button
                         type="button"
@@ -246,7 +330,7 @@ function DashboardOverviewComponent({
                         disabled={actingRequestId === request.id}
                         onClick={() => void handleRequestAction(request.id, "deny")}
                       >
-                        Deny
+                        {t("dashboard.overview.actions.deny", "Deny")}
                       </Button>
                     </div>
                   </div>
@@ -254,11 +338,24 @@ function DashboardOverviewComponent({
                 ))}
               </div>
             ) : (
-              <div className="text-sm text-muted-foreground">Loading the pending queue...</div>
+              <div className="text-sm text-muted-foreground">
+                {t(
+                  "dashboard.overview.pending.loading",
+                  "Loading the pending queue..."
+                )}
+              </div>
             )}
             {counts.pending > pendingRequests.length ? (
               <Button type="button" variant="ghost" size="sm" onClick={() => onOpenDetail("auto-role")}>
-                Review {counts.pending - pendingRequests.length} more pending request{counts.pending - pendingRequests.length === 1 ? "" : "s"}
+                {t(
+                  counts.pending - pendingRequests.length === 1
+                    ? "dashboard.overview.pending.reviewMore.one"
+                    : "dashboard.overview.pending.reviewMore.many",
+                  counts.pending - pendingRequests.length === 1
+                    ? "Review {count} more pending request"
+                    : "Review {count} more pending requests",
+                  { count: counts.pending - pendingRequests.length }
+                )}
               </Button>
             ) : null}
           </CardContent>
@@ -271,19 +368,32 @@ function DashboardOverviewComponent({
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Volume2 className="h-4 w-4" />
-                Active Temp Channels
+                {t("dashboard.overview.tempChannels.title", "Active Temp Channels")}
               </CardTitle>
-              <CardDescription>{tempChannelCount} currently tracked channel{tempChannelCount === 1 ? "" : "s"}.</CardDescription>
+              <CardDescription>
+                {t(
+                  tempChannelCount === 1
+                    ? "dashboard.overview.tempChannels.description.one"
+                    : "dashboard.overview.tempChannels.description.many",
+                  tempChannelCount === 1
+                    ? "{count} currently tracked channel."
+                    : "{count} currently tracked channels.",
+                  { count: tempChannelCount }
+                )}
+              </CardDescription>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenDetail("active-temp")}>
-              Open Details
+              {t("dashboard.overview.actions.openDetails", "Open Details")}
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {loading && !loadedOnce.current ? <Skeleton className="h-24 w-full" /> : null}
             {!loading && tempChannels.length === 0 ? (
               <div className={dashboardEmptyCompact}>
-                No active temp channels found.
+                {t(
+                  "dashboard.overview.tempChannels.empty",
+                  "No active temp channels found."
+                )}
               </div>
             ) : null}
             {tempChannels.length ? (
@@ -292,18 +402,24 @@ function DashboardOverviewComponent({
                   <div key={item.channelId} className="flex items-center justify-between gap-4 py-3 text-sm first:pt-0 last:pb-0">
                     <div className="min-w-0">
                       <div className="truncate font-medium">
-                        {item.channelName || "Unknown voice channel"}
+                        {item.channelName ||
+                          t(
+                            "dashboard.overview.tempChannels.unknownChannel",
+                            "Unknown voice channel"
+                          )}
                       </div>
                       <div className="truncate font-mono text-xs text-muted-foreground">
                         {item.channelId}
                       </div>
                       <div className="truncate text-xs text-muted-foreground">
-                        Owner: {item.ownerName || item.ownerId}
+                        {t("dashboard.overview.labels.ownerWithColon", "Owner:")} {item.ownerName || item.ownerId}
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="font-mono text-sm">{formatActiveDuration(item.createdAt)}</div>
-                      <div className="text-xs text-muted-foreground">active</div>
+                      <div className="font-mono text-sm">{formatActiveDuration(item.createdAt, t)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("dashboard.overview.tempChannels.active", "active")}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -317,19 +433,29 @@ function DashboardOverviewComponent({
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Clock3 className="h-4 w-4" />
-                Voice Log
+                {t("dashboard.overview.voiceLog.title", "Voice Log")}
               </CardTitle>
-              <CardDescription>{todayVoiceCount} session{todayVoiceCount === 1 ? "" : "s"} today, GMT+7.</CardDescription>
+              <CardDescription>
+                {t(
+                  todayVoiceCount === 1
+                    ? "dashboard.overview.voiceLog.today.one"
+                    : "dashboard.overview.voiceLog.today.many",
+                  todayVoiceCount === 1
+                    ? "{count} session today, GMT+7."
+                    : "{count} sessions today, GMT+7.",
+                  { count: todayVoiceCount }
+                )}
+              </CardDescription>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenDetail("voice-log")}>
-              Open Details
+              {t("dashboard.overview.actions.openDetails", "Open Details")}
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {loading && !loadedOnce.current ? <Skeleton className="h-24 w-full" /> : null}
             {!loading && voiceLogs.length === 0 ? (
               <div className={dashboardEmptyCompact}>
-                No voice log data yet.
+                {t("dashboard.overview.voiceLog.empty", "No voice log data yet.")}
               </div>
             ) : null}
             {voiceLogs.length ? (
@@ -338,7 +464,7 @@ function DashboardOverviewComponent({
                 <div key={log.id} className="py-3 text-sm first:pt-0 last:pb-0">
                   <div className="font-medium">{log.channelName || log.channelId}</div>
                   <div className="text-xs text-muted-foreground">
-                    Owner {log.ownerName || log.ownerId} • Created {formatDate(log.joinedAt)} • Removed {formatDate(log.eventAt)}
+                     {t("dashboard.overview.labels.owner", "Owner")} {log.ownerName || log.ownerId} • {t("dashboard.overview.labels.created", "Created")} {formatDate(log.joinedAt, t, locale)} • {t("dashboard.overview.labels.removed", "Removed")} {formatDate(log.eventAt, t, locale)}
                   </div>
                 </div>
                 ))}
@@ -352,26 +478,37 @@ function DashboardOverviewComponent({
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Trophy className="h-4 w-4" />
-                Voice Leaderboard
+                {t("dashboard.overview.leaderboard.title", "Voice Leaderboard")}
               </CardTitle>
-              <CardDescription>Total voice activity across all tracked users.</CardDescription>
+              <CardDescription>
+                {t(
+                  "dashboard.overview.leaderboard.description",
+                  "Total voice activity across all tracked users."
+                )}
+              </CardDescription>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenDetail("leaderboard")}>
-              Open Details
+              {t("dashboard.overview.actions.openDetails", "Open Details")}
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
               <div className={dashboardInset}>
-                <div className="text-xs text-muted-foreground">Users</div>
+                <div className="text-xs text-muted-foreground">
+                  {t("dashboard.overview.leaderboard.users", "Users")}
+                </div>
                 <div className="text-xl font-semibold">{leaderboard.totalUsers}</div>
               </div>
               <div className={dashboardInset}>
-                <div className="text-xs text-muted-foreground">Hours</div>
+                <div className="text-xs text-muted-foreground">
+                  {t("dashboard.overview.leaderboard.hours", "Hours")}
+                </div>
                 <div className="text-xl font-semibold">{Math.floor(leaderboard.totalMs / 3600000)}</div>
               </div>
               <div className={dashboardInset}>
-                <div className="text-xs text-muted-foreground">Sessions</div>
+                <div className="text-xs text-muted-foreground">
+                  {t("dashboard.overview.leaderboard.sessions", "Sessions")}
+                </div>
                 <div className="text-xl font-semibold">{leaderboard.totalSessions}</div>
               </div>
             </div>
@@ -379,9 +516,16 @@ function DashboardOverviewComponent({
               {leaderboard.top.length ? leaderboard.top.map((item, index) => (
                 <div key={item.userId} className="flex items-center justify-between gap-3 py-3 text-sm first:pt-0 last:pb-0">
                   <span>{index + 1}. {item.userName || item.userId}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{formatDuration(item.totalMs)}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{formatDuration(item.totalMs, t)}</span>
                 </div>
-              )) : <div className="text-sm text-muted-foreground">No leaderboard data yet.</div>}
+              )) : (
+                <div className="text-sm text-muted-foreground">
+                  {t(
+                    "dashboard.overview.leaderboard.empty",
+                    "No leaderboard data yet."
+                  )}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -391,12 +535,18 @@ function DashboardOverviewComponent({
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <ShieldCheck className="h-4 w-4" />
-                Auto Role Requests Log
+                {t("dashboard.overview.autoRole.title", "Auto Role Requests Log")}
               </CardTitle>
-              <CardDescription>{counts.pending} pending • {counts.denied} denied</CardDescription>
+              <CardDescription>
+                {t(
+                  "dashboard.overview.autoRole.summary",
+                  "{pending} pending • {denied} denied",
+                  { pending: counts.pending, denied: counts.denied }
+                )}
+              </CardDescription>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenDetail("auto-role")}>
-              Open Details
+              {t("dashboard.overview.actions.openDetails", "Open Details")}
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -406,15 +556,22 @@ function DashboardOverviewComponent({
                 <div key={request.id} className="py-3 text-sm first:pt-0 last:pb-0">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium">{request.userName || request.userId}</span>
-                    {statusBadge(request.status)}
+                    {statusBadge(request.status, t)}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {formatDate(request.createdAt)} • {formatRuleKey(request.ruleKey)}
+                     {formatDate(request.createdAt, t, locale)} • {formatRuleKey(request.ruleKey, t)}
                   </div>
                 </div>
                 ))}
               </div>
-            ) : <div className="text-sm text-muted-foreground">No auto-role requests found.</div>}
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                {t(
+                  "dashboard.overview.autoRole.empty",
+                  "No auto-role requests found."
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -410,15 +410,12 @@ function formatNoticeMinutes(minutes: number, locale: "en" | "id") {
     : `${safeMinutes} minute${safeMinutes === 1 ? "" : "s"}`;
 }
 
-function buildSpamCatcherNoticePayload(
+function buildSpamCatcherNoticeContent(
   caughtCount: number,
   integrityCount: number,
   config: SpamCatcherConfigPayload,
-  context: { guildId: string; channelId: string; locale?: string }
+  locale: "en" | "id"
 ) {
-  const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
-  const safeIntegrityCount = Math.max(0, Math.floor(Number(integrityCount) || 0));
-  const locale = normalizeLocale(context.locale);
   const timeoutText = formatNoticeMinutes(config.timeoutMinutes, locale);
   const banDelayText = formatNoticeMinutes(config.banDelayMinutes, locale);
   const strings = spamCatcherNoticeStrings(locale);
@@ -432,18 +429,41 @@ function buildSpamCatcherNoticePayload(
   const appeal = config.autoBanEnabled && config.banMode === "immediate"
     ? strings.appealImmediate
     : strings.appealTimeout;
-  const content = [
+
+  return [
     strings.title,
     interpolate(strings.body, { action, appeal }),
     "",
     strings.warningTitle,
     strings.warningBody,
     "",
-    interpolate(strings.caughtCount, { count: safeCount }),
-    interpolate(strings.integrityCount, { count: safeIntegrityCount }),
+    interpolate(strings.caughtCount, { count: caughtCount }),
+    interpolate(strings.integrityCount, { count: integrityCount }),
   ].join("\n");
+}
+
+function buildSpamCatcherNoticePayload(
+  caughtCount: number,
+  integrityCount: number,
+  config: SpamCatcherConfigPayload,
+  context: { guildId: string; channelId: string; locale?: string }
+) {
+  const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
+  const safeIntegrityCount = Math.max(0, Math.floor(Number(integrityCount) || 0));
+  const locale = normalizeLocale(context.locale);
+  const strings = spamCatcherNoticeStrings(locale);
+  const content = buildSpamCatcherNoticeContent(safeCount, safeIntegrityCount, config, locale);
 
   const containerComponents: Record<string, unknown>[] = [{ type: 10, content }];
+  if (locale !== "en") {
+    containerComponents.push(
+      { type: 14, divider: true, spacing: 1 },
+      {
+        type: 10,
+        content: buildSpamCatcherNoticeContent(safeCount, safeIntegrityCount, config, "en"),
+      }
+    );
+  }
   if (config.integrityCheckEnabled) {
     containerComponents.push({
       type: 1,

@@ -29,29 +29,24 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { dashboardCard } from "@/components/ui/patterns";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 import { cn } from "@/lib/utils";
 import type { Channel, SpamCatcherConfig } from "./types";
 
 const DISCORD_TIMEOUT_MAX_MINUTES = 28 * 24 * 60;
 const TIMEOUT_OPTIONS = [
-  { value: 1, label: "1 minute" },
-  { value: 5, label: "5 minutes" },
-  { value: 10, label: "10 minutes" },
-  { value: 30, label: "30 minutes" },
-  { value: 60, label: "1 hour" },
-  { value: 360, label: "6 hours" },
-  { value: 1440, label: "1 day" },
-  { value: 10080, label: "7 days" },
-  { value: DISCORD_TIMEOUT_MAX_MINUTES, label: "28 days" },
+  { value: 1, key: "settings.spamCatcher.duration.oneMinute", fallback: "1 minute" },
+  { value: 5, key: "settings.spamCatcher.duration.fiveMinutes", fallback: "5 minutes" },
+  { value: 10, key: "settings.spamCatcher.duration.tenMinutes", fallback: "10 minutes" },
+  { value: 30, key: "settings.spamCatcher.duration.thirtyMinutes", fallback: "30 minutes" },
+  { value: 60, key: "settings.spamCatcher.duration.oneHour", fallback: "1 hour" },
+  { value: 360, key: "settings.spamCatcher.duration.sixHours", fallback: "6 hours" },
+  { value: 1440, key: "settings.spamCatcher.duration.oneDay", fallback: "1 day" },
+  { value: 10080, key: "settings.spamCatcher.duration.sevenDays", fallback: "7 days" },
+  { value: DISCORD_TIMEOUT_MAX_MINUTES, key: "settings.spamCatcher.duration.twentyEightDays", fallback: "28 days" },
 ];
-const BAN_DELAY_MINUTE_OPTIONS = [1, 5, 10, 15, 30, 45, 60].map((value) => ({
-  value,
-  label: `${value} minute${value === 1 ? "" : "s"}`,
-}));
-const BAN_DELAY_HOUR_OPTIONS = Array.from({ length: 23 }, (_, index) => index + 2).map((value) => ({
-  value,
-  label: `${value} hours`,
-}));
+const BAN_DELAY_MINUTE_OPTIONS = [1, 5, 10, 15, 30, 45, 60];
+const BAN_DELAY_HOUR_OPTIONS = Array.from({ length: 23 }, (_, index) => index + 2);
 const panelClass = "rounded-xl border border-border/70 bg-muted/10 p-4";
 
 type SpamCatcherSectionProps = {
@@ -64,6 +59,8 @@ type SpamCatcherSectionProps = {
   webhookDestinationChecks: Record<string, {
     status: "idle" | "invalid" | "checking" | "valid" | "error";
     message?: string;
+    channelId?: string;
+    channelName?: string | null;
   }>;
   onChange: (next: SpamCatcherConfig) => void;
   onOpenTextChannels: () => void;
@@ -82,6 +79,7 @@ function SpamCatcherSectionComponent({
   onOpenTextChannels,
   onSave,
 }: SpamCatcherSectionProps) {
+  const { t } = useDashboardI18n();
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
 
@@ -90,7 +88,11 @@ function SpamCatcherSectionComponent({
     [textChannels]
   );
   const selectedChannels = value.channelIds
-    .map((id) => channelById.get(id) || { id, name: `ID: ${id}`, type: "text" as const })
+    .map((id) => channelById.get(id) || {
+      id,
+      name: t("settings.spamCatcher.channelId", "ID: {id}", { id }),
+      type: "text" as const,
+    })
     .filter(Boolean);
   const reviewChannel = value.reviewChannelId ? channelById.get(value.reviewChannelId) : null;
   const formDisabled = loadingConfig || !value.enabled;
@@ -143,20 +145,25 @@ function SpamCatcherSectionComponent({
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
               <ShieldAlert className="h-4 w-4" />
-              Spam Catcher
+              {t("settings.spamCatcher.title", "Spam Catcher")}
             </CardTitle>
             <CardDescription>
-              Automatically timeout or ban users who post in trap channels.
+              {t(
+                "settings.spamCatcher.description",
+                "Automatically timeout or ban users who post in trap channels."
+              )}
             </CardDescription>
           </div>
           <div className="flex items-center gap-3">
             <Badge variant={value.enabled ? "default" : "secondary"} className="rounded-full px-3 py-1">
-              {value.enabled ? "Enabled" : "Disabled"}
+              {value.enabled
+                ? t("common.enabled", "Enabled")
+                : t("common.disabled", "Disabled")}
             </Badge>
             <Switch
               checked={value.enabled}
               onCheckedChange={(enabled) => onChange({ ...value, enabled })}
-              aria-label="Enable Spam Catcher"
+              aria-label={t("settings.spamCatcher.enableAria", "Enable Spam Catcher")}
               disabled={loadingConfig}
             />
           </div>
@@ -166,7 +173,9 @@ function SpamCatcherSectionComponent({
       <CardContent className="space-y-5">
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <div className={`${panelClass} space-y-3`}>
-            <div className="text-sm font-medium">Trap channels</div>
+            <div className="text-sm font-medium">
+              {t("settings.spamCatcher.channels.title", "Trap channels")}
+            </div>
             <Popover
               open={channelsOpen}
               onOpenChange={(open) => {
@@ -183,7 +192,22 @@ function SpamCatcherSectionComponent({
                   disabled={formDisabled}
                 >
                   <span className="truncate text-left">
-                    {value.channelIds.length ? `${value.channelIds.length} channel${value.channelIds.length === 1 ? "" : "s"} selected` : "Select channels"}
+                    {value.channelIds.length
+                      ? value.channelIds.length === 1
+                        ? t(
+                            "settings.spamCatcher.channels.oneSelected",
+                            "{count} channel selected",
+                            { count: value.channelIds.length }
+                          )
+                        : t(
+                            "settings.spamCatcher.channels.manySelected",
+                            "{count} channels selected",
+                            { count: value.channelIds.length }
+                          )
+                      : t(
+                          "settings.spamCatcher.channels.placeholder",
+                          "Select channels"
+                        )}
                   </span>
                   {loadingChannels ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -191,8 +215,15 @@ function SpamCatcherSectionComponent({
               </PopoverTrigger>
               <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                 <Command>
-                  <CommandInput placeholder="Search channels..." />
-                  <CommandEmpty>No channels found.</CommandEmpty>
+                  <CommandInput
+                    placeholder={t(
+                      "settings.spamCatcher.channels.searchPlaceholder",
+                      "Search channels..."
+                    )}
+                  />
+                  <CommandEmpty>
+                    {t("settings.spamCatcher.channels.noneFound", "No channels found.")}
+                  </CommandEmpty>
                   <CommandList className="max-h-64 overflow-auto">
                     <CommandGroup>
                       {textChannels.map((channel) => {
@@ -215,7 +246,12 @@ function SpamCatcherSectionComponent({
               </PopoverContent>
             </Popover>
             {!loadingConfig && channelsLoaded && textChannels.length === 0 ? (
-              <div className="text-xs text-muted-foreground">No text channels were found for this guild.</div>
+              <div className="text-xs text-muted-foreground">
+                {t(
+                  "settings.spamCatcher.channels.noGuildChannels",
+                  "No text channels were found for this guild."
+                )}
+              </div>
             ) : null}
             {selectedChannels.length ? (
               <div className="flex flex-wrap gap-1.5">
@@ -237,7 +273,9 @@ function SpamCatcherSectionComponent({
           </div>
 
           <div className={`${panelClass} space-y-3`}>
-            <div className="text-sm font-medium">Timeout duration</div>
+            <div className="text-sm font-medium">
+              {t("settings.spamCatcher.timeout.title", "Timeout duration")}
+            </div>
             <Select
               value={String(value.timeoutMinutes)}
               onValueChange={(timeoutMinutes) => onChange({
@@ -247,18 +285,26 @@ function SpamCatcherSectionComponent({
               disabled={formDisabled || (value.autoBanEnabled && value.banMode === "immediate")}
             >
               <SelectTrigger className="h-11">
-                <SelectValue placeholder="Select timeout" />
+                <SelectValue
+                  placeholder={t(
+                    "settings.spamCatcher.timeout.placeholder",
+                    "Select timeout"
+                  )}
+                />
               </SelectTrigger>
               <SelectContent>
                 {TIMEOUT_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={String(option.value)}>
-                    {option.label}
+                    {t(option.key, option.fallback)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <div className="text-xs text-muted-foreground">
-              Discord max is 28 days. Immediate bans skip this; timeout-end bans use this as the ban timer.
+              {t(
+                "settings.spamCatcher.timeout.help",
+                "Discord max is 28 days. Immediate bans skip this; timeout-end bans use this as the ban timer."
+              )}
             </div>
           </div>
         </div>
@@ -267,9 +313,14 @@ function SpamCatcherSectionComponent({
           <div className={`${panelClass} space-y-4`}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-sm font-medium">Automatic banning</div>
+                <div className="text-sm font-medium">
+                  {t("settings.spamCatcher.ban.title", "Automatic banning")}
+                </div>
                 <div className="text-xs text-muted-foreground">
-                  Optional. Ban caught users immediately, when timeout ends, or after an appeal window during timeout.
+                  {t(
+                    "settings.spamCatcher.ban.description",
+                    "Optional. Ban caught users immediately, when timeout ends, or after an appeal window during timeout."
+                  )}
                 </div>
               </div>
               <Switch
@@ -291,18 +342,31 @@ function SpamCatcherSectionComponent({
               disabled={formDisabled || !value.autoBanEnabled}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Choose ban behavior" />
+                <SelectValue
+                  placeholder={t(
+                    "settings.spamCatcher.ban.placeholder",
+                    "Choose ban behavior"
+                  )}
+                />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="immediate">Ban immediately</SelectItem>
-                <SelectItem value="after_timeout">Ban after timeout ends</SelectItem>
-                <SelectItem value="delayed">Ban after appeal window</SelectItem>
+                <SelectItem value="immediate">
+                  {t("settings.spamCatcher.ban.immediate", "Ban immediately")}
+                </SelectItem>
+                <SelectItem value="after_timeout">
+                  {t("settings.spamCatcher.ban.afterTimeout", "Ban after timeout ends")}
+                </SelectItem>
+                <SelectItem value="delayed">
+                  {t("settings.spamCatcher.ban.delayed", "Ban after appeal window")}
+                </SelectItem>
               </SelectContent>
             </Select>
 
             {value.autoBanEnabled && value.banMode === "delayed" ? (
               <div className="space-y-2">
-                <div className="text-sm font-medium">Appeal window</div>
+                <div className="text-sm font-medium">
+                  {t("settings.spamCatcher.ban.appealWindow", "Appeal window")}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Select
                     value={banDelayUnit}
@@ -313,11 +377,18 @@ function SpamCatcherSectionComponent({
                     disabled={formDisabled}
                   >
                     <SelectTrigger className="w-32">
-                      <SelectValue placeholder="Select unit" />
+                      <SelectValue
+                        placeholder={t(
+                          "settings.spamCatcher.ban.unitPlaceholder",
+                          "Select unit"
+                        )}
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="minutes">Minutes</SelectItem>
-                      <SelectItem value="hours">Hours</SelectItem>
+                      <SelectItem value="minutes">
+                        {t("common.minutes", "Minutes")}
+                      </SelectItem>
+                      <SelectItem value="hours">{t("common.hours", "Hours")}</SelectItem>
                     </SelectContent>
                   </Select>
 
@@ -330,19 +401,37 @@ function SpamCatcherSectionComponent({
                     disabled={formDisabled}
                   >
                     <SelectTrigger className="w-36">
-                      <SelectValue placeholder="Select window" />
+                      <SelectValue
+                        placeholder={t(
+                          "settings.spamCatcher.ban.windowPlaceholder",
+                          "Select window"
+                        )}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {(banDelayUnit === "hours" ? BAN_DELAY_HOUR_OPTIONS : BAN_DELAY_MINUTE_OPTIONS).map((option) => (
-                        <SelectItem key={option.value} value={String(option.value)}>
-                          {option.label}
+                        <SelectItem key={option} value={String(option)}>
+                          {banDelayUnit === "hours"
+                            ? t("settings.spamCatcher.duration.hours", "{count} hours", {
+                                count: option,
+                              })
+                            : option === 1
+                              ? t("settings.spamCatcher.duration.oneMinute", "1 minute")
+                              : t(
+                                  "settings.spamCatcher.duration.minutes",
+                                  "{count} minutes",
+                                  { count: option }
+                                )}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Allowed range is 1-60 minutes or 2-24 hours. Appeal instructions are sent to the user during the timeout period; if no admin removes the timeout before this window ends, the user is banned.
+                  {t(
+                    "settings.spamCatcher.ban.appealHelp",
+                    "Allowed range is 1-60 minutes or 2-24 hours. Appeal instructions are sent to the user during the timeout period; if no admin removes the timeout before this window ends, the user is banned."
+                  )}
                 </div>
               </div>
             ) : null}
@@ -350,9 +439,14 @@ function SpamCatcherSectionComponent({
 
           <div className={`${panelClass} space-y-3`}>
             <div>
-              <div className="text-sm font-medium">Admin review channel</div>
+              <div className="text-sm font-medium">
+                {t("settings.spamCatcher.review.title", "Admin review channel")}
+              </div>
               <div className="text-xs text-muted-foreground">
-                Required. Sends caught-user review cards here with ban and timeout controls.
+                {t(
+                  "settings.spamCatcher.review.description",
+                  "Required. Sends caught-user review cards here with ban and timeout controls."
+                )}
               </div>
             </div>
             <Popover
@@ -371,7 +465,16 @@ function SpamCatcherSectionComponent({
                   disabled={formDisabled}
                 >
                   <span className="truncate text-left">
-                    {reviewChannel ? `#${reviewChannel.name}` : value.reviewChannelId ? `ID: ${value.reviewChannelId}` : "Select review channel"}
+                    {reviewChannel
+                      ? `#${reviewChannel.name}`
+                      : value.reviewChannelId
+                        ? t("settings.spamCatcher.channelId", "ID: {id}", {
+                            id: value.reviewChannelId,
+                          })
+                        : t(
+                            "settings.spamCatcher.review.placeholder",
+                            "Select review channel"
+                          )}
                   </span>
                   {loadingChannels ? <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin" /> : null}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -379,8 +482,15 @@ function SpamCatcherSectionComponent({
               </PopoverTrigger>
               <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                 <Command>
-                  <CommandInput placeholder="Search channels..." />
-                  <CommandEmpty>No channels found.</CommandEmpty>
+                  <CommandInput
+                    placeholder={t(
+                      "settings.spamCatcher.channels.searchPlaceholder",
+                      "Search channels..."
+                    )}
+                  />
+                  <CommandEmpty>
+                    {t("settings.spamCatcher.channels.noneFound", "No channels found.")}
+                  </CommandEmpty>
                   <CommandList className="max-h-64 overflow-auto">
                     <CommandGroup>
                       {textChannels.map((channel) => (
@@ -408,9 +518,14 @@ function SpamCatcherSectionComponent({
         <div className={`${panelClass} space-y-3`}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm font-medium">Integrity Checked</div>
+              <div className="text-sm font-medium">
+                {t("settings.spamCatcher.integrity.title", "Integrity Checked")}
+              </div>
               <div className="text-xs text-muted-foreground">
-                It&apos;s a fun button to add integrity who reads this message.
+                {t(
+                  "settings.spamCatcher.integrity.description",
+                  "It's a fun button to add integrity who reads this message."
+                )}
               </div>
             </div>
             <Switch
@@ -423,9 +538,14 @@ function SpamCatcherSectionComponent({
 
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm font-medium">Send notice with webhook</div>
+              <div className="text-sm font-medium">
+                {t("settings.spamCatcher.webhook.title", "Send notice with webhook")}
+              </div>
               <div className="text-xs text-muted-foreground">
-                Optional. Posts one warning through the webhook&apos;s channel instead of the bot account.
+                {t(
+                  "settings.spamCatcher.webhook.description",
+                  "Optional. Posts one warning through the webhook's channel instead of the bot account."
+                )}
               </div>
             </div>
             <Switch
@@ -436,13 +556,18 @@ function SpamCatcherSectionComponent({
           </div>
           {value.integrityCheckEnabled ? (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-              Integrity Checked uses bot-delivered notices so button clicks can be counted. Webhook delivery is temporarily disabled, and your webhook settings are kept but read-only until Integrity Checked is turned off.
+              {t(
+                "settings.spamCatcher.integrity.webhookWarning",
+                "Integrity Checked uses bot-delivered notices so button clicks can be counted. Webhook delivery is temporarily disabled, and your webhook settings are kept but read-only until Integrity Checked is turned off."
+              )}
             </div>
           ) : null}
           {value.webhookEnabled ? (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-medium">Trap channel webhooks</div>
+                <div className="text-sm font-medium">
+                  {t("settings.spamCatcher.webhook.channelsTitle", "Trap channel webhooks")}
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -450,21 +575,57 @@ function SpamCatcherSectionComponent({
                   onClick={addWebhookRow}
                   disabled={formDisabled || value.integrityCheckEnabled || availableWebhookChannels.length === 0}
                 >
-                  Add webhook
+                  {t("settings.spamCatcher.webhook.add", "Add webhook")}
                 </Button>
               </div>
               <div className="text-xs text-muted-foreground">
-                Each webhook must be created in the same trap channel selected for that row.
+                {t(
+                  "settings.spamCatcher.webhook.channelHelp",
+                  "Each webhook must be created in the same trap channel selected for that row."
+                )}
               </div>
 
               {value.webhookUrls.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border/70 p-3 text-xs text-muted-foreground">
-                  Add one webhook for each selected trap channel.
+                  {t(
+                    "settings.spamCatcher.webhook.empty",
+                    "Add one webhook for each selected trap channel."
+                  )}
                 </div>
               ) : null}
 
               {value.webhookUrls.map((item, index) => {
                 const check = webhookDestinationChecks[item.channelId];
+                const checkMessage = !check
+                  ? undefined
+                  : check.status === "invalid"
+                    ? t(
+                        "settings.spamCatcher.webhook.invalidUrl",
+                        "Enter a valid Discord webhook URL before checking."
+                      )
+                    : check.status === "checking"
+                      ? t(
+                          "settings.spamCatcher.webhook.checking",
+                          "Checking webhook destination..."
+                        )
+                      : check.status === "valid"
+                        ? check.channelName
+                          ? t(
+                              "settings.spamCatcher.webhook.matchesChannelName",
+                              "Webhook matches #{channel}.",
+                              { channel: check.channelName }
+                            )
+                          : t(
+                              "settings.spamCatcher.webhook.matchesChannelId",
+                              "Webhook matches channel ID {channelId}.",
+                              { channelId: check.channelId ?? item.channelId }
+                            )
+                        : check.message === "Failed to check webhook destination."
+                          ? t(
+                              "settings.spamCatcher.webhook.checkFailed",
+                              "Failed to check webhook destination."
+                            )
+                          : check.message;
                 return (
                   <div key={`${item.channelId}-${index}`} className="space-y-2 rounded-lg border border-border/70 p-3">
                     <div className="grid gap-2 lg:grid-cols-[220px_1fr_auto]">
@@ -474,7 +635,12 @@ function SpamCatcherSectionComponent({
                         disabled={formDisabled || value.integrityCheckEnabled}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Trap channel" />
+                          <SelectValue
+                            placeholder={t(
+                              "settings.spamCatcher.webhook.channelPlaceholder",
+                              "Trap channel"
+                            )}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {selectedChannels.map((channel) => (
@@ -501,12 +667,15 @@ function SpamCatcherSectionComponent({
                         size="icon"
                         onClick={() => removeWebhookRow(index)}
                         disabled={formDisabled || value.integrityCheckEnabled}
-                        aria-label="Remove webhook"
+                        aria-label={t(
+                          "settings.spamCatcher.webhook.removeAria",
+                          "Remove webhook"
+                        )}
                       >
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
-                    {check?.message ? (
+                    {checkMessage ? (
                       <div
                         className={cn(
                           "text-xs",
@@ -520,7 +689,7 @@ function SpamCatcherSectionComponent({
                         {check.status === "checking" ? (
                           <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
                         ) : null}
-                        {check.message}
+                        {checkMessage}
                       </div>
                     ) : null}
                   </div>
@@ -532,11 +701,14 @@ function SpamCatcherSectionComponent({
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
           <div className="text-xs text-muted-foreground">
-            Admins are exempt. Messages are left in place for review.
+            {t(
+              "settings.spamCatcher.footerHelp",
+              "Admins are exempt. Messages are left in place for review."
+            )}
           </div>
           <Button onClick={onSave} disabled={!canSave}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Save configuration
+            {t("common.saveConfiguration", "Save configuration")}
           </Button>
         </div>
       </CardContent>

@@ -13,12 +13,14 @@ import { VoiceSettingsSection } from "@/components/dashboard/voice-settings-sect
 import { AutoRoleSection } from "@/components/dashboard/auto-role-section";
 import { SpamCatcherSection } from "@/components/dashboard/spam-catcher-section";
 import { LocalizationSection } from "@/components/dashboard/localization-section";
+import { DashboardI18nProvider } from "@/components/dashboard/dashboard-i18n";
 import { AutoRoleRequestsCard } from "@/components/dashboard/auto-role-requests-card";
 import { ActiveTempChannelsCard } from "@/components/dashboard/active-temp-channels-card";
 import { VoiceLeaderboardCard } from "@/components/dashboard/voice-leaderboard-card";
 import { ResetSettingsSection } from "@/components/dashboard/reset-settings-section";
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
 import { VoiceLogPageClient } from "@/components/dashboard/voice-log-page-client";
+import { translateDashboard, type DashboardLocale } from "@/i18n";
 import type {
   ChannelsResponse,
   Channel,
@@ -266,10 +268,12 @@ export default function DashboardClient({
     offset,
     reset,
     selectedGuildId: selectedGuildIdForRequest,
+    errorLocale,
   }: {
     offset: number;
     reset: boolean;
     selectedGuildId?: string;
+    errorLocale: DashboardLocale;
   }) => {
     const params = new URLSearchParams({
       limit: "10",
@@ -282,7 +286,14 @@ export default function DashboardClient({
     const response = await fetch(`/api/guilds?${params.toString()}`, { cache: "no-store" });
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(payload?.error || "Failed to load guilds");
+      throw new Error(
+        payload?.error ||
+          translateDashboard(
+            errorLocale,
+            "dashboard.shell.errors.loadGuilds",
+            "Failed to load guilds"
+          )
+      );
     }
 
     const payload = (await response.json()) as GuildsResponse;
@@ -307,10 +318,18 @@ export default function DashboardClient({
     setSelectedGuildId(storedGuildId);
     setLoadingGuilds(true);
 
-    loadGuildPage({ offset: 0, reset: true, selectedGuildId: storedGuildId })
+    loadGuildPage({ offset: 0, reset: true, selectedGuildId: storedGuildId, errorLocale: "en" })
       .catch((err) => {
         if (!active) return;
-        setError(err instanceof Error ? err.message : "Failed to load guilds");
+        setError(
+          err instanceof Error
+            ? err.message
+            : translateDashboard(
+                "en",
+                "dashboard.shell.errors.loadGuilds",
+                "Failed to load guilds"
+              )
+        );
       })
       .finally(() => {
         if (active) setLoadingGuilds(false);
@@ -343,11 +362,22 @@ export default function DashboardClient({
       if (!DISCORD_WEBHOOK_URL_PATTERN.test(webhookUrl)) {
         nextChecks[row.channelId] = {
           status: "invalid",
-          message: "Enter a valid Discord webhook URL before checking.",
+          message: translateDashboard(
+            locale,
+            "dashboard.shell.webhook.invalidUrl",
+            "Enter a valid Discord webhook URL before checking."
+          ),
         };
         return false;
       }
-      nextChecks[row.channelId] = { status: "checking", message: "Checking webhook destination..." };
+      nextChecks[row.channelId] = {
+        status: "checking",
+        message: translateDashboard(
+          locale,
+          "dashboard.shell.webhook.checking",
+          "Checking webhook destination..."
+        ),
+      };
       return true;
     });
     setWebhookDestinationChecks(nextChecks);
@@ -369,13 +399,30 @@ export default function DashboardClient({
             channelName?: string | null;
           } | null;
           if (!response.ok) {
-            throw new Error(payload?.error || "Failed to check webhook destination.");
+            throw new Error(
+              payload?.error ||
+                translateDashboard(
+                  locale,
+                  "dashboard.shell.errors.checkWebhookDestination",
+                  "Failed to check webhook destination."
+                )
+            );
           }
           return [row.channelId, {
             status: "valid",
             message: payload?.channelName
-              ? `Webhook matches #${payload.channelName}.`
-              : `Webhook matches channel ID ${payload?.channelId ?? row.channelId}.`,
+              ? translateDashboard(
+                  locale,
+                  "dashboard.shell.webhook.matchesChannelName",
+                  "Webhook matches #{channelName}.",
+                  { channelName: payload.channelName }
+                )
+              : translateDashboard(
+                  locale,
+                  "dashboard.shell.webhook.matchesChannelId",
+                  "Webhook matches channel ID {channelId}.",
+                  { channelId: payload?.channelId ?? row.channelId }
+                ),
             channelId: payload?.channelId,
             channelName: payload?.channelName ?? null,
           }] as const;
@@ -383,7 +430,14 @@ export default function DashboardClient({
           if (controller.signal.aborted) return null;
           return [row.channelId, {
             status: "error",
-            message: error instanceof Error ? error.message : "Failed to check webhook destination.",
+            message:
+              error instanceof Error
+                ? error.message
+                : translateDashboard(
+                    locale,
+                    "dashboard.shell.errors.checkWebhookDestination",
+                    "Failed to check webhook destination."
+                  ),
           }] as const;
         }
       }));
@@ -400,6 +454,7 @@ export default function DashboardClient({
     };
   }, [
     selectedGuildId,
+    locale,
     spamCatcherConfig.integrityCheckEnabled,
     spamCatcherConfig.webhookEnabled,
     spamCatcherConfig.webhookUrls,
@@ -428,10 +483,6 @@ export default function DashboardClient({
       setLoadedRolesGuildId(null);
       return;
     }
-    if (activeTab !== "settings") {
-      setLoadingConfig(false);
-      return;
-    }
     if (loadedSettingsGuildId === selectedGuildId) {
       setLoadingConfig(false);
       return;
@@ -452,7 +503,14 @@ export default function DashboardClient({
       .then(async (response) => {
         if (!response.ok) {
           const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(payload?.error || "Failed to load config");
+          throw new Error(
+            payload?.error ||
+              translateDashboard(
+                "en",
+                "dashboard.shell.errors.loadConfig",
+                "Failed to load config"
+              )
+          );
         }
         return response.json() as Promise<ConfigResponse>;
       })
@@ -478,7 +536,15 @@ export default function DashboardClient({
       })
       .catch((err) => {
         if (!active) return;
-        setError(err.message ?? "Failed to load dashboard data");
+        setError(
+          err instanceof Error
+            ? err.message
+            : translateDashboard(
+                "en",
+                "dashboard.shell.errors.loadDashboardData",
+                "Failed to load dashboard data"
+              )
+        );
       })
       .finally(() => {
         if (active) setLoadingConfig(false);
@@ -487,7 +553,7 @@ export default function DashboardClient({
     return () => {
       active = false;
     };
-  }, [activeTab, guilds, loadedSettingsGuildId, loadingGuilds, selectedGuildId]);
+  }, [guilds, loadedSettingsGuildId, loadingGuilds, selectedGuildId]);
 
   const handleAddLobbyChannel = useCallback((channelId: string, roleId: string) => {
     if (!channelId || !roleId) return;
@@ -557,14 +623,22 @@ export default function DashboardClient({
     const trimmedLogChannelId = logChannelId.trim();
     const trimmedLfgChannelId = lfgChannelId.trim();
     if (!trimmedGuildId) {
-      toast.error("Save failed", {
-        description: "Select a server before saving settings.",
+      toast.error(translateDashboard(locale, "dashboard.shell.toasts.saveFailed", "Save failed"), {
+        description: translateDashboard(
+          locale,
+          "dashboard.shell.errors.selectServerBeforeSaving",
+          "Select a server before saving settings."
+        ),
       });
       return;
     }
     if (!trimmedLogChannelId) {
-      toast.error("Save failed", {
-        description: "Select a log channel before saving settings.",
+      toast.error(translateDashboard(locale, "dashboard.shell.toasts.saveFailed", "Save failed"), {
+        description: translateDashboard(
+          locale,
+          "dashboard.shell.errors.selectLogChannelBeforeSaving",
+          "Select a log channel before saving settings."
+        ),
       });
       return;
     }
@@ -579,8 +653,12 @@ export default function DashboardClient({
     );
 
     if (joinToCreateLobbies.some((item) => !item.roleId)) {
-      toast.error("Save failed", {
-        description: "Each Join-to-Create lobby requires a role.",
+      toast.error(translateDashboard(locale, "dashboard.shell.toasts.saveFailed", "Save failed"), {
+        description: translateDashboard(
+          locale,
+          "dashboard.shell.errors.lobbyRoleRequired",
+          "Each Join-to-Create lobby requires a role."
+        ),
       });
       setSaving(false);
       return;
@@ -620,7 +698,14 @@ export default function DashboardClient({
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(payload?.error || "Failed to save configuration");
+        throw new Error(
+          payload?.error ||
+            translateDashboard(
+              locale,
+              "dashboard.shell.errors.saveConfiguration",
+              "Failed to save configuration"
+            )
+        );
       }
 
       const payload = (await response.json().catch(() => null)) as {
@@ -633,11 +718,31 @@ export default function DashboardClient({
       setConfigVersion(payload?.configVersion ?? configVersion);
       const webhookCount = payload?.spamCatcherWebhooks?.length ?? 0;
 
-      toast.success("Configuration saved", {
-        description: webhookCount > 0
-          ? `Webhook notices matched ${webhookCount} trap channel${webhookCount === 1 ? "" : "s"}.`
-          : "The bot will pick up the new settings shortly.",
-      });
+      toast.success(
+        translateDashboard(
+          locale,
+          "dashboard.shell.toasts.configurationSaved",
+          "Configuration saved"
+        ),
+        {
+          description: webhookCount > 0
+            ? translateDashboard(
+                locale,
+                webhookCount === 1
+                  ? "dashboard.shell.toasts.webhooksMatched.one"
+                  : "dashboard.shell.toasts.webhooksMatched.many",
+                webhookCount === 1
+                  ? "Webhook notices matched {count} trap channel."
+                  : "Webhook notices matched {count} trap channels.",
+                { count: webhookCount }
+              )
+            : translateDashboard(
+                locale,
+                "dashboard.shell.toasts.settingsApplyShortly",
+                "The bot will pick up the new settings shortly."
+              ),
+        }
+      );
       setGuilds((prev) =>
         prev.map((guild) =>
           guild.id === trimmedGuildId
@@ -646,9 +751,15 @@ export default function DashboardClient({
         )
       );
     } catch (err) {
-      toast.error("Save failed", {
+      toast.error(translateDashboard(locale, "dashboard.shell.toasts.saveFailed", "Save failed"), {
         description:
-          err instanceof Error ? err.message : "Unexpected error occurred",
+          err instanceof Error
+            ? err.message
+            : translateDashboard(
+                locale,
+                "dashboard.shell.errors.unexpected",
+                "Unexpected error occurred"
+              ),
       });
     } finally {
       setSaving(false);
@@ -669,31 +780,62 @@ export default function DashboardClient({
     setRefreshingGuilds(true);
     setError(null);
     try {
-      await loadGuildPage({ offset: 0, reset: true, selectedGuildId });
-      toast.success("Bot status refreshed");
+      await loadGuildPage({ offset: 0, reset: true, selectedGuildId, errorLocale: locale });
+      toast.success(
+        translateDashboard(
+          locale,
+          "dashboard.shell.toasts.botStatusRefreshed",
+          "Bot status refreshed"
+        )
+      );
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to refresh guild status";
+      const message =
+        err instanceof Error
+          ? err.message
+          : translateDashboard(
+              locale,
+              "dashboard.shell.errors.refreshGuildStatus",
+              "Failed to refresh guild status"
+            );
       setError(message);
-      toast.error("Refresh failed", { description: message });
+      toast.error(
+        translateDashboard(locale, "dashboard.shell.toasts.refreshFailed", "Refresh failed"),
+        { description: message }
+      );
     } finally {
       setRefreshingGuilds(false);
     }
-  }, [loadGuildPage, selectedGuildId]);
+  }, [loadGuildPage, locale, selectedGuildId]);
 
   const handleLoadMoreGuilds = useCallback(async () => {
     if (!hasMoreGuilds || loadingMoreGuilds) return;
     setLoadingMoreGuilds(true);
     setError(null);
     try {
-      await loadGuildPage({ offset: nextGuildOffset, reset: false, selectedGuildId });
+      await loadGuildPage({
+        offset: nextGuildOffset,
+        reset: false,
+        selectedGuildId,
+        errorLocale: locale,
+      });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load more guilds";
+      const message =
+        err instanceof Error
+          ? err.message
+          : translateDashboard(
+              locale,
+              "dashboard.shell.errors.loadMoreGuilds",
+              "Failed to load more guilds"
+            );
       setError(message);
-      toast.error("Load more failed", { description: message });
+      toast.error(
+        translateDashboard(locale, "dashboard.shell.toasts.loadMoreFailed", "Load more failed"),
+        { description: message }
+      );
     } finally {
       setLoadingMoreGuilds(false);
     }
-  }, [hasMoreGuilds, loadingMoreGuilds, loadGuildPage, nextGuildOffset, selectedGuildId]);
+  }, [hasMoreGuilds, loadingMoreGuilds, loadGuildPage, locale, nextGuildOffset, selectedGuildId]);
 
   const handleLoadChannels = useCallback(async () => {
     if (!selectedGuildId || loadedChannelsGuildId === selectedGuildId) return;
@@ -718,7 +860,14 @@ export default function DashboardClient({
         .then(async (response) => {
           if (!response.ok) {
             const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-            throw new Error(payload?.error || "Failed to load channels");
+            throw new Error(
+              payload?.error ||
+                translateDashboard(
+                  locale,
+                  "dashboard.shell.errors.loadChannels",
+                  "Failed to load channels"
+                )
+            );
           }
           return response.json() as Promise<ChannelsResponse>;
         });
@@ -736,14 +885,28 @@ export default function DashboardClient({
         setLoadedChannelsGuildId(selectedGuildId);
         return;
       }
-      const message = err instanceof Error ? err.message : "Failed to load channels";
+      const message =
+        err instanceof Error
+          ? err.message
+          : translateDashboard(
+              locale,
+              "dashboard.shell.errors.loadChannels",
+              "Failed to load channels"
+            );
       setError(message);
-      toast.error("Channel load failed", { description: message });
+      toast.error(
+        translateDashboard(
+          locale,
+          "dashboard.shell.toasts.channelLoadFailed",
+          "Channel load failed"
+        ),
+        { description: message }
+      );
     } finally {
       channelsRequestRef.current = null;
       setLoadingChannels(false);
     }
-  }, [loadedChannelsGuildId, readChannelsCache, selectedGuildId, writeChannelsCache]);
+  }, [loadedChannelsGuildId, locale, readChannelsCache, selectedGuildId, writeChannelsCache]);
 
   const handleLoadRoles = useCallback(async () => {
     if (!selectedGuildId || loadedRolesGuildId === selectedGuildId) return;
@@ -766,7 +929,14 @@ export default function DashboardClient({
         .then(async (response) => {
           if (!response.ok) {
             const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-            throw new Error(payload?.error || "Failed to load roles");
+            throw new Error(
+              payload?.error ||
+                translateDashboard(
+                  locale,
+                  "dashboard.shell.errors.loadRoles",
+                  "Failed to load roles"
+                )
+            );
           }
           return response.json() as Promise<RolesResponse>;
         });
@@ -782,14 +952,28 @@ export default function DashboardClient({
         setLoadedRolesGuildId(selectedGuildId);
         return;
       }
-      const message = err instanceof Error ? err.message : "Failed to load roles";
+      const message =
+        err instanceof Error
+          ? err.message
+          : translateDashboard(
+              locale,
+              "dashboard.shell.errors.loadRoles",
+              "Failed to load roles"
+            );
       setError(message);
-      toast.error("Role load failed", { description: message });
+      toast.error(
+        translateDashboard(
+          locale,
+          "dashboard.shell.toasts.roleLoadFailed",
+          "Role load failed"
+        ),
+        { description: message }
+      );
     } finally {
       rolesRequestRef.current = null;
       setLoadingRoles(false);
     }
-  }, [loadedRolesGuildId, readRolesCache, selectedGuildId, writeRolesCache]);
+  }, [loadedRolesGuildId, locale, readRolesCache, selectedGuildId, writeRolesCache]);
 
   useEffect(() => {
     if (activeTab !== "settings") return;
@@ -814,6 +998,7 @@ export default function DashboardClient({
     channelsRequestRef.current = null;
     rolesRequestRef.current = null;
     localStorage.setItem(SELECTED_GUILD_STORAGE_KEY, guildId);
+    setLocale("en");
     setSelectedGuildId(guildId);
     setLoadedSettingsGuildId(null);
     setLoadedChannelsGuildId(null);
@@ -845,7 +1030,8 @@ export default function DashboardClient({
   const canOpenGuildSettings = selectedGuild?.status === "ready" || selectedGuild?.status === "needs_setup";
 
   return (
-    <div className="flex flex-col gap-10">
+    <DashboardI18nProvider locale={locale}>
+      <div className="flex flex-col gap-10">
       <HeaderSection
         userName={userName}
         selectedGuildId={selectedGuildId}
@@ -864,7 +1050,11 @@ export default function DashboardClient({
 
       {loadingGuilds ? (
         <div className={`${dashboardInset} text-sm text-muted-foreground`}>
-          Loading your manageable Discord servers...
+          {translateDashboard(
+            locale,
+            "dashboard.shell.loading.guilds",
+            "Loading your manageable Discord servers..."
+          )}
         </div>
       ) : null}
 
@@ -876,15 +1066,26 @@ export default function DashboardClient({
 
       {selectedGuild?.status === "invite_bot" ? (
         <div className={`${dashboardCard} rounded-lg p-6`}>
-          <h2 className="text-lg font-semibold text-foreground">Invite the bot to {selectedGuild.name}</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            {translateDashboard(
+              locale,
+              "dashboard.shell.invite.title",
+              "Invite the bot to {guildName}",
+              { guildName: selectedGuild.name }
+            )}
+          </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            You can manage this Discord server, but the bot is not installed there yet. Invite the bot before opening logs or settings for this guild.
+            {translateDashboard(
+              locale,
+              "dashboard.shell.invite.description",
+              "You can manage this Discord server, but the bot is not installed there yet. Invite the bot before opening logs or settings for this guild."
+            )}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {selectedGuild.inviteUrl ? (
               <Button asChild>
                 <a href={selectedGuild.inviteUrl} target="_blank" rel="noreferrer">
-                  Invite Bot
+                  {translateDashboard(locale, "dashboard.shell.invite.button", "Invite Bot")}
                 </a>
               </Button>
             ) : null}
@@ -895,7 +1096,11 @@ export default function DashboardClient({
               disabled={refreshingGuilds}
             >
               <RefreshCw className={`h-4 w-4 ${refreshingGuilds ? "animate-spin" : ""}`} />
-              Refresh Status
+              {translateDashboard(
+                locale,
+                "dashboard.shell.actions.refreshStatus",
+                "Refresh Status"
+              )}
             </Button>
           </div>
         </div>
@@ -903,12 +1108,27 @@ export default function DashboardClient({
 
       {selectedGuild?.status === "needs_setup" ? (
         <div className={`${dashboardWarning} p-6`}>
-          <h2 className="text-lg font-semibold text-foreground">Finish guild setup for {selectedGuild.name}</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            {translateDashboard(
+              locale,
+              "dashboard.shell.setup.title",
+              "Finish guild setup for {guildName}",
+              { guildName: selectedGuild.name }
+            )}
+          </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Pick a log channel in Settings, then save. After that, this guild dashboard can show logs, stats, and live activity.
+            {translateDashboard(
+              locale,
+              "dashboard.shell.setup.description",
+              "Pick a log channel in Settings, then save. After that, this guild dashboard can show logs, stats, and live activity."
+            )}
           </p>
           <Button type="button" className="mt-4" onClick={() => setActiveTab("settings")}>
-            Open Settings
+            {translateDashboard(
+              locale,
+              "dashboard.shell.actions.openSettings",
+              "Open Settings"
+            )}
           </Button>
         </div>
       ) : null}
@@ -926,7 +1146,11 @@ export default function DashboardClient({
           }}
         >
           <LayoutDashboard className="h-4 w-4" />
-          Dashboard
+          {translateDashboard(
+            locale,
+            "dashboard.shell.navigation.dashboard",
+            "Dashboard"
+          )}
         </Button>
         <Button
           type="button"
@@ -938,7 +1162,7 @@ export default function DashboardClient({
           }}
         >
           <Settings className="h-4 w-4" />
-          Settings
+          {translateDashboard(locale, "dashboard.shell.navigation.settings", "Settings")}
         </Button>
       </div>
 
@@ -956,7 +1180,11 @@ export default function DashboardClient({
               onClick={() => setDetailView(null)}
             >
               <ArrowLeft className="h-4 w-4" />
-              Back to Dashboard
+              {translateDashboard(
+                locale,
+                "dashboard.shell.actions.backToDashboard",
+                "Back to Dashboard"
+              )}
             </Button>
           </div>
 
@@ -1063,6 +1291,7 @@ export default function DashboardClient({
         </>
       ) : null}
 
-    </div>
+      </div>
+    </DashboardI18nProvider>
   );
 }

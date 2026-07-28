@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { dashboardCard, dashboardEmpty, dashboardError } from "@/components/ui/patterns";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 import type { TempChannel } from "./types";
 import { useAdaptivePolling } from "./use-adaptive-polling";
 
@@ -29,6 +30,8 @@ type ActiveTempChannelsCardProps = {
 function ActiveTempChannelsCardComponent({
   selectedGuildId,
 }: ActiveTempChannelsCardProps) {
+  const { locale, t } = useDashboardI18n();
+  const dateLocale = locale === "id" ? "id-ID" : "en-US";
   const [loadingTempChannels, setLoadingTempChannels] = useState(false);
   const [tempChannels, setTempChannels] = useState<TempChannel[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -42,7 +45,11 @@ function ActiveTempChannelsCardComponent({
       const response = await fetch(`/api/guilds/${selectedGuildId}/temp-channels`, {
         cache: "no-store",
       });
-      if (!response.ok) throw new Error("Failed to load temp channels");
+      if (!response.ok) {
+        throw new Error(
+          t("detail.activeTemp.errors.load", "Failed to load temp channels")
+        );
+      }
       const data = (await response.json()) as { tempChannels: TempChannel[] };
       setTempChannels(data.tempChannels ?? []);
       setLoadError(null);
@@ -50,7 +57,9 @@ function ActiveTempChannelsCardComponent({
       return true;
     } catch (err) {
       setLoadError(
-        err instanceof Error ? err.message : "Failed to load temp channels"
+        err instanceof Error
+          ? err.message
+          : t("detail.activeTemp.errors.load", "Failed to load temp channels")
       );
       return false;
     } finally {
@@ -71,11 +80,18 @@ function ActiveTempChannelsCardComponent({
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || "Failed to delete channel");
+        throw new Error(
+          payload?.error ||
+            t("detail.activeTemp.errors.delete", "Failed to delete channel")
+        );
       }
       await loadTempChannels(false);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Failed to delete channel");
+      setLoadError(
+        err instanceof Error
+          ? err.message
+          : t("detail.activeTemp.errors.delete", "Failed to delete channel")
+      );
     } finally {
       setDeletingChannelId(null);
     }
@@ -91,10 +107,13 @@ function ActiveTempChannelsCardComponent({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <Volume2 className="h-4 w-4" />
-          Active temp channels
+          {t("detail.activeTemp.title", "Active temp channels")}
         </CardTitle>
         <CardDescription>
-          Read-only view of Join-to-Create channels currently tracked, validated against Discord state.
+          {t(
+            "detail.activeTemp.description",
+            "Read-only view of Join-to-Create channels currently tracked, validated against Discord state."
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -113,13 +132,17 @@ function ActiveTempChannelsCardComponent({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Channel</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Currently active</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>LFG message</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead>{t("detail.activeTemp.columns.channel", "Channel")}</TableHead>
+                <TableHead>{t("detail.activeTemp.columns.status", "Status")}</TableHead>
+                <TableHead>{t("detail.activeTemp.columns.owner", "Owner")}</TableHead>
+                <TableHead>
+                  {t("detail.activeTemp.columns.currentlyActive", "Currently active")}
+                </TableHead>
+                <TableHead>{t("detail.activeTemp.columns.created", "Created")}</TableHead>
+                <TableHead>{t("detail.activeTemp.columns.lfgMessage", "LFG message")}</TableHead>
+                <TableHead className="text-right">
+                  {t("common.columns.action", "Action")}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -153,13 +176,21 @@ function ActiveTempChannelsCardComponent({
                     </TableCell>
                     <TableCell>
                       {item.existsInDiscord === false ? (
-                        <StatusBadge tone="danger">Not found</StatusBadge>
+                        <StatusBadge tone="danger">
+                          {t("detail.activeTemp.status.notFound", "Not found")}
+                        </StatusBadge>
                       ) : item.existsInDiscord === null ? (
-                        <StatusBadge tone="muted">Unknown</StatusBadge>
+                        <StatusBadge tone="muted">
+                          {t("common.status.unknown", "Unknown")}
+                        </StatusBadge>
                       ) : (item.activeCount ?? item.activeUsers?.length ?? 0) === 0 ? (
-                        <StatusBadge tone="warning">Empty</StatusBadge>
+                        <StatusBadge tone="warning">
+                          {t("detail.activeTemp.status.empty", "Empty")}
+                        </StatusBadge>
                       ) : (
-                        <StatusBadge tone="success">Exists</StatusBadge>
+                        <StatusBadge tone="success">
+                          {t("detail.activeTemp.status.exists", "Exists")}
+                        </StatusBadge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -173,7 +204,10 @@ function ActiveTempChannelsCardComponent({
                     <TableCell>
                       {item.existsInDiscord === false ? (
                         <span className="text-xs text-muted-foreground">
-                          Channel not found in Discord
+                          {t(
+                            "detail.activeTemp.active.channelNotFound",
+                            "Channel not found in Discord"
+                          )}
                         </span>
                       ) : item.activeUsers?.length ? (
                         <div className="space-y-1 text-xs">
@@ -185,29 +219,46 @@ function ActiveTempChannelsCardComponent({
                               {user.joinedAt ? (
                                 <span className="text-muted-foreground">
                                   {" "}
-                                  • joined {new Date(user.joinedAt).toLocaleTimeString()}
+                                  {t(
+                                    "detail.activeTemp.active.joinedAt",
+                                    "• joined {time}",
+                                    { time: new Date(user.joinedAt).toLocaleTimeString(dateLocale) }
+                                  )}
                                 </span>
                               ) : null}
                             </div>
                           ))}
                           {item.activeUsers.length > 3 ? (
                             <div className="text-muted-foreground">
-                              +{item.activeUsers.length - 3} more
+                              {t(
+                                "detail.activeTemp.active.moreUsers",
+                                "+{count} more",
+                                { count: item.activeUsers.length - 3 }
+                              )}
                             </div>
                           ) : null}
                           <div className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
-                            source: {item.activeSource === "discord" ? "Discord" : "DB fallback"}
+                            {t(
+                              "detail.activeTemp.active.source",
+                              "source: {source}",
+                              {
+                                source:
+                                  item.activeSource === "discord"
+                                    ? t("detail.activeTemp.active.sourceDiscord", "Discord")
+                                    : t("detail.activeTemp.active.sourceDatabase", "DB fallback"),
+                              }
+                            )}
                           </div>
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          No active users
+                          {t("detail.activeTemp.active.noUsers", "No active users")}
                         </span>
                       )}
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(item.createdAt).toLocaleString()}
+                        {new Date(item.createdAt).toLocaleString(dateLocale)}
                       </span>
                     </TableCell>
                     <TableCell>
@@ -218,11 +269,11 @@ function ActiveTempChannelsCardComponent({
                           rel="noreferrer"
                           className="text-xs text-primary underline-offset-4 hover:underline"
                         >
-                          Open post
+                          {t("detail.activeTemp.actions.openPost", "Open post")}
                         </a>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          Not posted
+                          {t("detail.activeTemp.lfg.notPosted", "Not posted")}
                         </span>
                       )}
                     </TableCell>
@@ -234,7 +285,9 @@ function ActiveTempChannelsCardComponent({
                           onClick={() => void deleteDormantChannel(item.channelId)}
                           disabled={deletingChannelId === item.channelId}
                         >
-                          {deletingChannelId === item.channelId ? "Deleting..." : "Delete"}
+                          {deletingChannelId === item.channelId
+                            ? t("common.actions.deleting", "Deleting...")
+                            : t("common.actions.delete", "Delete")}
                         </Button>
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>
@@ -247,7 +300,10 @@ function ActiveTempChannelsCardComponent({
           </Table>
         ) : (
           <div className={dashboardEmpty}>
-            No active temp channels found.
+            {t(
+              "detail.activeTemp.empty",
+              "No active temp channels found."
+            )}
           </div>
         )}
       </CardContent>

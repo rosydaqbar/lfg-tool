@@ -40,7 +40,7 @@
 - Settings intentionally lazy-loads channels and roles only when a selector opens; opening Settings should primarily load `/api/guilds/:id/config`.
 - Dashboard bot status checks Discord via the dashboard's configured bot token; it does not prove gateway presence of the running bot process.
 - Spam Catcher ban delays are stored as minutes. Dashboard UI supports minute choices from 1-60 and hour choices from 2-24; normalization should preserve hour delays up to 1440 minutes.
-- The Settings Language card controls Discord bot output for the selected guild; it does not change the dashboard interface language.
+- The Settings Language card is the single locale source for the selected guild. It controls bot output and the dashboard translation provider; untranslated dashboard strings fall back to English.
 
 ## Discord Bot Gotchas
 - DM role mentions do not render like guild messages; avoid putting role mentions in reminder DM copy or `allowedMentions.roles`.

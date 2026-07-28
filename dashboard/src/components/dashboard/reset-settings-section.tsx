@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -23,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { dashboardCardStrong, dashboardCodeBlock, dashboardError, dashboardInset, dashboardStepper } from "@/components/ui/patterns";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 
 type ResetSettingsSectionProps = {
   selectedGuildId: string;
@@ -87,6 +89,7 @@ function ResetSettingsSectionComponent({
   onResetComplete,
   afterResetHref,
 }: ResetSettingsSectionProps) {
+  const { t } = useDashboardI18n();
   const [confirmValue, setConfirmValue] = useState("");
   const [open, setOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -96,6 +99,10 @@ function ResetSettingsSectionComponent({
 
   const trimmedGuildId = selectedGuildId.trim();
   const isConfirmMatch = confirmValue.trim() === trimmedGuildId;
+  const botStatusErrorFallback = t(
+    "settings.reset.status.checkError",
+    "Unable to check bot status right now."
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -107,13 +114,13 @@ function ResetSettingsSectionComponent({
         const response = await fetch(`/api/bot/status?${params.toString()}`, { cache: "no-store" });
         const payload = (await response.json().catch(() => null)) as BotStatusResponse | null;
         if (!response.ok) {
-          throw new Error(payload?.error || "Unable to check bot status right now.");
+          throw new Error(payload?.error || botStatusErrorFallback);
         }
         if (!mounted) return;
         setBotStatus(payload);
       } catch (error) {
         if (!mounted) return;
-        const message = error instanceof Error ? error.message : "Unable to check bot status right now.";
+        const message = error instanceof Error ? error.message : botStatusErrorFallback;
         setBotStatus({
           online: null,
           status: "unverified",
@@ -134,19 +141,25 @@ function ResetSettingsSectionComponent({
     return () => {
       mounted = false;
     };
-  }, [trimmedGuildId]);
+  }, [botStatusErrorFallback, trimmedGuildId]);
 
   async function handleReset() {
     if (!trimmedGuildId) {
-      toast.error("Reset failed", {
-        description: "No current setup guild ID found.",
+      toast.error(t("settings.reset.toast.failedTitle", "Reset failed"), {
+        description: t(
+          "settings.reset.toast.noGuildId",
+          "No current setup guild ID found."
+        ),
       });
       return;
     }
 
     if (!isConfirmMatch) {
-      toast.error("Reset failed", {
-        description: "Guild ID confirmation does not match.",
+      toast.error(t("settings.reset.toast.failedTitle", "Reset failed"), {
+        description: t(
+          "settings.reset.toast.confirmationMismatch",
+          "Guild ID confirmation does not match."
+        ),
       });
       return;
     }
@@ -164,12 +177,21 @@ function ResetSettingsSectionComponent({
         | null;
 
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to reset setup settings");
+        throw new Error(
+          payload?.error ||
+            t("settings.reset.toast.requestFailed", "Failed to reset setup settings")
+        );
       }
 
-      toast.success("Setup reset complete", {
-        description: "Configuration has been cleared. Continue setup again.",
-      });
+      toast.success(
+        t("settings.reset.toast.successTitle", "Setup reset complete"),
+        {
+          description: t(
+            "settings.reset.toast.successDescription",
+            "Configuration has been cleared. Continue setup again."
+          ),
+        }
+      );
       setOpen(false);
       setConfirmValue("");
       if (onResetComplete) {
@@ -178,11 +200,14 @@ function ResetSettingsSectionComponent({
         window.location.href = afterResetHref || "/setup";
       }
     } catch (error) {
-      toast.error("Reset failed", {
+      toast.error(t("settings.reset.toast.failedTitle", "Reset failed"), {
         description:
           error instanceof Error
             ? error.message
-            : "Unexpected error while resetting settings",
+            : t(
+                "settings.reset.toast.unexpectedError",
+                "Unexpected error while resetting settings"
+              ),
       });
     } finally {
       setResetting(false);
@@ -194,46 +219,73 @@ function ResetSettingsSectionComponent({
       <Card className={dashboardCardStrong}>
         <CardHeader className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-lg">Bot status</CardTitle>
+            <CardTitle className="text-lg">
+              {t("settings.reset.status.title", "Bot status")}
+            </CardTitle>
             {statusLoading ? (
-              <StatusBadge tone="loading" className="px-3 py-1" dot>Checking...</StatusBadge>
+              <StatusBadge tone="loading" className="px-3 py-1" dot>
+                {t("common.checking", "Checking...")}
+              </StatusBadge>
             ) : botStatus?.online ? (
               <StatusBadge tone="success" className="px-3 py-1" dot>
-                Online
+                {t("common.online", "Online")}
               </StatusBadge>
             ) : botStatus?.status === "unverified" ? (
               <StatusBadge tone="warning" className="px-3 py-1" dot>
-                Unverified
+                {t("common.unverified", "Unverified")}
               </StatusBadge>
             ) : (
               <StatusBadge tone="danger" className="px-3 py-1" dot>
-                Offline
+                {t("common.offline", "Offline")}
               </StatusBadge>
             )}
           </div>
           <CardDescription>
             {statusLoading
-              ? "Checking if your bot is running..."
+              ? t(
+                  "settings.reset.status.checkingDescription",
+                  "Checking if your bot is running..."
+                )
               : botStatus?.online
-                ? "Good news: your bot is running."
+                ? t(
+                    "settings.reset.status.onlineDescription",
+                    "Good news: your bot is running."
+                  )
                 : botStatus?.status === "unverified"
-                  ? botStatus.error || "Bot status cannot be verified yet. Make sure bot token is configured in setup."
-                : "Your bot is offline. Open the Local tab and follow each step exactly. Railway tabs are only for cloud hosting."}
+                  ? botStatus.error ||
+                    t(
+                      "settings.reset.status.unverifiedDescription",
+                      "Bot status cannot be verified yet. Make sure bot token is configured in setup."
+                    )
+                  : t(
+                      "settings.reset.status.offlineDescription",
+                      "Your bot is offline. Open the Local tab and follow each step exactly. Railway tabs are only for cloud hosting."
+                    )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className={`${dashboardInset} text-sm text-muted-foreground`}>
-            Check method: <code>{botStatus?.source === "discord_api" ? "Discord API" : "Unknown"}</code>
+            {t("settings.reset.status.checkMethod", "Check method:")} {" "}
+            <code>
+              {botStatus?.source === "discord_api"
+                ? t("settings.reset.status.discordApi", "Discord API")
+                : t("common.unknown", "Unknown")}
+            </code>
           </div>
 
           {!statusLoading && botStatus?.bot ? (
             <div className={`${dashboardInset} text-sm text-muted-foreground`}>
-              Bot: <code>{botStatus.bot.displayName}</code> (<code>{botStatus.bot.id}</code>)
+              {t("settings.reset.status.botLabel", "Bot:")} {" "}
+              <code>{botStatus.bot.displayName}</code> (<code>{botStatus.bot.id}</code>)
               {typeof botStatus.inSelectedGuild === "boolean" ? (
                 <span className="inline-flex items-center gap-2">
-                  <span>• Selected guild bot:</span>
+                  <span>
+                    • {t("settings.reset.status.selectedGuildBot", "Selected guild bot:")}
+                  </span>
                   <StatusBadge tone={botStatus.inSelectedGuild ? "success" : "danger"} dot>
-                    {botStatus.inSelectedGuild ? "Installed" : "Invite bot"}
+                    {botStatus.inSelectedGuild
+                      ? t("settings.reset.status.installed", "Installed")
+                      : t("settings.reset.status.inviteBot", "Invite bot")}
                   </StatusBadge>
                 </span>
               ) : null}
@@ -249,7 +301,7 @@ function ResetSettingsSectionComponent({
                   onClick={() => setDeployTab("local")}
                   className="rounded-full"
                 >
-                  Local
+                  {t("settings.reset.deploy.localTab", "Local")}
                 </Button>
                 <Button
                   type="button"
@@ -257,7 +309,7 @@ function ResetSettingsSectionComponent({
                   onClick={() => setDeployTab("railway")}
                   className="rounded-full"
                 >
-                  Railway
+                  {t("settings.reset.deploy.railwayTab", "Railway")}
                 </Button>
                 <Button
                   type="button"
@@ -265,67 +317,186 @@ function ResetSettingsSectionComponent({
                   onClick={() => setDeployTab("railway-cli")}
                   className="rounded-full"
                 >
-                  Railway CLI
+                  {t("settings.reset.deploy.railwayCliTab", "Railway CLI")}
                 </Button>
               </div>
 
               {deployTab === "local" ? (
                 <div className={dashboardStepper}>
-                  <StepCard step={1} title="Complete setup first">
-                    <p>Open <code>/setup</code> and finish every step until Step 8 (Finalize).</p>
-                    <p>This creates and saves all required bot settings.</p>
+                  <StepCard
+                    step={1}
+                    title={t("settings.reset.local.completeSetupTitle", "Complete setup first")}
+                  >
+                    <p>
+                      {t("settings.reset.local.openSetupPrefix", "Open")} <code>/setup</code>{" "}
+                      {t(
+                        "settings.reset.local.finishSetup",
+                        "and finish every step until Step 8 (Finalize)."
+                      )}
+                    </p>
+                    <p>
+                      {t(
+                        "settings.reset.local.completeSetupDescription",
+                        "This creates and saves all required bot settings."
+                      )}
+                    </p>
                   </StepCard>
-                  <StepCard step={2} title="Open .setup-state.json, validate required values, and fix mismatches">
-                    <p>Open file <code>.setup-state.json</code> in project root (<code>lfg-tool</code>).</p>
-                    <p>The values below <strong>must match</strong> your setup inputs:</p>
+                  <StepCard
+                    step={2}
+                    title={t(
+                      "settings.reset.local.validateStateTitle",
+                      "Open .setup-state.json, validate required values, and fix mismatches"
+                    )}
+                  >
+                    <p>
+                      {t("settings.reset.local.openFilePrefix", "Open file")} {" "}
+                      <code>.setup-state.json</code>{" "}
+                      {t("settings.reset.local.inProjectRoot", "in project root")} (
+                      <code>lfg-tool</code>).
+                    </p>
+                    <p>
+                      {t("settings.reset.local.valuesBelow", "The values below")} {" "}
+                      <strong>{t("settings.reset.local.mustMatch", "must match")}</strong>{" "}
+                      {t("settings.reset.local.setupInputs", "your setup inputs:")}
+                    </p>
                     <ul>
-                      <li><code>setupComplete</code> must be <code>true</code></li>
-                      <li><code>selectedGuildId</code> must match the guild you selected in setup</li>
-                      <li><code>databaseProvider</code> must match your chosen DB provider in setup</li>
-                      <li>at least one bot token key must exist: <code>botToken</code> or <code>botTokenEncrypted</code></li>
-                      <li>at least one database URL key must exist: <code>databaseUrl</code> or <code>databaseUrlEncrypted</code></li>
-                      <li><code>discordClientId</code> must exist</li>
-                      <li>at least one Discord secret key must exist: <code>discordClientSecret</code> or <code>discordClientSecretEncrypted</code></li>
-                      <li><code>logChannelId</code> must exist after channel setup</li>
+                      <li>
+                        <code>setupComplete</code>{" "}
+                        {t("settings.reset.local.mustBe", "must be")} <code>true</code>
+                      </li>
+                      <li>
+                        <code>selectedGuildId</code>{" "}
+                        {t(
+                          "settings.reset.local.selectedGuildMustMatch",
+                          "must match the guild you selected in setup"
+                        )}
+                      </li>
+                      <li>
+                        <code>databaseProvider</code>{" "}
+                        {t(
+                          "settings.reset.local.databaseProviderMustMatch",
+                          "must match your chosen DB provider in setup"
+                        )}
+                      </li>
+                      <li>
+                        {t(
+                          "settings.reset.local.botTokenKeyPrefix",
+                          "at least one bot token key must exist:"
+                        )}{" "}
+                        <code>botToken</code> {t("common.or", "or")} {" "}
+                        <code>botTokenEncrypted</code>
+                      </li>
+                      <li>
+                        {t(
+                          "settings.reset.local.databaseUrlKeyPrefix",
+                          "at least one database URL key must exist:"
+                        )}{" "}
+                        <code>databaseUrl</code> {t("common.or", "or")} {" "}
+                        <code>databaseUrlEncrypted</code>
+                      </li>
+                      <li>
+                        <code>discordClientId</code> {t("settings.reset.local.mustExist", "must exist")}
+                      </li>
+                      <li>
+                        {t(
+                          "settings.reset.local.discordSecretKeyPrefix",
+                          "at least one Discord secret key must exist:"
+                        )}{" "}
+                        <code>discordClientSecret</code> {t("common.or", "or")} {" "}
+                        <code>discordClientSecretEncrypted</code>
+                      </li>
+                      <li>
+                        <code>logChannelId</code>{" "}
+                        {t(
+                          "settings.reset.local.logChannelMustExist",
+                          "must exist after channel setup"
+                        )}
+                      </li>
                     </ul>
-                    <p>What this file contains:</p>
+                    <p>{t("settings.reset.local.fileContains", "What this file contains:")}</p>
                     <ul>
-                      <li>bot login info</li>
-                      <li>database connection info</li>
-                      <li>Discord app credentials</li>
-                      <li>selected guild/channel settings</li>
-                      <li>setup state flags</li>
+                      <li>{t("settings.reset.local.botLoginInfo", "bot login info")}</li>
+                      <li>
+                        {t("settings.reset.local.databaseConnectionInfo", "database connection info")}
+                      </li>
+                      <li>{t("settings.reset.local.discordCredentials", "Discord app credentials")}</li>
+                      <li>
+                        {t("settings.reset.local.guildChannelSettings", "selected guild/channel settings")}
+                      </li>
+                      <li>{t("settings.reset.local.setupStateFlags", "setup state flags")}</li>
                     </ul>
-                    <p>What to do with this file:</p>
+                    <p>{t("settings.reset.local.fileActions", "What to do with this file:")}</p>
                     <ul>
-                      <li>keep it</li>
-                      <li>do not share it</li>
-                      <li>avoid manual edits unless troubleshooting</li>
+                      <li>{t("settings.reset.local.keepFile", "keep it")}</li>
+                      <li>{t("settings.reset.local.doNotShare", "do not share it")}</li>
+                      <li>
+                        {t(
+                          "settings.reset.local.avoidManualEdits",
+                          "avoid manual edits unless troubleshooting"
+                        )}
+                      </li>
                     </ul>
-                    <p>Go back to <code>/setup</code>, then re-save the related steps and finalize again:</p>
+                    <p>
+                      {t("settings.reset.local.goBackTo", "Go back to")} <code>/setup</code>, {" "}
+                      {t(
+                        "settings.reset.local.resaveAndFinalize",
+                        "then re-save the related steps and finalize again:"
+                      )}
+                    </p>
                     <ul>
-                      <li>Bot token issue: re-save Step 3</li>
-                      <li>Guild mismatch: re-save Step 4</li>
-                      <li>Database mismatch: re-save Step 6</li>
-                      <li>Missing channels: re-save Step 7</li>
-                      <li>Finish Step 8 (Finalize)</li>
+                      <li>{t("settings.reset.local.resaveBotToken", "Bot token issue: re-save Step 3")}</li>
+                      <li>{t("settings.reset.local.resaveGuild", "Guild mismatch: re-save Step 4")}</li>
+                      <li>{t("settings.reset.local.resaveDatabase", "Database mismatch: re-save Step 6")}</li>
+                      <li>{t("settings.reset.local.resaveChannels", "Missing channels: re-save Step 7")}</li>
+                      <li>{t("settings.reset.local.finishFinalize", "Finish Step 8 (Finalize)")}</li>
                     </ul>
                   </StepCard>
-                  <StepCard step={3} title="Open terminal in correct folder and install dependencies">
-                    <p>Open terminal in <code>lfg-tool</code> (same folder as <code>package.json</code>).</p>
-                    <p>If terminal is in wrong folder, next commands may fail.</p>
-                    Run:
+                  <StepCard
+                    step={3}
+                    title={t(
+                      "settings.reset.local.installTitle",
+                      "Open terminal in correct folder and install dependencies"
+                    )}
+                  >
+                    <p>
+                      {t("settings.reset.local.openTerminalIn", "Open terminal in")} {" "}
+                      <code>lfg-tool</code> ({t("settings.reset.local.sameFolderAs", "same folder as")} {" "}
+                      <code>package.json</code>).
+                    </p>
+                    <p>
+                      {t(
+                        "settings.reset.local.wrongFolderWarning",
+                        "If terminal is in wrong folder, next commands may fail."
+                      )}
+                    </p>
+                    {t("common.runCommand", "Run:")}
                     <CommandBlock>npm install</CommandBlock>
-                    Wait until it fully finishes.
+                    {t("settings.reset.local.waitForInstall", "Wait until it fully finishes.")}
                   </StepCard>
-                  <StepCard step={4} title="Start bot and confirm success">
-                    Run:
+                  <StepCard
+                    step={4}
+                    title={t(
+                      "settings.reset.local.startBotTitle",
+                      "Start bot and confirm success"
+                    )}
+                  >
+                    {t("common.runCommand", "Run:")}
                     <CommandBlock>npm start</CommandBlock>
-                    Keep this terminal open. If terminal closes, bot stops.
-                    <p>Success requires both:</p>
+                    {t(
+                      "settings.reset.local.keepTerminalOpen",
+                      "Keep this terminal open. If terminal closes, bot stops."
+                    )}
+                    <p>{t("settings.reset.local.successRequires", "Success requires both:")}</p>
                     <ol>
-                      <li>terminal shows <code>Logged in as ...</code></li>
-                      <li>Bot Status here changes to <strong>Online</strong> after refresh</li>
+                      <li>
+                        {t("settings.reset.local.terminalShows", "terminal shows")} {" "}
+                        <code>Logged in as ...</code>
+                      </li>
+                      <li>
+                        {t("settings.reset.local.botStatusChanges", "Bot Status here changes to")} {" "}
+                        <strong>{t("common.online", "Online")}</strong>{" "}
+                        {t("settings.reset.local.afterRefresh", "after refresh")}
+                      </li>
                     </ol>
                   </StepCard>
 
@@ -334,21 +505,36 @@ function ResetSettingsSectionComponent({
                       i
                     </span>
                     <div>
-                      <p className="mb-2 text-sm font-semibold text-foreground">Notes</p>
+                      <p className="mb-2 text-sm font-semibold text-foreground">
+                        {t("settings.reset.local.notes", "Notes")}
+                      </p>
                       <div className="space-y-2 text-sm leading-6 text-muted-foreground [&_code]:rounded [&_code]:border [&_code]:border-border/70 [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-foreground [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_ol>li]:marker:font-semibold [&_ol>li]:marker:text-primary [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_ul>li]:marker:text-primary/80">
-                    <p>Repeat this exact recovery path:</p>
+                    <p>
+                      {t(
+                        "settings.reset.local.recoveryPath",
+                        "Repeat this exact recovery path:"
+                      )}
+                    </p>
                     <ol>
-                      <li>open <code>/setup</code></li>
-                      <li>re-save Step 3</li>
-                      <li>re-save Step 6</li>
-                      <li>finalize Step 8</li>
-                      <li>run <code>npm start</code> again</li>
+                      <li>{t("settings.reset.local.openLowercase", "open")} <code>/setup</code></li>
+                      <li>{t("settings.reset.local.resaveStepThree", "re-save Step 3")}</li>
+                      <li>{t("settings.reset.local.resaveStepSix", "re-save Step 6")}</li>
+                      <li>{t("settings.reset.local.finalizeStepEight", "finalize Step 8")}</li>
+                      <li>
+                        {t("settings.reset.local.runLowercase", "run")} <code>npm start</code>{" "}
+                        {t("settings.reset.local.again", "again")}
+                      </li>
                     </ol>
-                    <p>Most common reasons for Offline:</p>
+                    <p>
+                      {t(
+                        "settings.reset.local.offlineReasons",
+                        "Most common reasons for Offline:"
+                      )}
+                    </p>
                     <ul>
-                      <li>wrong bot token</li>
-                      <li>wrong database URL</li>
-                      <li>setup not finalized</li>
+                      <li>{t("settings.reset.local.wrongBotToken", "wrong bot token")}</li>
+                      <li>{t("settings.reset.local.wrongDatabaseUrl", "wrong database URL")}</li>
+                      <li>{t("settings.reset.local.setupNotFinalized", "setup not finalized")}</li>
                     </ul>
                       </div>
                     </div>
@@ -358,36 +544,111 @@ function ResetSettingsSectionComponent({
 
               {deployTab === "railway" ? (
                 <div className={dashboardStepper}>
-                  <StepCard step={1} title="Create Railway project">
-                    Open Railway and create a new project.
+                  <StepCard
+                    step={1}
+                    title={t(
+                      "settings.reset.railway.createProjectTitle",
+                      "Create Railway project"
+                    )}
+                  >
+                    {t(
+                      "settings.reset.railway.createProjectDescription",
+                      "Open Railway and create a new project."
+                    )}
                   </StepCard>
-                  <StepCard step={2} title="Connect repository">
-                    Connect your GitHub repository so Railway can build and deploy automatically.
+                  <StepCard
+                    step={2}
+                    title={t(
+                      "settings.reset.railway.connectRepositoryTitle",
+                      "Connect repository"
+                    )}
+                  >
+                    {t(
+                      "settings.reset.railway.connectRepositoryDescription",
+                      "Connect your GitHub repository so Railway can build and deploy automatically."
+                    )}
                   </StepCard>
-                  <StepCard step={3} title="Add required variables in Railway">
-                    <p>Open Railway project and then open <strong>Variables</strong>.</p>
-                    <p>These values <strong>must exist</strong> and <strong>must match</strong> your setup values:</p>
+                  <StepCard
+                    step={3}
+                    title={t(
+                      "settings.reset.railway.variablesTitle",
+                      "Add required variables in Railway"
+                    )}
+                  >
+                    <p>
+                      {t("settings.reset.railway.openProject", "Open Railway project and then open")} {" "}
+                      <strong>{t("settings.reset.railway.variablesLabel", "Variables")}</strong>.
+                    </p>
+                    <p>
+                      {t("settings.reset.railway.theseValues", "These values")} {" "}
+                      <strong>{t("settings.reset.railway.mustExist", "must exist")}</strong>{" "}
+                      {t("common.and", "and")} {" "}
+                      <strong>{t("settings.reset.railway.mustMatch", "must match")}</strong>{" "}
+                      {t("settings.reset.railway.setupValues", "your setup values:")}
+                    </p>
                     <CommandBlock>DISCORD_TOKEN=your_bot_token
 DATABASE_URL=your_database_url
 NEXTAUTH_SECRET=your_nextauth_secret</CommandBlock>
-                    <p>Meaning:</p>
+                    <p>{t("settings.reset.railway.meaning", "Meaning:")}</p>
                     <ul>
-                      <li><code>DISCORD_TOKEN</code>: bot login credential</li>
-                      <li><code>DATABASE_URL</code>: database connection address</li>
-                      <li><code>NEXTAUTH_SECRET</code>: dashboard/session secret</li>
+                      <li>
+                        <code>DISCORD_TOKEN</code>: {" "}
+                        {t("settings.reset.railway.botCredential", "bot login credential")}
+                      </li>
+                      <li>
+                        <code>DATABASE_URL</code>: {" "}
+                        {t(
+                          "settings.reset.railway.databaseAddress",
+                          "database connection address"
+                        )}
+                      </li>
+                      <li>
+                        <code>NEXTAUTH_SECRET</code>: {" "}
+                        {t(
+                          "settings.reset.railway.dashboardSecret",
+                          "dashboard/session secret"
+                        )}
+                      </li>
                     </ul>
-                    <p>Important: Railway does not read your local <code>.setup-state.json</code>. You must set these variables in Railway.</p>
+                    <p>
+                      {t(
+                        "settings.reset.railway.localStatePrefix",
+                        "Important: Railway does not read your local"
+                      )}{" "}
+                      <code>.setup-state.json</code>. {" "}
+                      {t(
+                        "settings.reset.railway.setVariables",
+                        "You must set these variables in Railway."
+                      )}
+                    </p>
                   </StepCard>
-                  <StepCard step={4} title="Deploy">
-                    Trigger deployment and wait for build/start logs to complete.
+                  <StepCard
+                    step={4}
+                    title={t("settings.reset.railway.deployTitle", "Deploy")}
+                  >
+                    {t(
+                      "settings.reset.railway.deployDescription",
+                      "Trigger deployment and wait for build/start logs to complete."
+                    )}
                   </StepCard>
-                  <StepCard step={5} title="Check success">
-                    <p>Open Railway logs for successful startup, then refresh dashboard.</p>
-                    <p>Bot Status must change to <strong>Online</strong>.</p>
+                  <StepCard
+                    step={5}
+                    title={t("settings.reset.railway.checkSuccessTitle", "Check success")}
+                  >
+                    <p>
+                      {t(
+                        "settings.reset.railway.checkLogs",
+                        "Open Railway logs for successful startup, then refresh dashboard."
+                      )}
+                    </p>
+                    <p>
+                      {t("settings.reset.railway.statusMustChange", "Bot Status must change to")} {" "}
+                      <strong>{t("common.online", "Online")}</strong>.
+                    </p>
                   </StepCard>
                   <Button asChild>
                     <a href="https://railway.com?referralCode=EGh1Pg" target="_blank" rel="noreferrer">
-                      Deploy on Railway
+                      {t("settings.reset.railway.deployButton", "Deploy on Railway")}
                     </a>
                   </Button>
                 </div>
@@ -395,42 +656,85 @@ NEXTAUTH_SECRET=your_nextauth_secret</CommandBlock>
 
               {deployTab === "railway-cli" ? (
                 <div className={dashboardStepper}>
-                  <StepCard step={1} title="Install CLI">
-                    Run:
+                  <StepCard
+                    step={1}
+                    title={t("settings.reset.railwayCli.installTitle", "Install CLI")}
+                  >
+                    {t("common.runCommand", "Run:")}
                     <CommandBlock>npm i -g @railway/cli</CommandBlock>
                   </StepCard>
-                  <StepCard step={2} title="Login">
-                    Run:
+                  <StepCard
+                    step={2}
+                    title={t("settings.reset.railwayCli.loginTitle", "Login")}
+                  >
+                    {t("common.runCommand", "Run:")}
                     <CommandBlock>railway login</CommandBlock>
-                    Complete login in browser.
+                    {t(
+                      "settings.reset.railwayCli.completeLogin",
+                      "Complete login in browser."
+                    )}
                   </StepCard>
-                  <StepCard step={3} title="Link folder to Railway project">
-                    Run this from <code>lfg-tool</code> folder:
+                  <StepCard
+                    step={3}
+                    title={t(
+                      "settings.reset.railwayCli.linkTitle",
+                      "Link folder to Railway project"
+                    )}
+                  >
+                    {t("settings.reset.railwayCli.runFrom", "Run this from")} {" "}
+                    <code>lfg-tool</code> {t("settings.reset.railwayCli.folderSuffix", "folder:")}
                     <CommandBlock>railway link</CommandBlock>
                   </StepCard>
-                  <StepCard step={4} title="Set required variables">
-                    These values <strong>must exist</strong> and <strong>must match</strong> setup values:
+                  <StepCard
+                    step={4}
+                    title={t(
+                      "settings.reset.railwayCli.variablesTitle",
+                      "Set required variables"
+                    )}
+                  >
+                    {t("settings.reset.railway.theseValues", "These values")} {" "}
+                    <strong>{t("settings.reset.railway.mustExist", "must exist")}</strong>{" "}
+                    {t("common.and", "and")} {" "}
+                    <strong>{t("settings.reset.railway.mustMatch", "must match")}</strong>{" "}
+                    {t("settings.reset.railwayCli.setupValues", "setup values:")}
                     <CommandBlock>railway variable set DISCORD_TOKEN=...</CommandBlock>
                     <CommandBlock>railway variable set DATABASE_URL=...</CommandBlock>
                     <CommandBlock>railway variable set NEXTAUTH_SECRET=...</CommandBlock>
                   </StepCard>
-                  <StepCard step={5} title="Deploy">
+                  <StepCard
+                    step={5}
+                    title={t("settings.reset.railwayCli.deployTitle", "Deploy")}
+                  >
                     <CommandBlock>railway up</CommandBlock>
                   </StepCard>
-                  <StepCard step={6} title="Confirm success">
+                  <StepCard
+                    step={6}
+                    title={t(
+                      "settings.reset.railwayCli.confirmSuccessTitle",
+                      "Confirm success"
+                    )}
+                  >
                     <CommandBlock>railway logs</CommandBlock>
-                    <p>Check startup logs, then refresh dashboard.</p>
-                    <p>Bot Status must become <strong>Online</strong>.</p>
+                    <p>
+                      {t(
+                        "settings.reset.railwayCli.checkLogs",
+                        "Check startup logs, then refresh dashboard."
+                      )}
+                    </p>
+                    <p>
+                      {t("settings.reset.railwayCli.statusMustBecome", "Bot Status must become")} {" "}
+                      <strong>{t("common.online", "Online")}</strong>.
+                    </p>
                   </StepCard>
                   <div className="flex flex-wrap gap-2">
                     <Button asChild variant="outline">
                       <a href="https://docs.railway.com/cli.md" target="_blank" rel="noreferrer">
-                        Railway CLI Docs
+                        {t("settings.reset.railwayCli.docsButton", "Railway CLI Docs")}
                       </a>
                     </Button>
                     <Button asChild>
                       <a href="https://railway.com?referralCode=EGh1Pg" target="_blank" rel="noreferrer">
-                        Open Railway
+                        {t("settings.reset.railwayCli.openRailwayButton", "Open Railway")}
                       </a>
                     </Button>
                   </div>
@@ -445,15 +749,21 @@ NEXTAUTH_SECRET=your_nextauth_secret</CommandBlock>
         <CardHeader className="space-y-2">
           <CardTitle className="flex items-center gap-2 text-lg text-destructive">
             <AlertTriangle className="h-4 w-4" />
-            Reset settings
+            {t("settings.reset.title", "Reset settings")}
           </CardTitle>
           <CardDescription>
-            This clears OAuth, bot token, database, and guild settings so setup starts fresh.
+            {t(
+              "settings.reset.description",
+              "This clears OAuth, bot token, database, and guild settings so setup starts fresh."
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className={`${dashboardError} px-3 py-2 text-xs`}>
-            This action is destructive. You must type the current setup Guild ID to confirm.
+            {t(
+              "settings.reset.warning",
+              "This action is destructive. You must type the current setup Guild ID to confirm."
+            )}
           </div>
           <Dialog
             open={open}
@@ -466,36 +776,57 @@ NEXTAUTH_SECRET=your_nextauth_secret</CommandBlock>
           >
             <DialogTrigger asChild>
               <Button variant="destructive" disabled={!trimmedGuildId || resetting}>
-                Reset Setting
+                {t("settings.reset.button", "Reset Setting")}
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent showCloseButton={false}>
+              <DialogClose className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+                <X />
+                <span className="sr-only">{t("common.close", "Close")}</span>
+              </DialogClose>
               <DialogHeader>
-                <DialogTitle>Confirm reset</DialogTitle>
+                <DialogTitle>
+                  {t("settings.reset.dialog.title", "Confirm reset")}
+                </DialogTitle>
                 <DialogDescription>
-                  Type the current setup Guild ID <span className="font-mono">{trimmedGuildId || "(not set)"}</span> to confirm.
+                  {t(
+                    "settings.reset.dialog.descriptionPrefix",
+                    "Type the current setup Guild ID"
+                  )}{" "}
+                  <span className="font-mono">
+                    {trimmedGuildId || t("common.notSet", "(not set)")}
+                  </span>{" "}
+                  {t("settings.reset.dialog.descriptionSuffix", "to confirm.")}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-2">
                 <label htmlFor="reset-guild-confirm" className="text-sm font-medium">
-                  Guild ID confirmation
+                  {t("settings.reset.dialog.confirmationLabel", "Guild ID confirmation")}
                 </label>
                 <Input
                   id="reset-guild-confirm"
                   value={confirmValue}
                   onChange={(event) => setConfirmValue(event.target.value)}
-                  placeholder="Enter current setup Guild ID"
+                  placeholder={t(
+                    "settings.reset.dialog.confirmationPlaceholder",
+                    "Enter current setup Guild ID"
+                  )}
                   autoComplete="off"
                 />
               </div>
-              <DialogFooter showCloseButton>
+              <DialogFooter>
                 <Button
                   variant="destructive"
                   onClick={handleReset}
                   disabled={!isConfirmMatch || resetting || !trimmedGuildId}
                 >
-                  {resetting ? "Resetting..." : "Reset Setting"}
+                  {resetting
+                    ? t("settings.reset.dialog.resetting", "Resetting...")
+                    : t("settings.reset.button", "Reset Setting")}
                 </Button>
+                <DialogClose asChild>
+                  <Button variant="outline">{t("common.close", "Close")}</Button>
+                </DialogClose>
               </DialogFooter>
             </DialogContent>
           </Dialog>

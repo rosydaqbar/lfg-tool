@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { dashboardCard, dashboardEmpty, dashboardError } from "@/components/ui/patterns";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 import type { VoiceDeleteLeaderboardEntry } from "./types";
 import { useAdaptivePolling } from "./use-adaptive-polling";
 
@@ -25,16 +26,24 @@ type VoiceLeaderboardCardProps = {
   selectedGuildId: string;
 };
 
-function formatDuration(totalMs: number) {
+type DashboardTranslate = ReturnType<typeof useDashboardI18n>["t"];
+
+function formatDuration(totalMs: number, t: DashboardTranslate) {
   const safeMs = Math.max(0, Number(totalMs) || 0);
   const totalMinutes = Math.floor(safeMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours <= 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
+  if (hours <= 0) {
+    return t("common.duration.minutes", "{minutes}m", { minutes });
+  }
+  return t("common.duration.hoursMinutes", "{hours}h {minutes}m", {
+    hours,
+    minutes,
+  });
 }
 
 function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCardProps) {
+  const { t } = useDashboardI18n();
   const [rows, setRows] = useState<VoiceDeleteLeaderboardEntry[]>([]);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -51,7 +60,11 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
         `/api/guilds/${selectedGuildId}/voice-leaderboard?limit=20&offset=${page * 20}`,
         { cache: "no-store" }
       );
-      if (!response.ok) throw new Error("Failed to load leaderboard");
+      if (!response.ok) {
+        throw new Error(
+          t("detail.leaderboard.errors.load", "Failed to load leaderboard")
+        );
+      }
       const data = (await response.json()) as {
         leaderboard: VoiceDeleteLeaderboardEntry[];
       };
@@ -60,7 +73,11 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
       loadedOnce.current = true;
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load leaderboard");
+      setError(
+        err instanceof Error
+          ? err.message
+          : t("detail.leaderboard.errors.load", "Failed to load leaderboard")
+      );
       return false;
     } finally {
       setLoading(false);
@@ -76,24 +93,36 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
     if (!selectedGuildId) return;
 
     const hoursInput = window.prompt(
-      `Edit total hours for ${row.userName || row.userId}`,
+      t(
+        "detail.leaderboard.prompts.editHours",
+        "Edit total hours for {user}",
+        { user: row.userName || row.userId }
+      ),
       (row.totalMs / 3600000).toFixed(2)
     );
     if (hoursInput === null) return;
     const parsedHours = Number(hoursInput);
     if (!Number.isFinite(parsedHours) || parsedHours < 0) {
-      setError("Invalid total hours value.");
+      setError(
+        t("detail.leaderboard.errors.invalidHours", "Invalid total hours value.")
+      );
       return;
     }
 
     const sessionsInput = window.prompt(
-      `Edit sessions for ${row.userName || row.userId}`,
+      t(
+        "detail.leaderboard.prompts.editSessions",
+        "Edit sessions for {user}",
+        { user: row.userName || row.userId }
+      ),
       String(row.sessions)
     );
     if (sessionsInput === null) return;
     const parsedSessions = Number(sessionsInput);
     if (!Number.isFinite(parsedSessions) || parsedSessions < 0) {
-      setError("Invalid sessions value.");
+      setError(
+        t("detail.leaderboard.errors.invalidSessions", "Invalid sessions value.")
+      );
       return;
     }
 
@@ -112,12 +141,23 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(payload?.error || "Failed to update leaderboard entry");
+        throw new Error(
+          payload?.error ||
+            t(
+              "detail.leaderboard.errors.update",
+              "Failed to update leaderboard entry"
+            )
+        );
       }
       await loadLeaderboard(false);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to update leaderboard entry"
+        err instanceof Error
+          ? err.message
+          : t(
+              "detail.leaderboard.errors.update",
+              "Failed to update leaderboard entry"
+            )
       );
     } finally {
       setMutatingUserId(null);
@@ -137,12 +177,23 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(payload?.error || "Failed to delete leaderboard entry");
+        throw new Error(
+          payload?.error ||
+            t(
+              "detail.leaderboard.errors.delete",
+              "Failed to delete leaderboard entry"
+            )
+        );
       }
       await loadLeaderboard(false);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to delete leaderboard entry"
+        err instanceof Error
+          ? err.message
+          : t(
+              "detail.leaderboard.errors.delete",
+              "Failed to delete leaderboard entry"
+            )
       );
     } finally {
       setMutatingUserId(null);
@@ -157,10 +208,13 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <Trophy className="h-4 w-4" />
-          Voice Leaderboard
+          {t("detail.leaderboard.title", "Voice Leaderboard")}
         </CardTitle>
         <CardDescription>
-          Total voice duration ranking from temp channel logs and manual sessions.
+          {t(
+            "detail.leaderboard.description",
+            "Total voice duration ranking from temp channel logs and manual sessions."
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -179,11 +233,19 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>#</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Total Durasi</TableHead>
-                <TableHead>Session Count</TableHead>
-                {debugMode ? <TableHead className="text-right">Debug Actions</TableHead> : null}
+                <TableHead>{t("detail.leaderboard.columns.rank", "#")}</TableHead>
+                <TableHead>{t("detail.leaderboard.columns.user", "User")}</TableHead>
+                <TableHead>
+                  {t("detail.leaderboard.columns.totalDuration", "Total duration")}
+                </TableHead>
+                <TableHead>
+                  {t("detail.leaderboard.columns.sessionCount", "Session Count")}
+                </TableHead>
+                {debugMode ? (
+                  <TableHead className="text-right">
+                    {t("detail.leaderboard.columns.debugActions", "Debug Actions")}
+                  </TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -195,7 +257,9 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
                     <div className="text-xs font-mono text-muted-foreground">{item.userId}</div>
                   </TableCell>
                   <TableCell>
-                    <span className="font-mono">{formatDuration(item.totalMs)}</span>
+                    <span className="font-mono">
+                      {formatDuration(item.totalMs, t)}
+                    </span>
                   </TableCell>
                   <TableCell>{item.sessions}</TableCell>
                   {debugMode ? (
@@ -208,7 +272,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
                           disabled={mutatingUserId === item.userId}
                           onClick={() => void editEntry(item)}
                         >
-                          Edit
+                          {t("common.actions.edit", "Edit")}
                         </Button>
                         <Button
                           type="button"
@@ -217,7 +281,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
                           disabled={mutatingUserId === item.userId}
                           onClick={() => void deleteEntry(item.userId)}
                         >
-                          Delete
+                          {t("common.actions.delete", "Delete")}
                         </Button>
                       </div>
                     </TableCell>
@@ -227,7 +291,9 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
             </TableBody>
           </Table>
         ) : (
-          <div className={dashboardEmpty}>No leaderboard data yet.</div>
+          <div className={dashboardEmpty}>
+            {t("detail.leaderboard.empty", "No leaderboard data yet.")}
+          </div>
         )}
 
         <div className="flex items-center justify-between gap-2">
@@ -237,7 +303,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
             size="sm"
             onClick={() => setDebugMode((prev) => !prev)}
           >
-            Debug
+            {t("detail.leaderboard.actions.debug", "Debug")}
           </Button>
           <div className="flex items-center gap-2">
             <Button
@@ -247,7 +313,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
               onClick={() => setPage((prev) => Math.max(0, prev - 1))}
               disabled={!canPrev || loading}
             >
-              Sebelumnya
+              {t("common.pagination.previous", "Previous")}
             </Button>
             <Button
               type="button"
@@ -256,7 +322,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
               onClick={() => setPage((prev) => prev + 1)}
               disabled={!canNext || loading}
             >
-              Berikutnya
+              {t("common.pagination.next", "Next")}
             </Button>
           </div>
         </div>

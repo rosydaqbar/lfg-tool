@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 
 type Options = {
   activeDelayMs?: number;
@@ -14,6 +14,7 @@ export function useAdaptivePolling(
   deps: ReadonlyArray<unknown>,
   options: Options = {}
 ) {
+  const runTask = useEffectEvent(task);
   const {
     activeDelayMs = 15000,
     hiddenDelayMs = 60000,
@@ -34,7 +35,7 @@ export function useAdaptivePolling(
     };
 
     const run = async (showLoader: boolean) => {
-      const ok = await task(showLoader).catch(() => false);
+      const ok = await runTask(showLoader).catch(() => false);
       failureCount = ok ? 0 : failureCount + 1;
 
       if (!active) return;

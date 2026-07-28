@@ -12,7 +12,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SignOutButton } from "@/components/sign-out-button";
-import { StatusBadge, guildStatusLabel, guildStatusTone } from "@/components/status-badge";
+import { StatusBadge, guildStatusTone } from "@/components/status-badge";
+import { useDashboardI18n } from "@/components/dashboard/dashboard-i18n";
 import type { ManageableGuild } from "@/components/dashboard/types";
 
 type HeaderSectionProps = {
@@ -46,17 +47,22 @@ function HeaderSectionComponent({
   onLoadMoreGuilds,
   onRefreshGuilds,
 }: HeaderSectionProps) {
+  const { t } = useDashboardI18n();
+
   return (
     <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between animate-in fade-in-0 slide-in-from-bottom-4 duration-700">
       <div className="space-y-3">
         <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-          Voice Log Console
+          {t("dashboard.header.eyebrow", "Voice Log Console")}
         </p>
         <h1 className="font-[var(--font-display)] text-4xl text-foreground">
-          Welcome back, {userName}
+          {t("dashboard.header.welcome", "Welcome back, {userName}", { userName })}
         </h1>
         <p className="max-w-2xl text-base text-muted-foreground">
-          Set log/LFG channels, configure Join-to-Create lobbies, and manage voice log channels.
+          {t(
+            "dashboard.header.description",
+            "Set log/LFG channels, configure Join-to-Create lobbies, and manage voice log channels."
+          )}
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <Dialog open={guildPickerOpen} onOpenChange={onGuildPickerOpenChange}>
@@ -67,15 +73,24 @@ function HeaderSectionComponent({
               onClick={() => onGuildPickerOpenChange(true)}
             >
               <span className="truncate text-left">
-                {selectedGuild?.name ?? "Select a server"}
+                {selectedGuild?.name ??
+                  t("dashboard.header.guildPicker.placeholder", "Select a server")}
               </span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             </Button>
-            <DialogContent className="sm:max-w-xl">
+            <DialogContent
+              className="sm:max-w-xl"
+              closeLabel={t("common.close", "Close")}
+            >
               <DialogHeader>
-                <DialogTitle>Select a server</DialogTitle>
+                <DialogTitle>
+                  {t("dashboard.header.guildPicker.title", "Select a server")}
+                </DialogTitle>
                 <DialogDescription>
-                  Choose the Discord server you want to manage. The dashboard will remember this server on this device.
+                  {t(
+                    "dashboard.header.guildPicker.description",
+                    "Choose the Discord server you want to manage. The dashboard will remember this server on this device."
+                  )}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid max-h-[420px] gap-2 overflow-y-auto pr-1">
@@ -91,18 +106,39 @@ function HeaderSectionComponent({
                       <span className="block truncate font-mono text-xs text-muted-foreground">{guild.id}</span>
                     </span>
                     <StatusBadge tone={guildStatusTone(guild.status)} className="shrink-0 text-[11px]" dot>
-                      {guildStatusLabel(guild.status)}
+                      {guild.status === "ready"
+                        ? t("dashboard.header.guildPicker.status.ready", "Ready")
+                        : guild.status === "needs_setup"
+                          ? t(
+                              "dashboard.header.guildPicker.status.needsSetup",
+                              "Needs setup"
+                            )
+                          : t(
+                              "dashboard.header.guildPicker.status.inviteBot",
+                              "Invite bot"
+                            )}
                     </StatusBadge>
                   </button>
                 )) : (
                   <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                    No manageable Discord servers found for this account.
+                    {t(
+                      "dashboard.header.guildPicker.empty",
+                      "No manageable Discord servers found for this account."
+                    )}
                   </div>
                 )}
               </div>
               <DialogFooter className="items-center justify-between sm:justify-between">
                 <p className="text-xs text-muted-foreground">
-                  Showing {guilds.length} server{guilds.length === 1 ? "" : "s"}
+                  {t(
+                    guilds.length === 1
+                      ? "dashboard.header.guildPicker.serverCount.one"
+                      : "dashboard.header.guildPicker.serverCount.many",
+                    guilds.length === 1
+                      ? "Showing {count} server"
+                      : "Showing {count} servers",
+                    { count: guilds.length }
+                  )}
                 </p>
                 <Button
                   type="button"
@@ -110,7 +146,11 @@ function HeaderSectionComponent({
                   onClick={onLoadMoreGuilds}
                   disabled={!hasMoreGuilds || loadingMoreGuilds}
                 >
-                  {loadingMoreGuilds ? "Loading..." : hasMoreGuilds ? "Load more" : "All servers loaded"}
+                  {loadingMoreGuilds
+                    ? t("dashboard.header.guildPicker.loading", "Loading...")
+                    : hasMoreGuilds
+                      ? t("dashboard.header.guildPicker.loadMore", "Load more")
+                      : t("dashboard.header.guildPicker.allLoaded", "All servers loaded")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -122,10 +162,10 @@ function HeaderSectionComponent({
             className="h-8 rounded-full px-3 text-xs"
             onClick={onRefreshGuilds}
             disabled={refreshingGuilds}
-            title="Refresh bot status"
+            title={t("dashboard.header.refresh.title", "Refresh bot status")}
           >
             <RefreshCw className={`h-3.5 w-3.5 ${refreshingGuilds ? "animate-spin" : ""}`} />
-            Refresh status
+            {t("dashboard.header.refresh.button", "Refresh status")}
           </Button>
           {selectedGuildId ? (
             <span className="font-mono text-xs text-muted-foreground">
@@ -138,7 +178,9 @@ function HeaderSectionComponent({
         <ThemeToggle />
         <Badge variant="secondary" className="gap-2 rounded-full px-4 py-1">
           <BadgeCheck className="h-3.5 w-3.5" />
-          {accessLabel === "Owner" ? "Server owner" : "Server admin"}
+          {accessLabel === "Owner"
+            ? t("dashboard.header.access.owner", "Server owner")
+            : t("dashboard.header.access.admin", "Server admin")}
         </Badge>
         <SignOutButton />
       </div>

@@ -2,7 +2,9 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { Button } from "@/components/ui/button";
 import { VoiceLogPageClient } from "@/components/dashboard/voice-log-page-client";
+import { DashboardI18nProvider } from "@/components/dashboard/dashboard-i18n";
 import { authOptions } from "@/lib/auth";
+import { getGuildConfig } from "@/lib/db";
 
 const GUILD_ID = "670147766839803924";
 
@@ -27,9 +29,14 @@ export default async function VoiceLogPage() {
     );
   }
 
+  const config = await getGuildConfig(GUILD_ID).catch(() => null);
+  const locale = config?.locale === "id" ? "id" : "en";
+
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-16">
-      <VoiceLogPageClient selectedGuildId={GUILD_ID} />
+      <DashboardI18nProvider locale={locale}>
+        <VoiceLogPageClient selectedGuildId={GUILD_ID} />
+      </DashboardI18nProvider>
     </div>
   );
 }

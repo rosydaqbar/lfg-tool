@@ -54,9 +54,9 @@ In plain terms: users join a lobby voice channel, the bot creates a private temp
 
 ## Bot Language
 
-Open Dashboard Settings and use the Language card to choose the bot language for the selected Discord server. English is the default, and Indonesian is also supported.
+Open Dashboard Settings and use the Language card to choose one language for the selected Discord server. English is the default, and Indonesian is also supported.
 
-The setting applies to Discord panels, interaction replies, notices, moderation and activity logs, setup flows, and DMs created or refreshed by the bot. The dashboard interface remains English. Previously sent Discord messages keep their existing text until the bot refreshes or replaces them.
+The same setting supplies the locale to the dashboard translation provider and to Discord panels, interaction replies, notices, moderation and activity logs, setup flows, and DMs. Dashboard strings without a translation fall back to English. Previously sent Discord messages keep their existing text until the bot refreshes or replaces them.
 
 ## Spam Catcher
 

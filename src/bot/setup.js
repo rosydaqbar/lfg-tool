@@ -372,38 +372,44 @@ function buildCompletePayload(state, notice = null) {
   if (state.validLobbies.length > 5) {
     lobbyLines.push(t(locale, 'setup.andMore', { count: state.validLobbies.length - 5 }));
   }
-  const container = new ContainerBuilder()
-    .setAccentColor(0x22c55e)
+  const step1Section = new SectionBuilder()
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent([
-        t(locale, 'setup.completeTitle'),
         t(locale, 'setup.step1Summary'),
         t(locale, 'setup.logSummary', { channelId: state.logChannel.id }),
         t(locale, 'setup.lfgSummary', { channelId: state.lfgChannel.id }),
-        '',
+      ].join('\n'))
+    )
+    .setButtonAccessory(
+      new ButtonBuilder()
+        .setCustomId(step1ButtonCustomId(state))
+        .setLabel(t(locale, 'setup.changeChannels'))
+        .setStyle(ButtonStyle.Secondary)
+    );
+  const step2Section = new SectionBuilder()
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent([
         t(locale, 'setup.step2Summary'),
         ...lobbyLines,
         '',
         t(locale, 'setup.roleHelp'),
       ].join('\n'))
     )
-    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
-    .addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(step1ButtonCustomId(state))
-          .setLabel(t(locale, 'setup.changeChannels'))
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(STEP2_MANAGE_ID)
-          .setLabel(t(locale, 'setup.manageJtc'))
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId(SETUP_REFRESH_ID)
-          .setLabel(t(locale, 'setup.runCheck'))
-          .setStyle(ButtonStyle.Secondary)
-      )
+    .setButtonAccessory(
+      new ButtonBuilder()
+        .setCustomId(STEP2_MANAGE_ID)
+        .setLabel(t(locale, 'setup.manageJtc'))
+        .setStyle(ButtonStyle.Primary)
     );
+  const container = new ContainerBuilder()
+    .setAccentColor(0x22c55e)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(t(locale, 'setup.completeTitle'))
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addSectionComponents(step1Section)
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addSectionComponents(step2Section);
   if (state.invalidLobbies.length > 0) {
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
@@ -418,7 +424,19 @@ function buildCompletePayload(state, notice = null) {
       )
     );
   }
-  return buildV2Payload(addNotice(container, notice, locale));
+  return {
+    components: [
+      addNotice(container, notice, locale),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(SETUP_REFRESH_ID)
+          .setLabel(t(locale, 'setup.runCheck'))
+          .setStyle(ButtonStyle.Secondary)
+      ),
+    ],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  };
 }
 
 function buildPanelForState(state, preferredView = null, notice = null) {
