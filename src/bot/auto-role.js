@@ -10,17 +10,18 @@ const {
   SeparatorBuilder,
   TextDisplayBuilder,
 } = require('@discordjs/builders');
+const { getGuildLocale, t } = require('../i18n');
 
 const APPROVE_PREFIX = 'autorole_approve';
 const DENY_PREFIX = 'autorole_deny';
 const EVALUATE_INTERVAL_MS = 3 * 60 * 1000;
 
-function formatDuration(totalMs) {
+function formatDuration(totalMs, locale = 'en') {
   const safeMs = Math.max(0, Number(totalMs) || 0);
   const totalMinutes = Math.floor(safeMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return `${hours}h ${minutes}m`;
+  return t(locale, 'common.durationHoursMinutes', { hours, minutes });
 }
 
 function createAutoRoleManager({ client, configStore }) {
@@ -55,13 +56,13 @@ function createAutoRoleManager({ client, configStore }) {
     return member.roles.cache.has(rule.requiredRoleId);
   }
 
-  function buildApprovalPayload({ requestId, memberId, roleId, rule, totalMs }) {
+  function buildApprovalPayload({ requestId, memberId, roleId, rule, totalMs, locale = 'en' }) {
     const conditionLabel =
       rule.condition === 'more_than'
-        ? 'lebih dari'
+        ? t(locale, 'autoRole.moreThan')
         : rule.condition === 'less_than'
-          ? 'kurang dari'
-          : 'sama dengan';
+          ? t(locale, 'autoRole.lessThan')
+          : t(locale, 'autoRole.equalTo');
 
     return {
       components: [
@@ -70,13 +71,13 @@ function createAutoRoleManager({ client, configStore }) {
           .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
               [
-                '### Auto Role Butuh Approval',
-                '-# Ada user yang sudah memenuhi syarat auto role. Admin perlu cek dan approve dulu sebelum role diberikan.',
+                t(locale, 'autoRole.title'),
+                t(locale, 'autoRole.help'),
                 '',
-                `- User: <@${memberId}>`,
-                `- Role yang akan diberikan: <@&${roleId}> (\`${roleId}\`)`,
-                `- Total waktu voice saat ini: \`${formatDuration(totalMs)}\``,
-                `- Rule yang cocok: \`${conditionLabel} ${rule.hours}h\``,
+                t(locale, 'autoRole.user', { memberId }),
+                t(locale, 'autoRole.roleToGrant', { roleId }),
+                t(locale, 'autoRole.currentVoice', { duration: formatDuration(totalMs, locale) }),
+                t(locale, 'autoRole.matchingRule', { condition: conditionLabel, hours: rule.hours }),
               ].join('\n')
             )
           )
@@ -85,17 +86,20 @@ function createAutoRoleManager({ client, configStore }) {
             new ActionRowBuilder().addComponents(
               new ButtonBuilder()
                 .setCustomId(`${APPROVE_PREFIX}:${requestId}`)
-                .setLabel('Setujui')
+                .setLabel(t(locale, 'autoRole.approve'))
                 .setStyle(ButtonStyle.Success),
               new ButtonBuilder()
                 .setCustomId(`${DENY_PREFIX}:${requestId}`)
-                .setLabel('Tolak')
+                .setLabel(t(locale, 'autoRole.deny'))
                 .setStyle(ButtonStyle.Danger)
             )
           )
           .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-              `-# Request ID: \`${requestId}\` • Created <t:${Math.floor(Date.now() / 1000)}:R>`
+              t(locale, 'autoRole.requestMeta', {
+                requestId,
+                timestamp: `<t:${Math.floor(Date.now() / 1000)}:R>`,
+              })
             )
           ),
       ],
@@ -108,8 +112,9 @@ function createAutoRoleManager({ client, configStore }) {
     status,
     request,
     adminId,
+    locale = 'en',
   }) {
-    const statusLabel = status === 'approved' ? 'Disetujui' : 'Ditolak';
+    const statusLabel = t(locale, status === 'approved' ? 'autoRole.approved' : 'autoRole.denied');
     const emoji = status === 'approved' ? '✅' : '❌';
     const accentColor = status === 'approved' ? 0x22c55e : 0xef4444;
     return [
@@ -118,17 +123,25 @@ function createAutoRoleManager({ client, configStore }) {
         .addTextDisplayComponents(
           new TextDisplayBuilder().setContent(
             [
-              '### Auto Role Butuh Approval',
-              `- User: <@${request.userId}>`,
-              `- Role yang ${status === 'approved' ? 'diberikan' : 'diminta'}: <@&${request.roleId}> (\`${request.roleId}\`)`,
-              `- Total waktu voice saat ini: \`${formatDuration(request.totalMs)}\``,
-              `${emoji} Status: **${statusLabel}** oleh <@${adminId}> pada <t:${Math.floor(Date.now() / 1000)}:F>`,
+              t(locale, 'autoRole.title'),
+              t(locale, 'autoRole.user', { memberId: request.userId }),
+              t(locale, 'autoRole.roleResult', {
+                verb: t(locale, status === 'approved' ? 'autoRole.roleGrantedVerb' : 'autoRole.roleRequestedVerb'),
+                roleId: request.roleId,
+              }),
+              t(locale, 'autoRole.currentVoice', { duration: formatDuration(request.totalMs, locale) }),
+              t(locale, 'autoRole.resolvedStatus', {
+                emoji,
+                status: statusLabel,
+                adminId,
+                timestamp: `<t:${Math.floor(Date.now() / 1000)}:F>`,
+              }),
             ].join('\n')
           )
         )
         .addTextDisplayComponents(
           new TextDisplayBuilder().setContent(
-            `-# Request ID: \`${request.id}\``
+            t(locale, 'autoRole.resolvedMeta', { requestId: request.id })
           )
         ),
     ];
@@ -179,6 +192,7 @@ function createAutoRoleManager({ client, configStore }) {
       .fetch(autoRoleConfig.approvalChannelId)
       .catch(() => null);
     if (!approvalChannel || !approvalChannel.isTextBased()) return;
+    const locale = await getGuildLocale(configStore, guild.id);
 
     const sent = await approvalChannel
       .send(buildApprovalPayload({
@@ -187,6 +201,7 @@ function createAutoRoleManager({ client, configStore }) {
         roleId: rule.roleId,
         rule,
         totalMs,
+        locale,
       }))
       .catch((error) => {
         console.error('Failed to send auto-role approval request:', error);
@@ -211,6 +226,7 @@ function createAutoRoleManager({ client, configStore }) {
 
     const totals = await configStore.getGuildVoiceTotals(guild.id).catch(() => []);
     if (!totals.length) return;
+    const locale = await getGuildLocale(configStore, guild.id);
 
     for (const entry of totals) {
       const member = await guild.members.fetch(entry.userId).catch(() => null);
@@ -234,7 +250,7 @@ function createAutoRoleManager({ client, configStore }) {
           continue;
         }
 
-        await member.roles.add(rule.roleId, 'Auto role by voice time').catch((error) => {
+        await member.roles.add(rule.roleId, t(locale, 'autoRole.assignReason')).catch((error) => {
           console.error('Failed to assign auto role:', error);
         });
       }
@@ -276,10 +292,11 @@ function createAutoRoleManager({ client, configStore }) {
     const isApprove = interaction.customId.startsWith(`${APPROVE_PREFIX}:`);
     const isDeny = interaction.customId.startsWith(`${DENY_PREFIX}:`);
     if (!isApprove && !isDeny) return false;
+    const locale = await getGuildLocale(configStore, interaction.guildId);
 
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
       await interaction.reply({
-        content: 'Hanya Administrator yang bisa memproses approval auto role.',
+        content: t(locale, 'autoRole.adminOnly'),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return true;
@@ -289,7 +306,7 @@ function createAutoRoleManager({ client, configStore }) {
     const requestId = Number(requestIdRaw);
     if (!Number.isFinite(requestId) || requestId <= 0) {
       await interaction.reply({
-        content: 'Request ID tidak valid.',
+        content: t(locale, 'autoRole.invalidRequestId'),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return true;
@@ -298,17 +315,18 @@ function createAutoRoleManager({ client, configStore }) {
     const request = await configStore.getVoiceAutoRoleRequestById(requestId).catch(() => null);
     if (!request) {
       await interaction.reply({
-        content: 'Request tidak ditemukan.',
+        content: t(locale, 'autoRole.requestNotFound'),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return true;
     }
 
     if (request.status !== 'pending') {
+      const requestStatus = t(locale, `autoRole.${request.status}`);
       const deleted = await interaction.message?.delete().then(() => true).catch(() => false);
       if (deleted) {
         await interaction.reply({
-          content: `Request ini sudah diproses (${request.status}); pesan approval lama sudah dihapus.`,
+          content: t(locale, 'autoRole.alreadyProcessedDeleted', { status: requestStatus }),
           flags: MessageFlags.Ephemeral,
         }).catch(() => null);
         return true;
@@ -320,12 +338,13 @@ function createAutoRoleManager({ client, configStore }) {
           status: request.status,
           request,
           adminId: request.decidedBy || interaction.user.id,
+          locale,
         }),
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { parse: [] },
       }).catch(async () => {
         await interaction.reply({
-          content: `Request ini sudah diproses (${request.status}).`,
+          content: t(locale, 'autoRole.alreadyProcessed', { status: requestStatus }),
           flags: MessageFlags.Ephemeral,
         }).catch(() => null);
       });
@@ -340,7 +359,7 @@ function createAutoRoleManager({ client, configStore }) {
         : null;
       if (!member) {
         await interaction.reply({
-          content: 'User tidak ditemukan di server. Request tetap pending.',
+          content: t(locale, 'autoRole.userMissing'),
           flags: MessageFlags.Ephemeral,
         });
         return true;
@@ -348,7 +367,7 @@ function createAutoRoleManager({ client, configStore }) {
 
       let addError = null;
       await member.roles
-        .add(request.roleId, `Auto role approved by ${interaction.user.id}`)
+        .add(request.roleId, t(locale, 'autoRole.approvedReason', { adminId: interaction.user.id }))
         .catch((error) => {
           addError = error;
         });
@@ -357,7 +376,7 @@ function createAutoRoleManager({ client, configStore }) {
         console.error('Failed to approve auto role request:', addError);
         await interaction.reply({
           content:
-            'Bot gagal memberikan role (missing permission / role hierarchy). Request tetap pending, silakan perbaiki permission lalu Approve lagi.',
+            t(locale, 'autoRole.grantFailed'),
           flags: MessageFlags.Ephemeral,
         }).catch(() => null);
         return true;
@@ -380,6 +399,7 @@ function createAutoRoleManager({ client, configStore }) {
         status,
         request,
         adminId: interaction.user.id,
+        locale,
       }),
       flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
@@ -387,7 +407,9 @@ function createAutoRoleManager({ client, configStore }) {
 
     if (!updated) {
       await interaction.reply({
-        content: `Request ${status === 'approved' ? 'approved' : 'denied'} tetapi gagal memperbarui pesan approval.`,
+        content: t(locale, 'autoRole.updateFailed', {
+          status: t(locale, status === 'approved' ? 'autoRole.approved' : 'autoRole.denied'),
+        }),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
     }

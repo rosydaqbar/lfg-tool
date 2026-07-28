@@ -253,6 +253,9 @@ async function ensureJoinToCreateSetup() {
     await query(
       'ALTER TABLE IF EXISTS guild_setup_operations ALTER COLUMN resource_marker SET NOT NULL'
     );
+    await query(
+      "ALTER TABLE IF EXISTS guild_config ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en'"
+    );
     joinToCreateSetupEnsured = true;
   } catch (error) {
     console.error('Failed to ensure Join-to-Create setup storage:', error);
@@ -444,6 +447,7 @@ async function getGuildConfig(guildId) {
       SELECT
         log_channel_id,
         lfg_channel_id,
+        locale,
         (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
       FROM guild_config
       WHERE guild_id = $1
@@ -486,6 +490,7 @@ async function getGuildConfig(guildId) {
   return {
     logChannelId: configRow.log_channel_id ?? null,
     lfgChannelId: configRow.lfg_channel_id ?? null,
+    locale: configRow.locale === 'id' ? 'id' : 'en',
     configVersion: configRow.config_version ?? null,
     enabledVoiceChannelIds: watchlistRes.rows.map(
       (row) => row.voice_channel_id
@@ -1698,19 +1703,20 @@ async function getTempChannelInfo(channelId) {
   let res;
   try {
     res = await query(
-      'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id, lfg_enabled, prompt_message_id, reminder_dm_message_id FROM temp_voice_channels WHERE channel_id = $1',
+      'SELECT guild_id, owner_id, lfg_channel_id, lfg_message_id, role_id, lfg_enabled, prompt_message_id, reminder_dm_message_id FROM temp_voice_channels WHERE channel_id = $1',
       [channelId]
     );
   } catch (error) {
     if (error?.code !== '42703') throw error;
     res = await query(
-      'SELECT owner_id, lfg_channel_id, lfg_message_id, role_id FROM temp_voice_channels WHERE channel_id = $1',
+      'SELECT guild_id, owner_id, lfg_channel_id, lfg_message_id, role_id FROM temp_voice_channels WHERE channel_id = $1',
       [channelId]
     );
   }
   const row = res.rows[0];
   if (!row) return null;
   return {
+    guildId: row.guild_id,
     ownerId: row.owner_id,
     lfgChannelId: row.lfg_channel_id ?? null,
     lfgMessageId: row.lfg_message_id ?? null,

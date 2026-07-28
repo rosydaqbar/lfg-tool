@@ -71,7 +71,7 @@ function VoiceLogDeletedCardComponent({
           Voice Log
         </CardTitle>
         <CardDescription>
-          Log campuran untuk temp channel terhapus dan sesi manual voice channel.
+          Combined log for deleted temp channels and manual voice channel sessions.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -135,12 +135,12 @@ function VoiceLogDeletedCardComponent({
                         ))}
                       {log.history.length > 15 ? (
                         <div className="text-xs text-muted-foreground">
-                          ...dan {log.history.length - 15} lainnya
+                          ...and {log.history.length - 15} more
                         </div>
                       ) : null}
                     </div>
                   ) : (
-                    <div className="text-xs text-muted-foreground">Tidak ada riwayat user</div>
+                    <div className="text-xs text-muted-foreground">No user history</div>
                   )}
                 </div>
               </div>
@@ -148,7 +148,7 @@ function VoiceLogDeletedCardComponent({
           </div>
         ) : (
           <div className={dashboardEmpty}>
-            Belum ada data voice log.
+            No voice log data yet.
           </div>
         )}
 

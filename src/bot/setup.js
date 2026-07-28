@@ -19,6 +19,7 @@ const {
   createQuickSetupProvisioner,
   getQuickSetupPermissionError,
 } = require('./setup-provisioning');
+const { getGuildLocale, normalizeLocale, t } = require('../i18n');
 
 const SETUP_COMMAND = 'setup';
 const STEP1_CHANGE_PREFIX = 'guild_setup_change';
@@ -45,7 +46,8 @@ const SETUP_MESSAGE_FLAGS = MessageFlags.Ephemeral | MessageFlags.IsComponentsV2
 function buildSetupCommand() {
   return new SlashCommandBuilder()
     .setName(SETUP_COMMAND)
-    .setDescription('Configure the bot channels and Join-to-Create lobby')
+    .setDescription(t('en', 'setup.commandDescription'))
+    .setDescriptionLocalizations({ id: t('id', 'setup.commandDescription') })
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .setDMPermission(false)
     .toJSON();
@@ -74,12 +76,12 @@ async function resolveConfiguredChannel(guild, channelId, validator) {
   return validator(channel, guild.id) ? channel : null;
 }
 
-function formatConfiguredChannel(channelId, channel) {
+function formatConfiguredChannel(channelId, channel, locale = 'en') {
   if (channel) return `<#${channel.id}>`;
   if (channelId && /^\d{17,20}$/.test(channelId)) {
-    return `Unavailable channel (\`${channelId}\`)`;
+    return t(locale, 'setup.unavailableChannel', { channelId });
   }
-  return 'Not configured';
+  return t(locale, 'setup.notConfigured');
 }
 
 function customIdChannelValue(channelId) {
@@ -94,25 +96,25 @@ function buildV2Payload(container) {
   };
 }
 
-function buildLoadingPayload() {
+function buildLoadingPayload(locale = 'en') {
   return {
     ...buildV2Payload(
       new ContainerBuilder()
         .setAccentColor(0x5865f2)
         .addTextDisplayComponents(
-          new TextDisplayBuilder().setContent('### Loading bot setup...')
+          new TextDisplayBuilder().setContent(t(locale, 'setup.loading'))
         )
     ),
     flags: SETUP_MESSAGE_FLAGS,
   };
 }
 
-function buildErrorPayload(message) {
+function buildErrorPayload(message, locale = 'en') {
   return buildV2Payload(
     new ContainerBuilder()
       .setAccentColor(0xef4444)
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`### Setup unavailable\n${message}`)
+        new TextDisplayBuilder().setContent(`${t(locale, 'setup.unavailable')}\n${message}`)
       )
   );
 }
@@ -124,92 +126,92 @@ function getMissingPermissions(channel, botMember, requirements) {
     .map(({ label }) => label);
 }
 
-function validateSelectedChannels(guild, logChannel, lfgChannel) {
+function validateSelectedChannels(guild, logChannel, lfgChannel, locale = 'en') {
   if (
     !isAllowedTextChannel(logChannel, guild.id)
     || !isAllowedTextChannel(lfgChannel, guild.id)
   ) {
-    return 'Select text or announcement channels from this server.';
+    return t(locale, 'setup.selectServerTextChannels');
   }
   if (logChannel.id === lfgChannel.id) {
-    return 'The Log channel and LFG channel must be different.';
+    return t(locale, 'setup.channelsMustDiffer');
   }
   const botMember = guild.members.me;
   if (!botMember) {
-    return 'The bot could not verify its server permissions. Please try again.';
+    return t(locale, 'setup.permissionCheckFailedRetry');
   }
 
   const logMissing = getMissingPermissions(logChannel, botMember, [
-    { flag: PermissionFlagsBits.ViewChannel, label: 'View Channel' },
-    { flag: PermissionFlagsBits.SendMessages, label: 'Send Messages' },
+    { flag: PermissionFlagsBits.ViewChannel, label: t(locale, 'setup.viewChannel') },
+    { flag: PermissionFlagsBits.SendMessages, label: t(locale, 'setup.sendMessages') },
   ]);
   if (logMissing.length > 0) {
-    return `The bot is missing ${logMissing.join(', ')} in <#${logChannel.id}>.`;
+    return t(locale, 'setup.missingPermissionsChannel', { permissions: logMissing.join(', '), channelId: logChannel.id });
   }
 
   const lfgMissing = getMissingPermissions(lfgChannel, botMember, [
-    { flag: PermissionFlagsBits.ViewChannel, label: 'View Channel' },
-    { flag: PermissionFlagsBits.SendMessages, label: 'Send Messages' },
-    { flag: PermissionFlagsBits.ReadMessageHistory, label: 'Read Message History' },
-    { flag: PermissionFlagsBits.EmbedLinks, label: 'Embed Links' },
+    { flag: PermissionFlagsBits.ViewChannel, label: t(locale, 'setup.viewChannel') },
+    { flag: PermissionFlagsBits.SendMessages, label: t(locale, 'setup.sendMessages') },
+    { flag: PermissionFlagsBits.ReadMessageHistory, label: t(locale, 'setup.readHistory') },
+    { flag: PermissionFlagsBits.EmbedLinks, label: t(locale, 'setup.embedLinks') },
   ]);
   if (lfgMissing.length > 0) {
-    return `The bot is missing ${lfgMissing.join(', ')} in <#${lfgChannel.id}>.`;
+    return t(locale, 'setup.missingPermissionsChannel', { permissions: lfgMissing.join(', '), channelId: lfgChannel.id });
   }
   return null;
 }
 
-function validateLobby(guild, channel, role, { manual = false } = {}) {
+function validateLobby(guild, channel, role, { manual = false, locale = 'en' } = {}) {
   if (!channel || channel.guildId !== guild.id) {
-    return 'The lobby channel is unavailable.';
+    return t(locale, 'setup.lobbyUnavailable');
   }
   if (manual && channel.type !== ChannelType.GuildVoice) {
-    return 'Manual Setup requires a regular voice channel.';
+    return t(locale, 'setup.manualRequiresVoice');
   }
   if (!isExistingVoiceChannel(channel, guild.id)) {
-    return 'The configured lobby is not a voice channel.';
+    return t(locale, 'setup.lobbyNotVoice');
   }
   if (!role || role.guild?.id !== guild.id || role.id === guild.id) {
-    return 'The notification role is unavailable.';
+    return t(locale, 'setup.roleUnavailable');
   }
   if (manual && role.managed) {
-    return 'Select a role that is not managed by another integration.';
+    return t(locale, 'setup.roleManaged');
   }
 
   const botMember = guild.members.me;
   if (!botMember) {
-    return 'The bot could not verify its server permissions.';
+    return t(locale, 'setup.permissionCheckFailed');
   }
   const guildRequirements = [
-    { flag: PermissionFlagsBits.ManageChannels, label: 'Manage Channels' },
-    { flag: PermissionFlagsBits.ManageRoles, label: 'Manage Roles' },
-    { flag: PermissionFlagsBits.MoveMembers, label: 'Move Members' },
+    { flag: PermissionFlagsBits.ManageChannels, label: t(locale, 'setup.manageChannels') },
+    { flag: PermissionFlagsBits.ManageRoles, label: t(locale, 'setup.manageRoles') },
+    { flag: PermissionFlagsBits.MoveMembers, label: t(locale, 'setup.moveMembers') },
   ];
   const missingGuildPermissions = guildRequirements
     .filter(({ flag }) => !botMember.permissions.has(flag))
     .map(({ label }) => label);
   if (missingGuildPermissions.length > 0) {
-    return `The bot is missing ${missingGuildPermissions.join(', ')} in this server.`;
+    return t(locale, 'setup.missingPermissionsServer', { permissions: missingGuildPermissions.join(', ') });
   }
 
   const missingChannelPermissions = getMissingPermissions(channel, botMember, [
-    { flag: PermissionFlagsBits.ViewChannel, label: 'View Channel' },
-    { flag: PermissionFlagsBits.ManageChannels, label: 'Manage Channels' },
-    { flag: PermissionFlagsBits.Connect, label: 'Connect' },
-    { flag: PermissionFlagsBits.MoveMembers, label: 'Move Members' },
-    { flag: PermissionFlagsBits.SendMessages, label: 'Send Messages' },
-    { flag: PermissionFlagsBits.ReadMessageHistory, label: 'Read Message History' },
+    { flag: PermissionFlagsBits.ViewChannel, label: t(locale, 'setup.viewChannel') },
+    { flag: PermissionFlagsBits.ManageChannels, label: t(locale, 'setup.manageChannels') },
+    { flag: PermissionFlagsBits.Connect, label: t(locale, 'setup.connect') },
+    { flag: PermissionFlagsBits.MoveMembers, label: t(locale, 'setup.moveMembers') },
+    { flag: PermissionFlagsBits.SendMessages, label: t(locale, 'setup.sendMessages') },
+    { flag: PermissionFlagsBits.ReadMessageHistory, label: t(locale, 'setup.readHistory') },
   ]);
   if (missingChannelPermissions.length > 0) {
-    return `The bot is missing ${missingChannelPermissions.join(', ')} in <#${channel.id}>.`;
+    return t(locale, 'setup.missingPermissionsChannel', { permissions: missingChannelPermissions.join(', '), channelId: channel.id });
   }
   if (!role.mentionable && !botMember.permissions.has(PermissionFlagsBits.MentionEveryone)) {
-    return `Make <@&${role.id}> mentionable, or give the bot Mention Everyone.`;
+    return t(locale, 'setup.roleMentionable', { roleId: role.id });
   }
   return null;
 }
 
-async function resolveLobbyState(guild, lobby) {
+async function resolveLobbyState(guild, lobby, locale = 'en') {
   const [channel, role] = await Promise.all([
     lobby.channelId
       ? guild.channels.fetch(lobby.channelId).catch(() => null)
@@ -218,7 +220,7 @@ async function resolveLobbyState(guild, lobby) {
       ? guild.roles.fetch(lobby.roleId).catch(() => null)
       : Promise.resolve(null),
   ]);
-  const validationError = validateLobby(guild, channel, role);
+  const validationError = validateLobby(guild, channel, role, { locale });
   return { lobby, channel, role, validationError };
 }
 
@@ -229,37 +231,38 @@ function step1ButtonCustomId(state) {
   return `${STEP1_CHANGE_PREFIX}:${logChannelId}:${lfgChannelId}:${configVersion}`;
 }
 
-function addNotice(container, notice) {
+function addNotice(container, notice, locale = 'en') {
   if (!notice) return container;
   return container
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`**Notice**\n${notice}`)
+      new TextDisplayBuilder().setContent(`${t(locale, 'setup.notice')}\n${notice}`)
     );
 }
 
 function buildStep1Payload(state, notice = null) {
+  const locale = normalizeLocale(state.config.locale);
   const ready = state.step1Ready;
   const section = new SectionBuilder()
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent([
-        `**Status:** ${ready ? 'Ready' : 'Needs attention'}`,
-        `**Log channel:** ${formatConfiguredChannel(state.config.logChannelId, state.logChannel)}`,
-        `**LFG channel:** ${formatConfiguredChannel(state.config.lfgChannelId, state.lfgChannel)}`,
-        state.step1Error ? `**Issue:** ${state.step1Error}` : null,
+        t(locale, 'setup.status', { status: t(locale, ready ? 'setup.ready' : 'setup.needsAttention') }),
+        t(locale, 'setup.logChannel', { channel: formatConfiguredChannel(state.config.logChannelId, state.logChannel, locale) }),
+        t(locale, 'setup.lfgChannel', { channel: formatConfiguredChannel(state.config.lfgChannelId, state.lfgChannel, locale) }),
+        state.step1Error ? t(locale, 'setup.issue', { issue: state.step1Error }) : null,
       ].filter(Boolean).join('\n'))
     )
     .setButtonAccessory(
       new ButtonBuilder()
         .setCustomId(step1ButtonCustomId(state))
-        .setLabel(ready ? 'Change' : 'Set Up')
+        .setLabel(t(locale, ready ? 'setup.change' : 'setup.setUp'))
         .setStyle(ButtonStyle.Primary)
     );
   const container = new ContainerBuilder()
     .setAccentColor(ready ? 0x22c55e : 0xf59e0b)
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        '### Step 1 of 2: Message Channels\nChoose where bot logs and LFG posts should be sent.'
+        `${t(locale, 'setup.step1Title')}\n${t(locale, 'setup.step1Help')}`
       )
     )
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
@@ -269,12 +272,12 @@ function buildStep1Payload(state, notice = null) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(STEP1_CONTINUE_ID)
-          .setLabel('Continue to Step 2')
+          .setLabel(t(locale, 'setup.continueStep2'))
           .setStyle(ButtonStyle.Success)
       )
     );
   }
-  return buildV2Payload(addNotice(container, notice));
+  return buildV2Payload(addNotice(container, notice, locale));
 }
 
 function firstValidLobby(state) {
@@ -287,43 +290,49 @@ function manualButtonCustomId(state) {
 }
 
 function buildStep2Payload(state, notice = null) {
+  const locale = normalizeLocale(state.config.locale);
   const configured = state.step2Ready;
   const quickNeedsRecovery = Boolean(state.setupOperation);
   const quickSection = new SectionBuilder()
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        '**Quick Setup**\nBest for new servers. Creates `+ New Group Channel` and a mentionable `@LFG` notification role in your chosen category.'
+        `${t(locale, 'setup.quickSetup')}\n${t(locale, 'setup.quickSetupHelp')}`
       )
     )
     .setButtonAccessory(
       new ButtonBuilder()
         .setCustomId(quickNeedsRecovery ? QUICK_RECOVER_ID : QUICK_SETUP_ID)
-        .setLabel(quickNeedsRecovery ? 'Finish Setup' : configured ? 'Already Set' : 'Quick Setup')
+        .setLabel(t(locale, quickNeedsRecovery ? 'setup.finishSetup' : configured ? 'setup.alreadySet' : 'setup.quickSetupButton'))
         .setStyle(ButtonStyle.Success)
         .setDisabled(configured && !quickNeedsRecovery)
     );
   const manualSection = new SectionBuilder()
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        '**Manual Setup**\nUse an existing voice channel and notification role. The selected lobby is added or updated without removing other lobbies.'
+        `${t(locale, 'setup.manualSetup')}\n${t(locale, 'setup.manualSetupHelp')}`
       )
     )
     .setButtonAccessory(
       new ButtonBuilder()
         .setCustomId(manualButtonCustomId(state))
-        .setLabel(configured ? 'Add / Update' : 'Manual Setup')
+        .setLabel(t(locale, configured ? 'setup.addUpdate' : 'setup.manualSetupButton'))
         .setStyle(ButtonStyle.Primary)
     );
   const existingSummary = configured
-    ? `\n\nCurrently configured: ${state.validLobbies.slice(0, 3).map(
-      (item) => `<#${item.channel.id}> with <@&${item.role.id}>`
-    ).join(', ')}${state.validLobbies.length > 3 ? ` and ${state.validLobbies.length - 3} more` : ''}.`
+    ? `\n\n${t(locale, 'setup.configuredSummary', {
+      items: state.validLobbies.slice(0, 3).map(
+        (item) => t(locale, 'setup.configuredLobby', { channelId: item.channel.id, roleId: item.role.id })
+      ).join(', '),
+      more: state.validLobbies.length > 3
+        ? t(locale, 'setup.andMoreInline', { count: state.validLobbies.length - 3 })
+        : '',
+    })}`
     : '';
   const container = new ContainerBuilder()
     .setAccentColor(configured ? 0x22c55e : 0x5865f2)
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `### Step 2 of 2: Join-to-Create\nChoose how to configure at least one Join-to-Create lobby.${existingSummary}`
+        `${t(locale, 'setup.step2Title')}\n${t(locale, 'setup.step2Help', { summary: existingSummary })}`
       )
     )
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
@@ -334,47 +343,48 @@ function buildStep2Payload(state, notice = null) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(STEP1_BACK_ID)
-          .setLabel('Back to Step 1')
+          .setLabel(t(locale, 'setup.backStep1'))
           .setStyle(ButtonStyle.Secondary)
       )
     );
   if (state.invalidLobbies.length > 0) {
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `-# ${state.invalidLobbies.length} saved lobby configuration(s) need attention in the dashboard.`
+        t(locale, 'setup.invalidLobbyCount', { count: state.invalidLobbies.length })
       )
     );
   }
   if (quickNeedsRecovery) {
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        '-# Quick Setup has an unfinished verification or cleanup record. Use Finish Setup to reconcile it.'
+        t(locale, 'setup.recoveryNotice')
       )
     );
   }
-  return buildV2Payload(addNotice(container, notice));
+  return buildV2Payload(addNotice(container, notice, locale));
 }
 
 function buildCompletePayload(state, notice = null) {
+  const locale = normalizeLocale(state.config.locale);
   const lobbyLines = state.validLobbies.slice(0, 5).map(
-    (item) => `- <#${item.channel.id}> using <@&${item.role.id}>`
+    (item) => t(locale, 'setup.usingRole', { channelId: item.channel.id, roleId: item.role.id })
   );
   if (state.validLobbies.length > 5) {
-    lobbyLines.push(`- ...and ${state.validLobbies.length - 5} more`);
+    lobbyLines.push(t(locale, 'setup.andMore', { count: state.validLobbies.length - 5 }));
   }
   const container = new ContainerBuilder()
     .setAccentColor(0x22c55e)
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent([
-        '### Bot Setup Complete',
-        '**Step 1: Message Channels**',
-        `- Log: <#${state.logChannel.id}>`,
-        `- LFG: <#${state.lfgChannel.id}>`,
+        t(locale, 'setup.completeTitle'),
+        t(locale, 'setup.step1Summary'),
+        t(locale, 'setup.logSummary', { channelId: state.logChannel.id }),
+        t(locale, 'setup.lfgSummary', { channelId: state.lfgChannel.id }),
         '',
-        '**Step 2: Join-to-Create**',
+        t(locale, 'setup.step2Summary'),
         ...lobbyLines,
         '',
-        '-# The LFG role is a notification role. Assign it to members who should receive LFG pings.',
+        t(locale, 'setup.roleHelp'),
       ].join('\n'))
     )
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
@@ -382,33 +392,33 @@ function buildCompletePayload(state, notice = null) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(step1ButtonCustomId(state))
-          .setLabel('Change Channels')
+          .setLabel(t(locale, 'setup.changeChannels'))
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId(STEP2_MANAGE_ID)
-          .setLabel('Manage JTC')
+          .setLabel(t(locale, 'setup.manageJtc'))
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId(SETUP_REFRESH_ID)
-          .setLabel('Run Setup Check')
+          .setLabel(t(locale, 'setup.runCheck'))
           .setStyle(ButtonStyle.Secondary)
       )
     );
   if (state.invalidLobbies.length > 0) {
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `-# Warning: ${state.invalidLobbies.length} additional saved lobby configuration(s) need attention.`
+        t(locale, 'setup.invalidLobbyWarning', { count: state.invalidLobbies.length })
       )
     );
   }
   if (state.setupOperation) {
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        '-# Quick Setup still has cleanup or verification work. Open Manage JTC and choose Finish Setup.'
+        t(locale, 'setup.cleanupWarning')
       )
     );
   }
-  return buildV2Payload(addNotice(container, notice));
+  return buildV2Payload(addNotice(container, notice, locale));
 }
 
 function buildPanelForState(state, preferredView = null, notice = null) {
@@ -433,7 +443,7 @@ function buildChannelSelect(customId, placeholder, channelTypes, defaultChannelI
   return select;
 }
 
-function buildStep1Modal(guild, logChannelId, lfgChannelId, configVersion) {
+function buildStep1Modal(guild, logChannelId, lfgChannelId, configVersion, locale = 'en') {
   const validLogId = isAllowedTextChannel(guild.channels.cache.get(logChannelId), guild.id)
     ? logChannelId
     : null;
@@ -442,26 +452,26 @@ function buildStep1Modal(guild, logChannelId, lfgChannelId, configVersion) {
     : null;
   return new ModalBuilder()
     .setCustomId(`${STEP1_MODAL_ID}:${configVersion}`)
-    .setTitle('Step 1: Message Channels')
+    .setTitle(t(locale, 'setup.step1Modal'))
     .addLabelComponents(
       new LabelBuilder()
-        .setLabel('Log channel')
-        .setDescription('Where the bot should send logs and status messages.')
+        .setLabel(t(locale, 'setup.logChannelLabel'))
+        .setDescription(t(locale, 'setup.logChannelDescription'))
         .setChannelSelectMenuComponent(
           buildChannelSelect(
             LOG_CHANNEL_SELECT_ID,
-            'Select the Log channel',
+            t(locale, 'setup.selectLogChannel'),
             TEXT_CHANNEL_TYPES,
             validLogId
           )
         ),
       new LabelBuilder()
-        .setLabel('LFG channel')
-        .setDescription('Where the bot should publish LFG messages.')
+        .setLabel(t(locale, 'setup.lfgChannelLabel'))
+        .setDescription(t(locale, 'setup.lfgChannelDescription'))
         .setChannelSelectMenuComponent(
           buildChannelSelect(
             LFG_CHANNEL_SELECT_ID,
-            'Select the LFG channel',
+            t(locale, 'setup.selectLfgChannel'),
             TEXT_CHANNEL_TYPES,
             validLfgId
           )
@@ -469,18 +479,18 @@ function buildStep1Modal(guild, logChannelId, lfgChannelId, configVersion) {
     );
 }
 
-function buildQuickSetupModal() {
+function buildQuickSetupModal(locale = 'en') {
   return new ModalBuilder()
     .setCustomId(QUICK_MODAL_ID)
-    .setTitle('Quick Setup')
+    .setTitle(t(locale, 'setup.quickSetupModal'))
     .addLabelComponents(
       new LabelBuilder()
-        .setLabel('Voice category')
-        .setDescription('The new lobby and temporary voice rooms will use this category.')
+        .setLabel(t(locale, 'setup.voiceCategory'))
+        .setDescription(t(locale, 'setup.voiceCategoryDescription'))
         .setChannelSelectMenuComponent(
           buildChannelSelect(
             CATEGORY_SELECT_ID,
-            'Select a voice category',
+            t(locale, 'setup.selectVoiceCategory'),
             [ChannelType.GuildCategory],
             null
           )
@@ -488,14 +498,14 @@ function buildQuickSetupModal() {
     );
 }
 
-function buildManualSetupModal(guild, channelId, roleId) {
+function buildManualSetupModal(guild, channelId, roleId, locale = 'en') {
   const validChannelId = guild.channels.cache.get(channelId)?.type === ChannelType.GuildVoice
     ? channelId
     : null;
   const validRoleId = guild.roles.cache.has(roleId) ? roleId : null;
   const roleSelect = new RoleSelectMenuBuilder()
     .setCustomId(LOBBY_ROLE_SELECT_ID)
-    .setPlaceholder('Select the LFG notification role')
+    .setPlaceholder(t(locale, 'setup.selectNotificationRole'))
     .setMinValues(1)
     .setMaxValues(1)
     .setRequired(true);
@@ -503,22 +513,22 @@ function buildManualSetupModal(guild, channelId, roleId) {
 
   return new ModalBuilder()
     .setCustomId(MANUAL_MODAL_ID)
-    .setTitle('Manual Join-to-Create Setup')
+    .setTitle(t(locale, 'setup.manualSetupModal'))
     .addLabelComponents(
       new LabelBuilder()
-        .setLabel('Join-to-Create lobby')
-        .setDescription('Members joining this voice channel will receive a temporary room.')
+        .setLabel(t(locale, 'setup.lobbyLabel'))
+        .setDescription(t(locale, 'setup.lobbyDescription'))
         .setChannelSelectMenuComponent(
           buildChannelSelect(
             LOBBY_CHANNEL_SELECT_ID,
-            'Select an existing voice channel',
+            t(locale, 'setup.selectVoiceChannel'),
             VOICE_CHANNEL_TYPES,
             validChannelId
           )
         ),
       new LabelBuilder()
-        .setLabel('LFG notification role')
-        .setDescription('LFG posts from this lobby will mention this role.')
+        .setLabel(t(locale, 'setup.roleLabel'))
+        .setDescription(t(locale, 'setup.roleDescription'))
         .setRoleSelectMenuComponent(roleSelect)
     );
 }
@@ -531,10 +541,11 @@ function hasSetupAccess(interaction) {
   );
 }
 
-async function denySetupAccess(interaction) {
+async function denySetupAccess(interaction, configStore) {
+  const locale = await getGuildLocale(configStore, interaction.guildId);
   const content = interaction.guildId
-    ? 'Only server Administrators can configure the bot.'
-    : 'This command can only be used in a server.';
+    ? t(locale, 'setup.adminOnly')
+    : t(locale, 'common.serverOnlyCommand');
   await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
 }
 
@@ -550,12 +561,12 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       resolveConfiguredChannel(guild, config.logChannelId, isAllowedTextChannel),
       resolveConfiguredChannel(guild, config.lfgChannelId, isAllowedTextChannel),
       Promise.all((config.joinToCreateLobbies || []).map(
-        (lobby) => resolveLobbyState(guild, lobby)
+        (lobby) => resolveLobbyState(guild, lobby, config.locale)
       )),
       configStore.getGuildSetupOperation(guild.id),
     ]);
     const step1Error = logChannel && lfgChannel
-      ? validateSelectedChannels(guild, logChannel, lfgChannel)
+      ? validateSelectedChannels(guild, logChannel, lfgChannel, config.locale)
       : null;
     const validLobbies = lobbies.filter((item) => !item.validationError);
     const invalidLobbies = lobbies.filter((item) => item.validationError);
@@ -579,39 +590,43 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await interaction.editReply(buildPanelForState(state, preferredView, notice));
     } catch (error) {
       console.error('Failed to load guild setup:', error);
+      const locale = await getGuildLocale(configStore, interaction.guildId);
       await interaction.editReply(
-        buildErrorPayload('The setup could not be loaded. Please try again.')
+        buildErrorPayload(t(locale, 'setup.loadFailed'), locale)
       ).catch(() => null);
     }
   }
 
   async function showSetup(interaction) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
-    await interaction.reply(buildLoadingPayload());
+    const locale = await getGuildLocale(configStore, interaction.guildId);
+    await interaction.reply(buildLoadingPayload(locale));
     await editLoadedPanel(interaction);
   }
 
   async function showStep1Modal(interaction) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
     const [, logChannelId, lfgChannelId, configVersion] = interaction.customId.split(':');
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     await interaction.showModal(
-      buildStep1Modal(interaction.guild, logChannelId, lfgChannelId, configVersion)
+      buildStep1Modal(interaction.guild, logChannelId, lfgChannelId, configVersion, locale)
     );
   }
 
   async function saveStep1(interaction) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
     let logChannel;
     let lfgChannel;
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     try {
       logChannel = interaction.fields
         .getSelectedChannels(LOG_CHANNEL_SELECT_ID, true, TEXT_CHANNEL_TYPES)
@@ -621,12 +636,12 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
         .first();
     } catch {
       await interaction.reply({
-        content: 'Both channels are required. Open Step 1 and try again.',
+        content: t(locale, 'setup.channelsRequired'),
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
-    const validationError = validateSelectedChannels(interaction.guild, logChannel, lfgChannel);
+    const validationError = validateSelectedChannels(interaction.guild, logChannel, lfgChannel, locale);
     if (validationError) {
       await interaction.reply({
         content: validationError,
@@ -652,7 +667,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         'step1',
-        'The channels could not be saved. Please try again.'
+        t(locale, 'setup.channelsSaveFailed')
       );
       return;
     }
@@ -660,27 +675,29 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         'step1',
-        'The channel setup changed after this form opened. Review the latest settings and try again.'
+        t(locale, 'setup.configChanged')
       );
       return;
     }
     onGuildConfigUpdated(interaction.guildId);
-    await editLoadedPanel(interaction, null, 'Step 1 was saved successfully.');
+    await editLoadedPanel(interaction, null, t(locale, 'setup.step1Saved'));
   }
 
   async function showQuickModal(interaction) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
-    await interaction.showModal(buildQuickSetupModal());
+    const locale = await getGuildLocale(configStore, interaction.guildId);
+    await interaction.showModal(buildQuickSetupModal(locale));
   }
 
   async function runQuickRecovery(interaction) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     await interaction.deferUpdate();
     const result = await quickProvisioner.provision(
       interaction.guild,
@@ -691,7 +708,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         null,
-        'Quick Setup verification and cleanup completed successfully.'
+        t(locale, 'setup.recoveryComplete')
       );
       return;
     }
@@ -699,7 +716,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         null,
-        'The unfinished Quick Setup operation was cleaned up. Choose Quick or Manual Setup to continue.'
+        t(locale, 'setup.recoveryCleaned')
       );
       return;
     }
@@ -707,7 +724,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         'step2',
-        'Quick Setup is still running. Try Finish Setup again shortly.'
+        t(locale, 'setup.stillRunning')
       );
       return;
     }
@@ -715,7 +732,10 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         'step2',
-        `Cleanup is still incomplete. Channel ID: \`${result.operation?.channelId || '-'}\`, role ID: \`${result.operation?.roleId || '-'}\`.`
+        t(locale, 'setup.cleanupIncomplete', {
+          channelId: result.operation?.channelId || '-',
+          roleId: result.operation?.roleId || '-',
+        })
       );
       return;
     }
@@ -723,28 +743,29 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
     await editLoadedPanel(
       interaction,
       'step2',
-      'Quick Setup recovery could not finish. No configured lobby resources were deleted.'
+      t(locale, 'setup.recoveryFailed')
     );
   }
 
   async function runQuickSetup(interaction) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
     let category;
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     try {
       category = interaction.fields
         .getSelectedChannels(CATEGORY_SELECT_ID, true, [ChannelType.GuildCategory])
         .first();
     } catch {
       await interaction.reply({
-        content: 'A category is required for Quick Setup.',
+        content: t(locale, 'setup.categoryRequired'),
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
-    const permissionError = getQuickSetupPermissionError(interaction.guild, category);
+    const permissionError = getQuickSetupPermissionError(interaction.guild, category, locale);
     if (permissionError) {
       await interaction.reply({
         content: permissionError,
@@ -759,7 +780,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         null,
-        `Created <#${result.channel.id}> and <@&${result.role.id}>. Assign the role to members who should receive LFG notifications.`
+        t(locale, 'setup.created', { channelId: result.channel.id, roleId: result.role.id })
       );
       return;
     }
@@ -767,7 +788,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         null,
-        `Created <#${result.channel.id}> and <@&${result.role.id}>. The main setup is ready, but an extra operation-marked resource could not be cleaned automatically.`
+        t(locale, 'setup.createdCleanup', { channelId: result.channel.id, roleId: result.role.id })
       );
       return;
     }
@@ -775,7 +796,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         null,
-        `Join-to-Create is already configured with <#${result.channel.id}> and <@&${result.role.id}>.`
+        t(locale, 'setup.alreadyConfigured', { channelId: result.channel.id, roleId: result.role.id })
       );
       return;
     }
@@ -783,7 +804,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         'step2',
-        'Quick Setup was saved, but the lobby does not currently pass the setup permission checks. Review the listed issue and server permission overwrites.'
+        t(locale, 'setup.savedNeedsAttention')
       );
       return;
     }
@@ -791,11 +812,11 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       const resources = [
         result.channel ? `<#${result.channel.id}>` : null,
         result.role ? `<@&${result.role.id}>` : null,
-      ].filter(Boolean).join(' and ');
+      ].filter(Boolean).join(t(locale, 'setup.resourceJoiner'));
       await editLoadedPanel(
         interaction,
         'step2',
-        `${resources || 'Matching resources'} already exist but are not configured. Use Manual Setup to connect them.`
+        t(locale, 'setup.nameConflict', { resources: resources || t(locale, 'setup.matchingResources') })
       );
       return;
     }
@@ -803,7 +824,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         'step2',
-        'Quick Setup is already running for this server. Try again shortly.'
+        t(locale, 'setup.alreadyRunning')
       );
       return;
     }
@@ -811,7 +832,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         null,
-        'The server configuration changed while Quick Setup was opening. The latest setup has been loaded.'
+        t(locale, 'setup.configurationChanged')
       );
       return;
     }
@@ -819,18 +840,25 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         'step2',
-        `A previous Quick Setup needs manual cleanup. Channel ID: \`${result.operation?.channelId || '-'}\`, role ID: \`${result.operation?.roleId || '-'}\`.`
+        t(locale, 'setup.previousCleanup', {
+          channelId: result.operation?.channelId || '-',
+          roleId: result.operation?.roleId || '-',
+        })
       );
       return;
     }
     if (result.status === 'verification_required') {
       const retryMessage = result.retryAfterMinutes > 0
-        ? `Database verification state could not be saved. Wait up to ${result.retryAfterMinutes} minutes before retrying.`
-        : 'Run Quick Setup again to verify the database save.';
+        ? t(locale, 'setup.verifyWait', { minutes: result.retryAfterMinutes })
+        : t(locale, 'setup.verifyRetry');
       await editLoadedPanel(
         interaction,
         'step2',
-        `The Discord resources were kept while the database save is verified. ${retryMessage} Channel ID: \`${result.channelId}\`, role ID: \`${result.roleId}\`.`
+        t(locale, 'setup.verificationRequired', {
+          retry: retryMessage,
+          channelId: result.channelId,
+          roleId: result.roleId,
+        })
       );
       return;
     }
@@ -841,33 +869,38 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
 
     console.error('Quick Setup failed:', result.error, result.cleanupErrors);
     const cleanupNote = result.cleanupErrors?.length
-      ? ` Automatic cleanup was incomplete. Channel ID: \`${result.channelId || '-'}\`, role ID: \`${result.roleId || '-'}\`.`
+      ? t(locale, 'setup.automaticCleanupIncomplete', {
+        channelId: result.channelId || '-',
+        roleId: result.roleId || '-',
+      })
       : '';
     await editLoadedPanel(
       interaction,
       'step2',
-      `Quick Setup failed and did not configure the lobby.${cleanupNote}`
+      t(locale, 'setup.quickSetupFailed', { cleanup: cleanupNote })
     );
   }
 
   async function showManualModal(interaction) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
     const [, channelId, roleId] = interaction.customId.split(':');
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     await interaction.showModal(
-      buildManualSetupModal(interaction.guild, channelId, roleId)
+      buildManualSetupModal(interaction.guild, channelId, roleId, locale)
     );
   }
 
   async function saveManualSetup(interaction) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
     let channel;
     let role;
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     try {
       channel = interaction.fields
         .getSelectedChannels(LOBBY_CHANNEL_SELECT_ID, true, VOICE_CHANNEL_TYPES)
@@ -875,12 +908,12 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       role = interaction.fields.getSelectedRoles(LOBBY_ROLE_SELECT_ID, true).first();
     } catch {
       await interaction.reply({
-        content: 'Both a voice lobby and notification role are required.',
+        content: t(locale, 'setup.lobbyRoleRequired'),
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
-    const validationError = validateLobby(interaction.guild, channel, role, { manual: true });
+    const validationError = validateLobby(interaction.guild, channel, role, { manual: true, locale });
     if (validationError) {
       await interaction.reply({
         content: validationError,
@@ -904,7 +937,7 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
       await editLoadedPanel(
         interaction,
         null,
-        `Configured <#${channel.id}> with <@&${role.id}>. Existing lobbies were preserved.`
+        t(locale, 'setup.manualConfigured', { channelId: channel.id, roleId: role.id })
       );
     } catch (error) {
       console.error('Failed to save Manual Setup:', error);
@@ -912,15 +945,15 @@ function createSetupManager({ configStore, onGuildConfigUpdated = () => {} }) {
         interaction,
         'step2',
         error?.code === 'SETUP_RESOURCE_RECOVERY'
-          ? 'Quick Setup is still running or recovering. Wait for it to finish, then try Manual Setup again.'
-          : 'Manual Setup could not be saved. Please try again.'
+          ? t(locale, 'setup.manualBlocked')
+          : t(locale, 'setup.manualSaveFailed')
       );
     }
   }
 
   async function refreshView(interaction, preferredView) {
     if (!hasSetupAccess(interaction)) {
-      await denySetupAccess(interaction);
+      await denySetupAccess(interaction, configStore);
       return;
     }
     await interaction.deferUpdate();

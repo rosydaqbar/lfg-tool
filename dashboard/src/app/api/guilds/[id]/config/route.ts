@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  deleteSpamCatcherNoticeMessages,
   getGuildConfig,
   getSpamCatcherNoticeMessages,
   getSpamCatcherCaughtUserCounts,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/db";
 import { requireDashboardGuildAccess } from "@/lib/session";
 import { getDashboardBotToken } from "@/lib/runtime-secrets";
+import { interpolate, normalizeLocale, spamCatcherNoticeStrings } from "@/lib/i18n";
 
 type AutoRoleCondition = "more_than" | "less_than" | "equal_to";
 type AutoRoleConfigPayload = {
@@ -393,85 +395,55 @@ async function sendAutoRoleConfigLog({
   }).catch(() => null);
 }
 
-function formatNoticeMinutes(minutes: number) {
+function formatNoticeMinutes(minutes: number, locale: "en" | "id") {
   const safeMinutes = Math.max(1, Math.floor(Number(minutes) || 1));
   if (safeMinutes % 1440 === 0) {
     const days = safeMinutes / 1440;
-    return `${days} day${days === 1 ? "" : "s"}`;
+    return locale === "id" ? `${days} hari` : `${days} day${days === 1 ? "" : "s"}`;
   }
   if (safeMinutes % 60 === 0) {
     const hours = safeMinutes / 60;
-    return `${hours} hour${hours === 1 ? "" : "s"}`;
+    return locale === "id" ? `${hours} jam` : `${hours} hour${hours === 1 ? "" : "s"}`;
   }
-  return `${safeMinutes} minute${safeMinutes === 1 ? "" : "s"}`;
+  return locale === "id"
+    ? `${safeMinutes} menit`
+    : `${safeMinutes} minute${safeMinutes === 1 ? "" : "s"}`;
 }
 
 function buildSpamCatcherNoticePayload(
   caughtCount: number,
   integrityCount: number,
   config: SpamCatcherConfigPayload,
-  context: { guildId: string; channelId: string }
+  context: { guildId: string; channelId: string; locale?: string }
 ) {
   const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
   const safeIntegrityCount = Math.max(0, Math.floor(Number(integrityCount) || 0));
-  const timeoutText = formatNoticeMinutes(config.timeoutMinutes);
-  const banDelayText = formatNoticeMinutes(config.banDelayMinutes);
-  const actionId = config.autoBanEnabled
+  const locale = normalizeLocale(context.locale);
+  const timeoutText = formatNoticeMinutes(config.timeoutMinutes, locale);
+  const banDelayText = formatNoticeMinutes(config.banDelayMinutes, locale);
+  const strings = spamCatcherNoticeStrings(locale);
+  const action = config.autoBanEnabled
     ? config.banMode === "immediate"
-      ? "kamu akan langsung terkena `ban`."
+      ? strings.actionImmediate
       : config.banMode === "after_timeout"
-        ? `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` saat timeout berakhir.`
-        : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah periode appeal selama ${banDelayText}.`
-    : `kamu akan terkena \`timeout\` selama ${timeoutText}.`;
-  const appealId = config.autoBanEnabled && config.banMode === "immediate"
-    ? "Jika ini adalah kesalahan, silakan hubungi admin server."
-    : "Jika kamu terkena timeout, silakan kirim private message ke salah satu admin yang sedang online atau gunakan tombol appeal jika tersedia.";
-  const actionEn = config.autoBanEnabled
-    ? config.banMode === "immediate"
-      ? "you will be `banned` immediately."
-      : config.banMode === "after_timeout"
-        ? `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` when the timeout ends.`
-        : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after a ${banDelayText} appeal window.`
-    : `you will receive a \`timeout\` for ${timeoutText}.`;
-  const appealEn = config.autoBanEnabled && config.banMode === "immediate"
-    ? "If this was a mistake, please contact a server admin."
-    : "If you are timed out, please send a private message to one of the online admins or use the appeal button if available.";
-  const contentId = [
-    "# 🚫 Dilarang Mengirim Pesan di Channel Ini",
-    `⚠️ Channel ini dibuat untuk menangkap spammer. Jika kamu mengirim pesan di channel ini, ${actionId} ${appealId}`,
+        ? interpolate(strings.actionAfterTimeout, { timeout: timeoutText })
+        : interpolate(strings.actionDelayed, { timeout: timeoutText, delay: banDelayText })
+    : interpolate(strings.actionTimeoutOnly, { timeout: timeoutText });
+  const appeal = config.autoBanEnabled && config.banMode === "immediate"
+    ? strings.appealImmediate
+    : strings.appealTimeout;
+  const content = [
+    strings.title,
+    interpolate(strings.body, { action, appeal }),
     "",
-    "## 😈 Jangan Berani-Berani Mencoba",
-    "Kalau cuma mau tes, sistem tetap akan menangkap kamu.",
+    strings.warningTitle,
+    strings.warningBody,
     "",
-    `-# Jumlah user yang sudah tertangkap di channel ini: \`${safeCount}\``,
-    `-# Manusia yang membaca pesan ini: \`${safeIntegrityCount}\``,
-  ].join("\n");
-  const contentEn = [
-    "# 🚫 Do Not Send Messages in This Channel",
-    `⚠️ This channel is made to catch spammers. If you send a message in this channel, ${actionEn} ${appealEn}`,
-    "",
-    "## 😈 Don't Even Think About Trying",
-    "Even if you are just testing, the system will still catch you.",
-    "",
-    `-# Caught users in this channel: \`${safeCount}\``,
-    `-# Humans who read this message: \`${safeIntegrityCount}\``,
+    interpolate(strings.caughtCount, { count: safeCount }),
+    interpolate(strings.integrityCount, { count: safeIntegrityCount }),
   ].join("\n");
 
-  const containerComponents: Record<string, unknown>[] = [{ type: 10, content: contentId }];
-  if (config.integrityCheckEnabled) {
-    containerComponents.push({
-      type: 1,
-      components: [
-        {
-          type: 2,
-          custom_id: `spamcatcher_integrity_id:${context.guildId}:${context.channelId}`,
-          label: "Saya sudah membaca ✅",
-          style: 2,
-        },
-      ],
-    });
-  }
-  containerComponents.push({ type: 14, divider: true, spacing: 1 }, { type: 10, content: contentEn });
+  const containerComponents: Record<string, unknown>[] = [{ type: 10, content }];
   if (config.integrityCheckEnabled) {
     containerComponents.push({
       type: 1,
@@ -479,7 +451,7 @@ function buildSpamCatcherNoticePayload(
         {
           type: 2,
           custom_id: `spamcatcher_integrity_en:${context.guildId}:${context.channelId}`,
-          label: "I have read this message",
+          label: strings.integrityButton,
           style: 2,
         },
       ],
@@ -505,6 +477,7 @@ async function sendSpamCatcherTrapChannelNotices({
   caughtCounts,
   integrityCounts,
   config,
+  locale,
   webhookUrls,
 }: {
   guildId: string;
@@ -512,6 +485,7 @@ async function sendSpamCatcherTrapChannelNotices({
   caughtCounts: Record<string, number>;
   integrityCounts: Record<string, number>;
   config: SpamCatcherConfigPayload;
+  locale: "en" | "id";
   webhookUrls?: { channelId: string; webhookUrl: string }[];
 }) {
   if (!channelIds.length) return [];
@@ -536,7 +510,7 @@ async function sendSpamCatcherTrapChannelNotices({
           caughtCounts[channelId] ?? 0,
           integrityCounts[channelId] ?? 0,
           config,
-          { guildId, channelId }
+          { guildId, channelId, locale }
         )),
       }).catch((error) => {
         console.error("Failed to send Spam Catcher webhook notice:", {
@@ -584,7 +558,7 @@ async function sendSpamCatcherTrapChannelNotices({
           caughtCounts[channelId] ?? 0,
           integrityCounts[channelId] ?? 0,
           config,
-          { guildId, channelId }
+          { guildId, channelId, locale }
         )),
     }).catch((error) => {
       console.error("Failed to send Spam Catcher trap-channel notice:", {
@@ -606,22 +580,34 @@ async function sendSpamCatcherTrapChannelNotices({
   return notices;
 }
 
-async function deletePreviousWebhookNotices(guildId: string, channelIds: string[]) {
-  const previousNotices = await getSpamCatcherNoticeMessages(guildId, channelIds).catch((error) => {
-    console.error("Failed to load previous Spam Catcher notices:", error);
-    return [];
-  });
-  await Promise.all(previousNotices
-    .filter((notice) => notice.deliveryMethod === "webhook" && notice.webhookUrl)
-    .map((notice) => fetch(webhookMessageUrl(notice.webhookUrl!, notice.messageId), {
-      method: "DELETE",
-    }).catch((error) => {
-      console.error("Failed to delete previous Spam Catcher webhook notice:", {
-        channelId: notice.channelId,
-        error: error instanceof Error ? error.message : String(error),
+async function deleteSpamCatcherNotices(
+  previousNotices: Awaited<ReturnType<typeof getSpamCatcherNoticeMessages>>
+) {
+  const botToken = previousNotices.some((notice) => notice.deliveryMethod === "bot")
+    ? await getDashboardBotToken()
+    : null;
+  const deletedChannelIds = (await Promise.all(previousNotices
+    .map((notice) => {
+      const url = notice.deliveryMethod === "webhook" && notice.webhookUrl
+        ? webhookMessageUrl(notice.webhookUrl, notice.messageId)
+        : `https://discord.com/api/v10/channels/${notice.channelId}/messages/${notice.messageId}`;
+      const headers = notice.deliveryMethod === "bot" && botToken
+        ? { Authorization: `Bot ${botToken}` }
+        : undefined;
+      if (notice.deliveryMethod === "bot" && !botToken) return Promise.resolve(null);
+      return fetch(url, { method: "DELETE", headers }).then((response) => {
+        if (response.ok || response.status === 404) return notice.channelId;
+        return null;
+      }).catch((error) => {
+        console.error("Failed to delete previous Spam Catcher notice:", {
+          channelId: notice.channelId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
       });
-    }))
-  );
+    })
+  )).filter((channelId): channelId is string => Boolean(channelId));
+  return deletedChannelIds;
 }
 
 export const dynamic = "force-dynamic";
@@ -642,6 +628,7 @@ export async function GET(
       configVersion: config.configVersion,
       logChannelId: config.logChannelId,
       lfgChannelId: config.lfgChannelId,
+      locale: config.locale,
       enabledVoiceChannelIds: config.enabledVoiceChannelIds,
       joinToCreateLobbies: config.joinToCreateLobbies,
       autoRoleConfig: config.autoRoleConfig,
@@ -669,6 +656,7 @@ export async function PUT(
     configVersion?: string | null;
     logChannelId?: string;
     lfgChannelId?: string | null;
+    locale?: string;
     enabledVoiceChannelIds?: string[];
     joinToCreateLobbies?: {
       channelId?: string;
@@ -696,6 +684,7 @@ export async function PUT(
 
   const lfgChannelId =
     typeof body.lfgChannelId === "string" ? body.lfgChannelId : null;
+  const locale = body.locale === "id" ? "id" : "en";
 
   const enabledVoiceChannelIds = Array.isArray(body.enabledVoiceChannelIds)
     ? Array.from(
@@ -857,6 +846,7 @@ export async function PUT(
       configVersion: body.configVersion,
       logChannelId: body.logChannelId,
       lfgChannelId,
+      locale,
       enabledVoiceChannelIds,
       joinToCreateLobbies,
       autoRoleConfig,
@@ -874,11 +864,17 @@ export async function PUT(
       lines: changeLines,
     });
 
-    if (spamCatcherConfig.enabled && spamCatcherConfig.channelIds.length > 0) {
-      if (spamCatcherConfig.integrityCheckEnabled) {
-        await deletePreviousWebhookNotices(id, spamCatcherConfig.channelIds);
-      }
+    const noticeChannelIds = Array.from(new Set([
+      ...previousConfig.spamCatcherConfig.channelIds,
+      ...spamCatcherConfig.channelIds,
+    ]));
+    const previousNotices = await getSpamCatcherNoticeMessages(id, noticeChannelIds).catch((error) => {
+      console.error("Failed to load previous Spam Catcher notices:", error);
+      return [];
+    });
+    let sentNotices: Awaited<ReturnType<typeof sendSpamCatcherTrapChannelNotices>> = [];
 
+    if (spamCatcherConfig.enabled && spamCatcherConfig.channelIds.length > 0) {
       const caughtCounts = await getSpamCatcherCaughtUserCounts(
         id,
         spamCatcherConfig.channelIds
@@ -893,17 +889,33 @@ export async function PUT(
         console.error("Failed to count Spam Catcher integrity checks:", error);
         return {} as Record<string, number>;
       });
-      await sendSpamCatcherTrapChannelNotices({
+      sentNotices = await sendSpamCatcherTrapChannelNotices({
         guildId: id,
         channelIds: spamCatcherConfig.channelIds,
         caughtCounts,
         integrityCounts,
         config: spamCatcherConfig,
+        locale,
         webhookUrls: spamCatcherConfig.webhookEnabled && !spamCatcherConfig.integrityCheckEnabled
           ? spamCatcherConfig.webhookUrls
           : [],
       });
     }
+
+    const activeNoticeChannelIds = new Set(
+      spamCatcherConfig.enabled ? spamCatcherConfig.channelIds : []
+    );
+    const replacedChannelIds = new Set(sentNotices.map((notice) => notice.channelId));
+    const oldNoticesToDelete = previousNotices.filter(
+      (notice) => replacedChannelIds.has(notice.channelId) || !activeNoticeChannelIds.has(notice.channelId)
+    );
+    const deletedChannelIds = await deleteSpamCatcherNotices(oldNoticesToDelete);
+    const staleRecordChannelIds = deletedChannelIds.filter(
+      (channelId) => !activeNoticeChannelIds.has(channelId)
+    );
+    await deleteSpamCatcherNoticeMessages(id, staleRecordChannelIds).catch((error) => {
+      console.error("Failed to clear stale Spam Catcher notice records:", error);
+    });
   } catch (error) {
     return NextResponse.json(
       { error: (error as Error).message },

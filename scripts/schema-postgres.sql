@@ -2,8 +2,12 @@ CREATE TABLE IF NOT EXISTS guild_config (
   guild_id TEXT PRIMARY KEY,
   log_channel_id TEXT NOT NULL,
   lfg_channel_id TEXT,
+  locale TEXT NOT NULL DEFAULT 'en',
   updated_at TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE IF EXISTS guild_config
+  ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en';
 
 CREATE TABLE IF NOT EXISTS voice_watchlist (
   guild_id TEXT NOT NULL,

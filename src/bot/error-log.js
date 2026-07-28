@@ -1,5 +1,6 @@
 const util = require('node:util');
 const { MessageFlags } = require('discord.js');
+const { getGuildLocale, t } = require('../i18n');
 
 function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }) {
   const DEDUPE_MS = 60 * 1000;
@@ -95,9 +96,9 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
       .map(([key, value]) => `- ${key}: \`${formatDetailValue(value)}\``);
   }
 
-  function truncate(value, maxLength) {
+  function truncate(value, maxLength, suffix = '... [truncated]') {
     if (value.length <= maxLength) return value;
-    return `${value.slice(0, Math.max(0, maxLength - 18))}\n... [truncated]`;
+    return `${value.slice(0, Math.max(0, maxLength - suffix.length - 1))}\n${suffix}`;
   }
 
   function buildContent({ title = 'Bot Error', args = [], guildId, details }) {
@@ -120,7 +121,7 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     return `${header}\n\`\`\`text\n${truncate(body, maxBodyLength)}\n\`\`\``;
   }
 
-  function buildPromptSkippedComponents({ args = [] }) {
+  function buildPromptSkippedComponents({ args = [] }, locale = 'en') {
     const [title, details] = args;
     if (
       typeof title !== 'string'
@@ -132,16 +133,16 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
       return null;
     }
     if (!details || typeof details !== 'object') return null;
-    const action = title.includes('refresh') ? 'refresh' : 'resend';
+    const action = t(locale, title.includes('refresh') ? 'errorLog.refresh' : 'errorLog.resend');
 
     const detailLines = [
-      `- Status: Aman untuk diabaikan. Ini biasanya terjadi ketika temp voice channel sudah kosong, ditinggalkan, atau terhapus sebelum panel sempat diperbarui.`,
-      `- Channel: ${details.channelId ? `<#${details.channelId}> (\`${formatDetailValue(details.channelId)}\`)` : '-'}`,
-      `- Owner: ${details.ownerId ? `<@${details.ownerId}> (\`${formatDetailValue(details.ownerId)}\`)` : '-'}`,
-      details.previousMessageId ? `- Panel lama: \`${formatDetailValue(details.previousMessageId)}\`` : null,
-      `- Discord Code: \`${formatDetailValue(details.code)}\``,
-      `- Penyebab: ${formatDetailValue(details.reason)}`,
-      `- Yang dilakukan bot: ${formatDetailValue(details.nextStep)}`,
+      t(locale, 'errorLog.safeStatus'),
+      t(locale, 'errorLog.channel', { channel: details.channelId ? `<#${details.channelId}> (\`${formatDetailValue(details.channelId)}\`)` : '-' }),
+      t(locale, 'errorLog.owner', { owner: details.ownerId ? `<@${details.ownerId}> (\`${formatDetailValue(details.ownerId)}\`)` : '-' }),
+      details.previousMessageId ? t(locale, 'errorLog.previousPanel', { messageId: formatDetailValue(details.previousMessageId) }) : null,
+      t(locale, 'errorLog.discordCode', { code: formatDetailValue(details.code) }),
+      t(locale, 'errorLog.cause', { cause: formatDetailValue(details.reason) }),
+      t(locale, 'errorLog.botAction', { action: formatDetailValue(details.nextStep) }),
     ].filter(Boolean);
 
     return {
@@ -153,11 +154,11 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
           components: [
             {
               type: 10,
-              content: `### ⚠️ Join-to-Create prompt ${action} dilewati`,
+              content: t(locale, 'errorLog.promptSkippedTitle', { action }),
             },
             {
               type: 10,
-              content: 'Bot mencoba memperbarui panel kontrol JTC, tetapi Discord menolak karena kondisi channel/message sudah berubah.',
+              content: t(locale, 'errorLog.promptSkippedIntro'),
             },
             {
               type: 14,
@@ -175,7 +176,7 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
             },
             {
               type: 10,
-              content: '-# ⚠️ Aman untuk diabaikan jika channel sudah kosong, ditinggalkan, atau sudah terhapus.',
+              content: t(locale, 'errorLog.promptFooter'),
             },
           ],
         },
@@ -183,17 +184,17 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     };
   }
 
-  function buildGenericErrorComponents({ title = 'Bot Error', args = [], guildId, details }) {
+  function buildGenericErrorComponents({ title, args = [], guildId, details }, locale = 'en') {
     const timestamp = Math.floor(Date.now() / 1000);
     const detailLines = normalizeDetails(details);
     const rawBody = args.map(formatArg).join('\n');
-    const body = redact(rawBody || 'No error details provided.').replace(/```/g, "'''");
+    const body = redact(rawBody || t(locale, 'errorLog.noDetails')).replace(/```/g, "'''");
     const contextLines = [
-      `- Time: <t:${timestamp}:F>`,
+      `- ${t(locale, 'errorLog.time')}: <t:${timestamp}:F>`,
     ];
 
     if (guildId) {
-      contextLines.push(`- Guild: \`${formatDetailValue(guildId)}\``);
+      contextLines.push(`- ${t(locale, 'errorLog.guild')}: \`${formatDetailValue(guildId)}\``);
     }
 
     if (detailLines.length) {
@@ -209,11 +210,11 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
           components: [
             {
               type: 10,
-              content: `### 🚨 ${title}`,
+              content: `### 🚨 ${title || t(locale, 'errorLog.botError')}`,
             },
             {
               type: 10,
-              content: 'Bot menemukan error. Detail ringkas ada di bawah agar mudah dibaca.',
+              content: t(locale, 'errorLog.genericIntro'),
             },
             {
               type: 14,
@@ -222,11 +223,11 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
             },
             {
               type: 10,
-              content: truncate(contextLines.join('\n'), 1200),
+              content: truncate(contextLines.join('\n'), 1200, t(locale, 'errorLog.truncated')),
             },
             {
               type: 10,
-              content: `**Detail**\n${truncate(body, 1400)}`,
+              content: `${t(locale, 'errorLog.detail')}\n${truncate(body, 1400, t(locale, 'errorLog.truncated'))}`,
             },
             {
               type: 14,
@@ -235,7 +236,7 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
             },
             {
               type: 10,
-              content: '-# 🚨 Jika error berulang atau fitur berhenti bekerja, cek log runtime untuk stack trace lengkap.',
+              content: t(locale, 'errorLog.genericFooter'),
             },
           ],
         },
@@ -243,10 +244,10 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     };
   }
 
-  function buildDiscordMessagePayload(payload) {
-    const promptComponents = buildPromptSkippedComponents(payload);
+  function buildDiscordMessagePayload(payload, locale) {
+    const promptComponents = buildPromptSkippedComponents(payload, locale);
     if (promptComponents) return promptComponents;
-    return buildGenericErrorComponents(payload);
+    return buildGenericErrorComponents(payload, locale);
   }
 
   function buildSignature({ title = 'Bot Error', args = [], guildId, details }) {
@@ -355,13 +356,14 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
       const channelIds = await getDestinationIds(payload.guildId);
       if (channelIds.length === 0) return;
 
-      const messagePayload = buildDiscordMessagePayload(payload);
       for (const channelId of channelIds) {
         const logChannel = await getLogChannel(channelId).catch((error) => {
           originalConsoleError('Failed to fetch error log channel:', error);
           return null;
         });
         if (!logChannel || !logChannel.isTextBased()) continue;
+        const locale = await getGuildLocale(configStore, logChannel.guild?.id || payload.guildId);
+        const messagePayload = buildDiscordMessagePayload(payload, locale);
 
         await logChannel.send({
           ...messagePayload,
@@ -398,7 +400,7 @@ function createErrorLogReporter({ client, getLogChannel, configStore, env = {} }
     console.error = (...args) => {
       originalConsoleError(...args);
       if (reporting) return;
-      reportError({ title: 'Bot Error', args }).catch((error) => {
+      reportError({ args }).catch((error) => {
         originalConsoleError('Failed to queue error report:', error);
       });
     };

@@ -116,7 +116,7 @@ function ActiveTempChannelsCardComponent({
                 <TableHead>Channel</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Owner</TableHead>
-                <TableHead>Aktif saat ini</TableHead>
+                <TableHead>Currently active</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead>LFG message</TableHead>
                 <TableHead className="text-right">Action</TableHead>
@@ -173,7 +173,7 @@ function ActiveTempChannelsCardComponent({
                     <TableCell>
                       {item.existsInDiscord === false ? (
                         <span className="text-xs text-muted-foreground">
-                          Channel tidak ada di Discord
+                          Channel not found in Discord
                         </span>
                       ) : item.activeUsers?.length ? (
                         <div className="space-y-1 text-xs">
@@ -185,23 +185,23 @@ function ActiveTempChannelsCardComponent({
                               {user.joinedAt ? (
                                 <span className="text-muted-foreground">
                                   {" "}
-                                  • masuk {new Date(user.joinedAt).toLocaleTimeString()}
+                                  • joined {new Date(user.joinedAt).toLocaleTimeString()}
                                 </span>
                               ) : null}
                             </div>
                           ))}
                           {item.activeUsers.length > 3 ? (
                             <div className="text-muted-foreground">
-                              +{item.activeUsers.length - 3} lainnya
+                              +{item.activeUsers.length - 3} more
                             </div>
                           ) : null}
                           <div className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
-                            sumber: {item.activeSource === "discord" ? "Discord" : "DB fallback"}
+                            source: {item.activeSource === "discord" ? "Discord" : "DB fallback"}
                           </div>
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          Tidak ada user aktif
+                          No active users
                         </span>
                       )}
                     </TableCell>

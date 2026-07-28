@@ -30,6 +30,7 @@ const {
   LEADERBOARD_PREFIX,
   JTC_PROMPT_RECONCILE_INTERVAL_MS,
 } = require('./constants');
+const { getGuildLocale, t } = require('../../i18n');
 
 function createLfgManager({ client, getLogChannel, configStore, env, statsManager }) {
   const tempPromptMessageIds = new Map();
@@ -105,46 +106,46 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     return error?.code || error?.rawError?.code || error?.data?.code || null;
   }
 
-  function describePromptError(error) {
+  function describePromptError(error, locale = 'en') {
     const code = getDiscordErrorCode(error);
     if (code === 10003) {
       return {
         expected: true,
-        reason: 'Discord says the temp channel no longer exists or is not accessible.',
-        action: 'Cleared the saved prompt reference. This usually happens after a temp voice channel is deleted.',
+        reason: t(locale, 'lfg.promptChannelMissingReason'),
+        action: t(locale, 'lfg.promptChannelMissingAction'),
       };
     }
     if (code === 10008) {
       return {
         expected: true,
-        reason: 'Discord says the saved prompt message no longer exists.',
-        action: 'Cleared the saved prompt reference so a new prompt can be created when needed.',
+        reason: t(locale, 'lfg.promptMessageMissingReason'),
+        action: t(locale, 'lfg.promptMessageMissingAction'),
       };
     }
     if (code === 'ChannelNotCached') {
       return {
         expected: true,
-        reason: 'The prompt message points to a channel that is no longer in the bot cache.',
-        action: 'Cleared the saved prompt reference. The next refresh will use the current channel state.',
+        reason: t(locale, 'lfg.promptNotCachedReason'),
+        action: t(locale, 'lfg.promptNotCachedAction'),
       };
     }
     if (code === 50001 || code === 50013) {
       return {
         expected: true,
-        reason: 'The bot cannot access or edit the prompt in that channel.',
-        action: 'Check the bot permissions for View Channel, Send Messages, and Manage Messages if this channel still exists.',
+        reason: t(locale, 'lfg.promptPermissionReason'),
+        action: t(locale, 'lfg.promptPermissionAction'),
       };
     }
 
     return {
       expected: false,
-      reason: error?.message || 'Unexpected Discord error.',
-      action: 'The full error is included for debugging.',
+      reason: error?.message || t(locale, 'lfg.promptUnexpectedReason'),
+      action: t(locale, 'lfg.promptUnexpectedAction'),
     };
   }
 
   function logPromptRefreshIssue(context, error) {
-    const description = describePromptError(error);
+    const description = describePromptError(error, context.locale);
     const details = {
       guildId: context.guildId,
       channelId: context.channelId,
@@ -163,7 +164,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
   }
 
   function logPromptSendIssue(title, context, error) {
-    const description = describePromptError(error);
+    const description = describePromptError(error, context.locale);
     const details = {
       guildId: context.guildId,
       channelId: context.channelId,
@@ -329,6 +330,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       if (!channel || !channel.isTextBased()) return;
 
       const config = await configStore.getGuildConfig(guild.id).catch(() => null);
+      const locale = config?.locale || 'en';
       const lfgEnabled = tempInfo.lfgEnabled ?? true;
       const lfgChannelId =
         config?.lfgChannelId || config?.logChannelId || env.LOG_CHANNEL_ID || null;
@@ -347,6 +349,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         userLimit: channel.userLimit ?? 0,
         voiceActivity: await getVoiceActivitySnapshot(channel),
         refreshedAtTimestamp: Math.floor(Date.now() / 1000),
+        locale,
       });
 
       let message = null;
@@ -374,6 +377,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
             guildId: guild.id,
             channelId,
             ownerId: tempInfo.ownerId,
+            locale,
           }, error);
           return null;
         });
@@ -397,8 +401,9 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
             guildId: guild.id,
             channelId,
             messageId: message.id,
+            locale,
           }, error);
-          if (describePromptError(error).expected) {
+          if (describePromptError(error, locale).expected) {
             await clearPromptMessageId(channelId);
           }
           return false;
@@ -414,11 +419,12 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         ...payload,
         allowedMentions: { users: [tempInfo.ownerId] },
       }).catch((error) => {
-        logPromptSendIssue('Join-to-Create prompt resend skipped:', {
-          guildId: guild.id,
-          channelId,
-          ownerId: tempInfo.ownerId,
-          previousMessageId: message.id,
+          logPromptSendIssue('Join-to-Create prompt resend skipped:', {
+            guildId: guild.id,
+            channelId,
+            ownerId: tempInfo.ownerId,
+            previousMessageId: message.id,
+            locale,
         }, error);
         return null;
       });
@@ -450,6 +456,8 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     getLogChannel,
     replyLeaderboard: statsManager?.replyLeaderboard,
     replyMyStats: statsManager?.replyMyStats,
+    getGuildLocale,
+    t,
   };
 
   async function sendJoinToCreatePrompt(
@@ -469,6 +477,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     }
 
     await withPromptLock(channel.id, async () => {
+      const locale = await getGuildLocale(configStore, channel.guild?.id);
       const payload = buildJoinToCreatePromptPayload({
         channelId: channel.id,
         createdTimestamp: Math.floor((channel.createdTimestamp ?? Date.now()) / 1000),
@@ -480,6 +489,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         userLimit: channel.userLimit ?? 0,
         voiceActivity: await getVoiceActivitySnapshot(channel),
         refreshedAtTimestamp: Math.floor(Date.now() / 1000),
+        locale,
       });
 
       const existingMessageId = tempPromptMessageIds.get(channel.id) || null;
@@ -495,8 +505,9 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
                 guildId: channel.guild?.id,
                 channelId: channel.id,
                 messageId: existingMessage.id,
+                locale,
               }, error);
-              if (describePromptError(error).expected) {
+              if (describePromptError(error, locale).expected) {
                 await clearPromptMessageId(channel.id);
               }
               return false;
@@ -521,6 +532,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
           guildId: channel.guild?.id,
           channelId: channel.id,
           ownerId: member.id,
+          locale,
         }, error);
       }
     });
@@ -546,11 +558,13 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         const user = await client.users.fetch(member.id).catch(() => null);
         if (!user) return;
 
+        const locale = await getGuildLocale(configStore, channel.guild.id);
         const reminderMessage = await user.send({
-          content:
-            `Hi <@${member.id}>, Channel sudah di buat, apakah Anda ingin mengirimkan pesan mencari squad di: <#${lfgChannelId}>?\n` +
-            'LFG akan membantumu mention member, sehingga kamu bisa mencari member squad member secara mudah.',
-          components: buildLfgReminderRows(channel.guild.id, channel.id),
+          content: [
+            t(locale, 'lfg.reminderLine1', { userId: member.id, lfgChannelId }),
+            t(locale, 'lfg.reminderLine2'),
+          ].join('\n'),
+          components: buildLfgReminderRows(channel.guild.id, channel.id, locale),
           allowedMentions: { users: [member.id] },
         });
         await configStore
@@ -615,8 +629,9 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     }
 
     try {
+      const locale = await getGuildLocale(configStore, info.guildId);
       await message.edit({
-        content: `Squad <@${info.ownerId}> sudah bubar`,
+        content: t(locale, 'lfg.disbanded', { ownerId: info.ownerId }),
         allowedMentions: { users: [info.ownerId] },
       });
 

@@ -160,7 +160,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
           Voice Leaderboard
         </CardTitle>
         <CardDescription>
-          Peringkat total durasi voice dari log temp channel dan sesi manual.
+          Total voice duration ranking from temp channel logs and manual sessions.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -182,7 +182,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
                 <TableHead>#</TableHead>
                 <TableHead>User</TableHead>
                 <TableHead>Total Durasi</TableHead>
-                <TableHead>Jumlah Sesi</TableHead>
+                <TableHead>Session Count</TableHead>
                 {debugMode ? <TableHead className="text-right">Debug Actions</TableHead> : null}
               </TableRow>
             </TableHeader>
@@ -227,7 +227,7 @@ function VoiceLeaderboardCardComponent({ selectedGuildId }: VoiceLeaderboardCard
             </TableBody>
           </Table>
         ) : (
-          <div className={dashboardEmpty}>Belum ada data leaderboard.</div>
+          <div className={dashboardEmpty}>No leaderboard data yet.</div>
         )}
 
         <div className="flex items-center justify-between gap-2">

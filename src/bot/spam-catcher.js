@@ -13,6 +13,7 @@ const {
   SeparatorBuilder,
   TextDisplayBuilder,
 } = require('@discordjs/builders');
+const { getGuildLocale, t } = require('../i18n');
 
 const APPEAL_PREFIX = 'spamcatcher_appeal';
 const APPEAL_MODAL_PREFIX = 'spamcatcher_appeal_modal';
@@ -39,11 +40,11 @@ function createSpamCatcherManager({ client, configStore }) {
     return value;
   }
 
-  function appealButton(eventId) {
+  function appealButton(eventId, locale = 'en') {
     return new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`${APPEAL_PREFIX}:${eventId}`)
-        .setLabel('It was a mistake')
+        .setLabel(t(locale, 'spamCatcher.appealButton'))
         .setStyle(ButtonStyle.Secondary)
     );
   }
@@ -73,85 +74,48 @@ function createSpamCatcherManager({ client, configStore }) {
     return channel?.isTextBased() ? channel : null;
   }
 
-  function formatNoticeMinutes(minutes) {
+  function formatNoticeMinutes(minutes, locale = 'en') {
     const safeMinutes = Math.max(1, Math.floor(Number(minutes) || 1));
     if (safeMinutes % 1440 === 0) {
       const days = safeMinutes / 1440;
-      return `${days} day${days === 1 ? '' : 's'}`;
+      return t(locale, days === 1 ? 'spamCatcher.dayOne' : 'spamCatcher.dayOther', { count: days });
     }
     if (safeMinutes % 60 === 0) {
       const hours = safeMinutes / 60;
-      return `${hours} hour${hours === 1 ? '' : 's'}`;
+      return t(locale, hours === 1 ? 'spamCatcher.hourOne' : 'spamCatcher.hourOther', { count: hours });
     }
-    return `${safeMinutes} minute${safeMinutes === 1 ? '' : 's'}`;
+    return t(locale, safeMinutes === 1 ? 'spamCatcher.minuteOne' : 'spamCatcher.minuteOther', { count: safeMinutes });
   }
 
   function buildTrapNoticePayload(caughtCount, integrityCount, config, context = {}) {
     const safeCount = Math.max(0, Math.floor(Number(caughtCount) || 0));
     const safeIntegrityCount = Math.max(0, Math.floor(Number(integrityCount) || 0));
-    const timeoutText = formatNoticeMinutes(config.timeoutMinutes);
-    const banDelayText = formatNoticeMinutes(config.banDelayMinutes);
-    const actionId = config.autoBanEnabled
+    const locale = context.locale || 'en';
+    const timeoutText = formatNoticeMinutes(config.timeoutMinutes, locale);
+    const banDelayText = formatNoticeMinutes(config.banDelayMinutes, locale);
+    const action = config.autoBanEnabled
       ? config.banMode === 'immediate'
-        ? 'kamu akan langsung terkena `ban`.'
+        ? t(locale, 'spamCatcher.actionImmediate')
         : config.banMode === 'after_timeout'
-          ? `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` saat timeout berakhir.`
-          : `kamu akan terkena \`timeout\` selama ${timeoutText}, lalu terkena \`ban\` setelah periode appeal selama ${banDelayText}.`
-      : `kamu akan terkena \`timeout\` selama ${timeoutText}.`;
-    const appealId = config.autoBanEnabled && config.banMode === 'immediate'
-      ? 'Jika ini adalah kesalahan, silakan hubungi admin server.'
-      : 'Jika kamu terkena timeout, silakan kirim private message ke salah satu admin yang sedang online atau gunakan tombol appeal jika tersedia.';
-    const actionEn = config.autoBanEnabled
-      ? config.banMode === 'immediate'
-        ? 'you will be `banned` immediately.'
-        : config.banMode === 'after_timeout'
-          ? `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` when the timeout ends.`
-          : `you will receive a \`timeout\` for ${timeoutText}, then be \`banned\` after a ${banDelayText} appeal window.`
-      : `you will receive a \`timeout\` for ${timeoutText}.`;
-    const appealEn = config.autoBanEnabled && config.banMode === 'immediate'
-      ? 'If this was a mistake, please contact a server admin.'
-      : 'If you are timed out, please send a private message to one of the online admins or use the appeal button if available.';
+          ? t(locale, 'spamCatcher.actionAfterTimeout', { timeout: timeoutText })
+          : t(locale, 'spamCatcher.actionDelayed', { timeout: timeoutText, delay: banDelayText })
+      : t(locale, 'spamCatcher.actionTimeout', { timeout: timeoutText });
+    const appeal = t(locale, config.autoBanEnabled && config.banMode === 'immediate'
+      ? 'spamCatcher.appealImmediate'
+      : 'spamCatcher.appealTimeout');
 
     const container = new ContainerBuilder()
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
           [
-            '# 🚫 Dilarang Mengirim Pesan di Channel Ini',
-            `⚠️ Channel ini dibuat untuk menangkap spammer. Jika kamu mengirim pesan di channel ini, ${actionId} ${appealId}`,
+            t(locale, 'spamCatcher.noticeTitle'),
+            t(locale, 'spamCatcher.noticeBody', { action, appeal }),
             '',
-            '## 😈 Jangan Berani-Berani Mencoba',
-            'Kalau cuma mau tes, sistem tetap akan menangkap kamu.',
+            t(locale, 'spamCatcher.warningTitle'),
+            t(locale, 'spamCatcher.warningBody'),
             '',
-            `-# Jumlah user yang sudah tertangkap di channel ini: \`${safeCount}\``,
-            `-# Manusia yang membaca pesan ini: \`${safeIntegrityCount}\``,
-          ].join('\n')
-        )
-      );
-
-    if (config.integrityCheckEnabled) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(integrityCustomId(INTEGRITY_ID_PREFIX, context.guildId || 'unknown', context.channelId || 'unknown'))
-            .setLabel('Saya sudah membaca ✅')
-            .setStyle(ButtonStyle.Secondary)
-        )
-      );
-    }
-
-    container
-      .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          [
-            '# 🚫 Do Not Send Messages in This Channel',
-            `⚠️ This channel is made to catch spammers. If you send a message in this channel, ${actionEn} ${appealEn}`,
-            '',
-            "## 😈 Don't Even Think About Trying",
-            'Even if you are just testing, the system will still catch you.',
-            '',
-            `-# Caught users in this channel: \`${safeCount}\``,
-            `-# Humans who read this message: \`${safeIntegrityCount}\``,
+            t(locale, 'spamCatcher.caughtCount', { count: safeCount }),
+            t(locale, 'spamCatcher.integrityCount', { count: safeIntegrityCount }),
           ].join('\n')
         )
       );
@@ -161,7 +125,7 @@ function createSpamCatcherManager({ client, configStore }) {
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(integrityCustomId(INTEGRITY_EN_PREFIX, context.guildId || 'unknown', context.channelId || 'unknown'))
-            .setLabel('I have read this message')
+            .setLabel(t(locale, 'spamCatcher.integrityButton'))
             .setStyle(ButtonStyle.Secondary)
         )
       );
@@ -192,13 +156,14 @@ function createSpamCatcherManager({ client, configStore }) {
       configStore.getSpamCatcherCaughtCount(guildId, channelId).catch(() => 0),
       configStore.getSpamCatcherIntegrityCount(guildId, channelId).catch(() => 0),
     ]);
+    const locale = await getGuildLocale(configStore, guildId);
     const payload = buildTrapNoticePayload(
       caughtCount,
       integrityCount,
       notice.deliveryMethod === 'webhook'
         ? { ...config, integrityCheckEnabled: false }
         : config,
-      { guildId, channelId }
+      { guildId, channelId, locale }
     );
 
     if (notice.deliveryMethod === 'webhook' && notice.webhookUrl) {
@@ -228,26 +193,27 @@ function createSpamCatcherManager({ client, configStore }) {
   async function logAction(event, title, details = []) {
     const logChannel = await getLogChannel(event.guildId);
     if (!logChannel) return;
+    const locale = await getGuildLocale(configStore, event.guildId);
     await logChannel.send({
       flags: MessageFlags.IsComponentsV2,
       components: [
         new ContainerBuilder()
-          .setAccentColor(title.includes('Banned') ? 0xef4444 : 0xf59e0b)
+          .setAccentColor(reviewAccentColor(event))
           .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
               [
                 `### ${title}`,
-                `- User: <@${event.userId}> (\`${event.userId}\`)`,
-                `- Channel: <#${event.channelId}> (\`${event.channelId}\`)`,
-                event.messageId ? `- Message ID: \`${event.messageId}\`` : null,
-                `- Event ID: \`${event.id}\``,
+                 t(locale, 'spamCatcher.logUser', { userId: event.userId }),
+                 t(locale, 'spamCatcher.logChannel', { channelId: event.channelId }),
+                 event.messageId ? t(locale, 'spamCatcher.messageId', { messageId: event.messageId }) : null,
+                 t(locale, 'spamCatcher.eventId', { eventId: event.id }),
                 ...details,
               ].filter(Boolean).join('\n')
             )
           )
           .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
           .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(`-# Logged <t:${Math.floor(Date.now() / 1000)}:F>`)
+            new TextDisplayBuilder().setContent(t(locale, 'spamCatcher.logged', { timestamp: `<t:${Math.floor(Date.now() / 1000)}:F>` }))
           ),
       ],
       allowedMentions: { parse: [] },
@@ -261,83 +227,89 @@ function createSpamCatcherManager({ client, configStore }) {
     return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
   }
 
-  function reviewActionLabel(event) {
-    if (event.action === 'ban_immediate') return 'Ban immediately';
-    if (event.action === 'ban_after_timeout') return 'Ban after timeout ends';
-    if (event.action === 'ban_delayed') return 'Ban after appeal window';
-    return 'Timeout only';
+  function reviewActionLabel(event, locale) {
+    if (event.action === 'ban_immediate') return t(locale, 'spamCatcher.actionBanImmediate');
+    if (event.action === 'ban_after_timeout') return t(locale, 'spamCatcher.actionBanAfterTimeout');
+    if (event.action === 'ban_delayed') return t(locale, 'spamCatcher.actionBanDelayed');
+    return t(locale, 'spamCatcher.actionTimeoutOnly');
   }
 
-  function reviewStatusLabel(event) {
+  function reviewStatusLabel(event, locale) {
     const labels = {
-      caught: 'Caught',
-      timed_out: 'Timed out',
-      ban_pending: 'Ban pending',
-      banned: 'Banned',
-      ban_failed: 'Ban failed',
-      timeout_failed: 'Timeout failed',
-      timeout_removed: 'Timeout removed',
-      already_timed_out: 'Already timed out',
-      member_unavailable: 'Member unavailable',
+      caught: 'statusCaught',
+      timed_out: 'statusTimedOut',
+      ban_pending: 'statusBanPending',
+      banned: 'statusBanned',
+      ban_failed: 'statusBanFailed',
+      timeout_failed: 'statusTimeoutFailed',
+      timeout_removed: 'statusTimeoutRemoved',
+      already_timed_out: 'statusAlreadyTimedOut',
+      already_banned: 'statusAlreadyBanned',
+      member_unavailable: 'statusMemberUnavailable',
     };
-    return labels[event.status] || event.status || 'Unknown';
+    return labels[event.status]
+      ? t(locale, `spamCatcher.${labels[event.status]}`)
+      : event.status || t(locale, 'spamCatcher.statusUnknown');
   }
 
-  function reviewTitle(event) {
-    if (event.status === 'banned') return 'Spam Catcher Banned User';
-    if (event.status === 'ban_failed') return 'Spam Catcher Ban Failed';
-    if (event.status === 'timeout_failed') return 'Spam Catcher Timeout Failed';
-    if (event.status === 'timeout_removed') return 'Spam Catcher Timeout Removed';
-    if (event.status === 'already_timed_out') return 'Spam Catcher Already Timed Out User';
-    if (event.status === 'member_unavailable') return 'Spam Catcher Member Unavailable';
-    return 'Spam Catcher Review';
+  function reviewTitle(event, locale) {
+    if (event.status === 'banned') return t(locale, 'spamCatcher.bannedTitle');
+    if (event.status === 'ban_failed') return t(locale, 'spamCatcher.banFailedTitle');
+    if (event.status === 'timeout_failed') return t(locale, 'spamCatcher.timeoutFailedTitle');
+    if (event.status === 'timeout_removed') return t(locale, 'spamCatcher.timeoutRemovedTitle');
+    if (event.status === 'already_timed_out') return t(locale, 'spamCatcher.alreadyTimedOutTitle');
+    if (event.status === 'already_banned') return t(locale, 'spamCatcher.alreadyBannedTitle');
+    if (event.status === 'member_unavailable') return t(locale, 'spamCatcher.memberUnavailableTitle');
+    return t(locale, 'spamCatcher.reviewTitle');
   }
 
   function reviewAccentColor(event) {
-    if (event.status === 'banned' || event.status === 'ban_failed' || event.status === 'timeout_failed') return 0xef4444;
+    if (event.status === 'banned' || event.status === 'already_banned' || event.status === 'ban_failed' || event.status === 'timeout_failed') return 0xef4444;
     if (event.status === 'member_unavailable') return 0x64748b;
     if (event.status === 'timeout_removed') return 0x22c55e;
     return 0xf59e0b;
   }
 
-  function scheduledBanLine(event) {
-    if (event.status === 'banned' || event.status === 'timeout_removed') return null;
+  function scheduledBanLine(event, locale) {
+    if (event.status === 'banned' || event.status === 'already_banned' || event.status === 'timeout_removed') return null;
     if (!event.banAfter) return null;
     const scheduledAt = timestamp(event.banAfter);
-    if (event.action === 'ban_after_timeout') return `- Ban after timeout ends: ${scheduledAt}`;
-    if (event.action === 'ban_delayed') return `- Ban after appeal window: ${scheduledAt}`;
-    return `- Scheduled ban: ${scheduledAt}`;
+    if (event.action === 'ban_after_timeout') return t(locale, 'spamCatcher.banAfterTimeout', { timestamp: scheduledAt });
+    if (event.action === 'ban_delayed') return t(locale, 'spamCatcher.banAfterAppeal', { timestamp: scheduledAt });
+    return t(locale, 'spamCatcher.scheduledBan', { timestamp: scheduledAt });
   }
 
-  function catcherMessageLine(event) {
-    if (!event.messageId) return `- Catcher message: unavailable in <#${event.channelId}> (\`${event.channelId}\`)`;
-    return `- Catcher message: https://discord.com/channels/${event.guildId}/${event.channelId}/${event.messageId}`;
+  function catcherMessageLine(event, locale) {
+    if (!event.messageId) return t(locale, 'spamCatcher.catcherUnavailable', { channelId: event.channelId });
+    return t(locale, 'spamCatcher.catcherMessage', {
+      url: `https://discord.com/channels/${event.guildId}/${event.channelId}/${event.messageId}`,
+    });
   }
 
   function canReviewTimeout(event) {
     return event.action !== 'ban_immediate' && (event.status === 'timed_out' || event.status === 'ban_pending');
   }
 
-  function buildReviewComponents(event) {
+  function buildReviewComponents(event, locale = 'en') {
     const container = new ContainerBuilder()
       .setAccentColor(reviewAccentColor(event))
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
           [
-            `### ${reviewTitle(event)}`,
-            '-# A user was caught by a Spam Catcher trap channel.',
+            `### ${reviewTitle(event, locale)}`,
+            t(locale, 'spamCatcher.reviewHelp'),
             '',
-            `- User: <@${event.userId}> (\`${event.userId}\`)`,
-            catcherMessageLine(event),
-            `- Action: \`${reviewActionLabel(event)}\``,
-            `- Status: **${reviewStatusLabel(event)}**`,
+            t(locale, 'spamCatcher.logUser', { userId: event.userId }),
+            catcherMessageLine(event, locale),
+            t(locale, 'spamCatcher.actionLine', { action: reviewActionLabel(event, locale) }),
+            t(locale, 'spamCatcher.statusLine', { status: reviewStatusLabel(event, locale) }),
             event.timeoutUntil && event.status !== 'banned' && event.status !== 'timeout_removed'
-              ? `- Timeout until: ${timestamp(event.timeoutUntil)}`
+              ? t(locale, 'spamCatcher.timeoutUntil', { timestamp: timestamp(event.timeoutUntil) })
               : null,
-            scheduledBanLine(event),
-            event.bannedAt ? `- Banned: ${timestamp(event.bannedAt, 'F')}` : null,
-            event.decidedBy ? `- Decided by: <@${event.decidedBy}>` : null,
-            `- Event ID: \`${event.id}\``,
+            scheduledBanLine(event, locale),
+            event.bannedAt ? t(locale, 'spamCatcher.bannedAt', { timestamp: timestamp(event.bannedAt, 'F') }) : null,
+            event.decidedBy ? t(locale, 'spamCatcher.decidedBy', { adminId: event.decidedBy }) : null,
+            t(locale, 'spamCatcher.eventId', { eventId: event.id }),
           ].filter(Boolean).join('\n')
         )
       );
@@ -346,7 +318,7 @@ function createSpamCatcherManager({ client, configStore }) {
       container
         .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
         .addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(`## Appeal by user\n${event.appealMessage}`)
+          new TextDisplayBuilder().setContent(`${t(locale, 'spamCatcher.appealHeading')}\n${event.appealMessage}`)
         );
     }
 
@@ -357,11 +329,11 @@ function createSpamCatcherManager({ client, configStore }) {
           new ActionRowBuilder().addComponents(
             new ButtonBuilder()
               .setCustomId(`${BAN_USER_PREFIX}:${event.id}`)
-              .setLabel('Ban User')
+              .setLabel(t(locale, 'spamCatcher.banUser'))
               .setStyle(ButtonStyle.Danger),
             new ButtonBuilder()
               .setCustomId(`${REMOVE_TIMEOUT_PREFIX}:${event.id}`)
-              .setLabel('Remove Timeout')
+              .setLabel(t(locale, 'spamCatcher.removeTimeout'))
               .setStyle(ButtonStyle.Success)
           )
         );
@@ -374,7 +346,7 @@ function createSpamCatcherManager({ client, configStore }) {
     };
   }
 
-  function buildRemoveTimeoutConfirmationComponents(event, adminId) {
+  function buildRemoveTimeoutConfirmationComponents(event, adminId, locale = 'en') {
     return {
       flags: MessageFlags.IsComponentsV2,
       components: [
@@ -383,13 +355,13 @@ function createSpamCatcherManager({ client, configStore }) {
           .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
               [
-                '### Confirm Remove Timeout',
-                `- User: <@${event.userId}> (\`${event.userId}\`)`,
-                `- Requested by: <@${adminId}>`,
-                `- Event ID: \`${event.id}\``,
+                t(locale, 'spamCatcher.confirmRemoveTitle'),
+                t(locale, 'spamCatcher.logUser', { userId: event.userId }),
+                t(locale, 'spamCatcher.requestedBy', { adminId }),
+                t(locale, 'spamCatcher.eventId', { eventId: event.id }),
                 '',
-                '⚠️ Removing this timeout will let the user send messages again. If they were testing or spamming, they may send spam messages again.',
-                event.banAfter ? '🛑 This also cancels the scheduled Spam Catcher ban for this event.' : null,
+                t(locale, 'spamCatcher.removeWarning'),
+                event.banAfter ? t(locale, 'spamCatcher.cancelBanWarning') : null,
               ].filter(Boolean).join('\n')
             )
           )
@@ -398,11 +370,11 @@ function createSpamCatcherManager({ client, configStore }) {
             new ActionRowBuilder().addComponents(
               new ButtonBuilder()
                 .setCustomId(`${REMOVE_TIMEOUT_CONFIRM_PREFIX}:${event.id}`)
-                .setLabel('Confirm Remove Timeout')
+                .setLabel(t(locale, 'spamCatcher.confirmRemove'))
                 .setStyle(ButtonStyle.Success),
               new ButtonBuilder()
                 .setCustomId(`${REMOVE_TIMEOUT_CANCEL_PREFIX}:${event.id}`)
-                .setLabel('Cancel')
+                .setLabel(t(locale, 'spamCatcher.cancel'))
                 .setStyle(ButtonStyle.Secondary)
             )
           ),
@@ -411,8 +383,8 @@ function createSpamCatcherManager({ client, configStore }) {
     };
   }
 
-  function buildResolvedReviewComponents(event) {
-    return buildReviewComponents(event);
+  function buildResolvedReviewComponents(event, locale) {
+    return buildReviewComponents(event, locale);
   }
 
   async function sendOrUpdateReviewMessage(guild, event, buildPayload = buildReviewComponents) {
@@ -420,7 +392,8 @@ function createSpamCatcherManager({ client, configStore }) {
     const channel = await guild.channels.fetch(event.reviewChannelId).catch(() => null);
     if (!channel?.isTextBased()) return null;
 
-    const payload = buildPayload(event);
+    const locale = await getGuildLocale(configStore, event.guildId || guild.id);
+    const payload = buildPayload(event, locale);
     if (event.reviewMessageId) {
       const existing = await channel.messages.fetch(event.reviewMessageId).catch(() => null);
       if (existing) {
@@ -441,6 +414,7 @@ function createSpamCatcherManager({ client, configStore }) {
   }
 
   async function handleImmediateBan(guild, event, options = {}) {
+    const locale = await getGuildLocale(configStore, event.guildId || guild.id);
     const mode = event.action === 'ban_after_timeout'
       ? 'after_timeout'
       : event.action === 'ban_delayed'
@@ -448,7 +422,7 @@ function createSpamCatcherManager({ client, configStore }) {
         : 'immediate';
     const dmChannel = await createDmChannel(event.userId);
     const dmPayload = {
-      content: 'You are being banned by Spam Catcher. If this was a mistake, please contact a server admin.',
+      content: t(locale, 'spamCatcher.dmBan'),
     };
     const dmSent = dmChannel
       ? await dmChannel.send(dmPayload).then(() => true).catch(() => false)
@@ -456,16 +430,21 @@ function createSpamCatcherManager({ client, configStore }) {
 
     const existingBan = await guild.bans.fetch(event.userId).catch(() => null);
     if (existingBan) {
-      const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'banned', options.decidedBy).catch(() => ({
+      const updated = await configStore.updateSpamCatcherEventModerationState(event.id, {
+        status: 'already_banned',
+        timeoutUntil: event.timeoutUntil,
+        banAfter: null,
+        decidedBy: options.decidedBy,
+      }).catch(() => ({
         ...event,
-        status: 'banned',
+        status: 'already_banned',
         decidedBy: options.decidedBy || event.decidedBy,
         bannedAt: new Date(),
       }));
-      await logAction(updated || event, 'Spam Catcher User Already Banned', [
-        `- Mode: \`${mode}\``,
-        '- Result: `already banned`',
-        `- DM before ban: \`${dmSent ? 'sent' : 'failed'}\``,
+      await logAction(updated || event, t(locale, 'spamCatcher.alreadyBannedTitle'), [
+        t(locale, 'spamCatcher.mode', { mode }),
+        t(locale, 'spamCatcher.resultAlreadyBanned'),
+        t(locale, 'spamCatcher.dmBeforeBan', { result: t(locale, dmSent ? 'spamCatcher.sent' : 'spamCatcher.failed') }),
       ]);
       await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
       return updated || event;
@@ -473,7 +452,7 @@ function createSpamCatcherManager({ client, configStore }) {
 
     let banError = null;
     await guild.members.ban(event.userId, {
-      reason: `Spam Catcher ${mode} ban, event ${event.id}`,
+      reason: t(locale, 'spamCatcher.banReason', { mode, eventId: event.id }),
       deleteMessageSeconds: 0,
     }).catch((error) => {
       banError = error;
@@ -484,9 +463,9 @@ function createSpamCatcherManager({ client, configStore }) {
       const updated = await configStore
         .updateSpamCatcherEventStatus(event.id, 'ban_failed', options.decidedBy)
         .catch(() => ({ ...event, status: 'ban_failed', decidedBy: options.decidedBy || event.decidedBy }));
-      await logAction(updated || event, 'Spam Catcher Ban Failed', [
-        `- Reason: \`${banError.message || banError}\``,
-        `- DM before ban: \`${dmSent ? 'sent' : 'failed'}\``,
+      await logAction(updated || event, t(locale, 'spamCatcher.banFailedTitle'), [
+        t(locale, 'spamCatcher.reason', { reason: banError.message || banError }),
+        t(locale, 'spamCatcher.dmBeforeBan', { result: t(locale, dmSent ? 'spamCatcher.sent' : 'spamCatcher.failed') }),
       ]);
       await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
       return updated || event;
@@ -498,23 +477,28 @@ function createSpamCatcherManager({ client, configStore }) {
       decidedBy: options.decidedBy || event.decidedBy,
       bannedAt: new Date(),
     }));
-    await logAction(updated || event, 'Spam Catcher Banned User', [
-      `- Mode: \`${mode}\``,
-      `- DM before ban: \`${dmSent ? 'sent' : 'failed'}\``,
+    await logAction(updated || event, t(locale, 'spamCatcher.bannedTitle'), [
+      t(locale, 'spamCatcher.mode', { mode }),
+      t(locale, 'spamCatcher.dmBeforeBan', { result: t(locale, dmSent ? 'spamCatcher.sent' : 'spamCatcher.failed') }),
     ]);
     await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
     return updated || event;
   }
 
   async function handleTimeout(guild, member, config, event) {
+    const locale = await getGuildLocale(configStore, event.guildId || guild.id);
     if (!member) {
-      const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'member_unavailable').catch(() => ({
+      const updated = await configStore.updateSpamCatcherEventModerationState(event.id, {
+        status: 'member_unavailable',
+        timeoutUntil: event.timeoutUntil,
+        banAfter: null,
+      }).catch(() => ({
         ...event,
         status: 'member_unavailable',
         banAfter: null,
       }));
-      await logAction(updated || event, 'Spam Catcher Member Unavailable', [
-        '- Reason: `User is no longer available in the guild, so timeout could not be applied.`',
+      await logAction(updated || event, t(locale, 'spamCatcher.memberUnavailableTitle'), [
+        t(locale, 'spamCatcher.reason', { reason: t(locale, 'spamCatcher.memberUnavailableReason') }),
       ]);
       await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
       return updated || event;
@@ -535,17 +519,17 @@ function createSpamCatcherManager({ client, configStore }) {
       }));
       await dmUser(member.id, {
         content: [
-          `You were caught by Spam Catcher in ${guild.name} while you were already timed out.`,
+          t(locale, 'spamCatcher.existingTimeoutDm', { guildName: guild.name }),
           event.action === 'ban_after_timeout'
-            ? 'Your existing timeout end is now being used as the ban timer.'
-            : 'If this was a mistake, click the button below and explain what happened.',
+            ? t(locale, 'spamCatcher.existingTimeoutBan')
+            : t(locale, 'spamCatcher.appealDmHelp'),
         ].join('\n'),
-        components: [appealButton(event.id)],
+        components: [appealButton(event.id, locale)],
       });
-      await logAction(updated || event, 'Spam Catcher User Already Timed Out', [
-        `- Existing timeout until: ${timestamp(existingTimeoutUntil, 'F')}`,
+      await logAction(updated || event, t(locale, 'spamCatcher.alreadyTimedOutTitle'), [
+        t(locale, 'spamCatcher.existingTimeoutUntil', { timestamp: timestamp(existingTimeoutUntil, 'F') }),
         event.action === 'ban_after_timeout'
-          ? `- Ban after existing timeout: ${timestamp(existingTimeoutUntil)}`
+          ? t(locale, 'spamCatcher.banAfterExistingTimeout', { timestamp: timestamp(existingTimeoutUntil) })
           : null,
       ].filter(Boolean));
       await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
@@ -554,7 +538,7 @@ function createSpamCatcherManager({ client, configStore }) {
 
     const timeoutMs = Math.min(config.timeoutMinutes * 60 * 1000, DISCORD_TIMEOUT_MAX_MS);
     let timeoutError = null;
-    await member.timeout(timeoutMs, `Spam Catcher event ${event.id}`).catch((error) => {
+    await member.timeout(timeoutMs, t(locale, 'spamCatcher.timeoutReason', { eventId: event.id })).catch((error) => {
       timeoutError = error;
     });
 
@@ -564,26 +548,27 @@ function createSpamCatcherManager({ client, configStore }) {
         ...event,
         status: 'timeout_failed',
       }));
-      await logAction(updated || event, 'Spam Catcher Timeout Failed', [`- Reason: \`${timeoutError.message || timeoutError}\``]);
+      await logAction(updated || event, t(locale, 'spamCatcher.timeoutFailedTitle'), [
+        t(locale, 'spamCatcher.reason', { reason: timeoutError.message || timeoutError }),
+      ]);
       await sendOrUpdateReviewMessage(guild, updated || event).catch(() => null);
       return updated || event;
     }
 
     await dmUser(member.id, {
       content: [
-        `You have been timed out in ${guild.name} because you posted in a spam catcher channel.`,
-        'If this was a mistake, click the button below and explain what happened.',
+        t(locale, 'spamCatcher.dmTimeout', { guildName: guild.name }),
       ].join('\n'),
-      components: [appealButton(event.id)],
+      components: [appealButton(event.id, locale)],
     });
 
-    await logAction(event, 'Spam Catcher Timed Out User', [
-      `- Timeout: \`${config.timeoutMinutes} minutes\``,
+    await logAction(event, t(locale, 'spamCatcher.timedOutTitle'), [
+      t(locale, 'spamCatcher.timeoutDuration', { duration: formatNoticeMinutes(config.timeoutMinutes, locale) }),
       event.banAfter
         ? event.action === 'ban_after_timeout'
-          ? `- Ban after timeout ends: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
-          : `- Ban after appeal window: <t:${Math.floor(event.banAfter.getTime() / 1000)}:R>`
-        : '- Scheduled ban: `off`',
+          ? t(locale, 'spamCatcher.banAfterTimeout', { timestamp: `<t:${Math.floor(event.banAfter.getTime() / 1000)}:R>` })
+          : t(locale, 'spamCatcher.banAfterAppeal', { timestamp: `<t:${Math.floor(event.banAfter.getTime() / 1000)}:R>` })
+        : t(locale, 'spamCatcher.scheduledBanOff'),
     ]);
     await sendOrUpdateReviewMessage(guild, event).catch(() => null);
     return event;
@@ -639,14 +624,16 @@ function createSpamCatcherManager({ client, configStore }) {
 
   async function handleAppealButton(interaction) {
     const [, eventId] = interaction.customId.split(':');
+    const event = await configStore.getSpamCatcherEventById(Number(eventId)).catch(() => null);
+    const locale = await getGuildLocale(configStore, event?.guildId);
     const modal = new ModalBuilder()
       .setCustomId(`${APPEAL_MODAL_PREFIX}:${eventId}`)
-      .setTitle('Spam Catcher appeal')
+      .setTitle(t(locale, 'spamCatcher.appealModalTitle'))
       .addComponents(
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('appeal_message')
-            .setLabel('Why was this a mistake?')
+            .setLabel(t(locale, 'spamCatcher.appealInputLabel'))
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
             .setMaxLength(1000)
@@ -660,8 +647,9 @@ function createSpamCatcherManager({ client, configStore }) {
     const eventId = Number(eventIdRaw);
     const message = interaction.fields.getTextInputValue('appeal_message').trim();
     const event = await configStore.markSpamCatcherAppealed(eventId, message).catch(() => null);
+    const locale = await getGuildLocale(configStore, event?.guildId);
     if (!event || event.userId !== interaction.user.id) {
-      await interaction.reply({ content: 'Appeal not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.reply({ content: t(locale, 'spamCatcher.appealNotFound'), flags: MessageFlags.Ephemeral }).catch(() => null);
       return;
     }
 
@@ -671,7 +659,7 @@ function createSpamCatcherManager({ client, configStore }) {
       : null;
     if (!reviewChannel?.isTextBased()) {
       await interaction.reply({
-        content: 'Your appeal was saved, but the review channel is not available. Please contact an admin.',
+        content: t(locale, 'spamCatcher.appealReviewUnavailable'),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return;
@@ -680,18 +668,18 @@ function createSpamCatcherManager({ client, configStore }) {
     const sent = await sendOrUpdateReviewMessage(guild, event).catch(() => null);
     if (!sent) {
       await interaction.reply({
-        content: 'Your appeal was saved, but the review message could not be sent. Please contact an admin.',
+        content: t(locale, 'spamCatcher.appealSendFailed'),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return;
     }
-    await interaction.reply({ content: 'Your appeal was sent to the admins.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    await interaction.reply({ content: t(locale, 'spamCatcher.appealSent'), flags: MessageFlags.Ephemeral }).catch(() => null);
   }
 
-  async function requireAdmin(interaction, action) {
+  async function requireAdmin(interaction, actionKey, locale) {
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
       await interaction.reply({
-        content: `Only users with Administrator permission can ${action}.`,
+        content: t(locale, 'spamCatcher.adminRequired', { action: t(locale, actionKey) }),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return false;
@@ -707,50 +695,53 @@ function createSpamCatcherManager({ client, configStore }) {
   }
 
   async function handleRemoveTimeout(interaction) {
-    if (!await requireAdmin(interaction, 'remove Spam Catcher timeouts')) return;
+    const locale = await getGuildLocale(configStore, interaction.guildId);
+    if (!await requireAdmin(interaction, 'spamCatcher.adminRemoveTimeout', locale)) return;
 
     const event = await getInteractionEvent(interaction);
     if (!event) {
-      await interaction.reply({ content: 'Spam Catcher event not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.reply({ content: t(locale, 'spamCatcher.eventNotFound'), flags: MessageFlags.Ephemeral }).catch(() => null);
       return;
     }
 
     if (!canReviewTimeout(event)) {
-      await interaction.reply({ content: 'This Spam Catcher event is no longer waiting for timeout action.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.reply({ content: t(locale, 'spamCatcher.timeoutNoLongerPending'), flags: MessageFlags.Ephemeral }).catch(() => null);
       return;
     }
 
-    await interaction.update(buildRemoveTimeoutConfirmationComponents(event, interaction.user.id)).catch(async () => {
-      await interaction.reply({ content: 'Failed to show timeout-removal confirmation.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    await interaction.update(buildRemoveTimeoutConfirmationComponents(event, interaction.user.id, locale)).catch(async () => {
+      await interaction.reply({ content: t(locale, 'spamCatcher.confirmationFailed'), flags: MessageFlags.Ephemeral }).catch(() => null);
     });
   }
 
   async function handleCancelRemoveTimeout(interaction) {
-    if (!await requireAdmin(interaction, 'cancel Spam Catcher timeout actions')) return;
+    const locale = await getGuildLocale(configStore, interaction.guildId);
+    if (!await requireAdmin(interaction, 'spamCatcher.adminCancelTimeout', locale)) return;
 
     const event = await getInteractionEvent(interaction);
     if (!event) {
-      await interaction.reply({ content: 'Spam Catcher event not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.reply({ content: t(locale, 'spamCatcher.eventNotFound'), flags: MessageFlags.Ephemeral }).catch(() => null);
       return;
     }
 
-    await interaction.update(buildReviewComponents(event)).catch(async () => {
-      await interaction.reply({ content: 'Failed to restore the review message.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    await interaction.update(buildReviewComponents(event, locale)).catch(async () => {
+      await interaction.reply({ content: t(locale, 'spamCatcher.restoreFailed'), flags: MessageFlags.Ephemeral }).catch(() => null);
     });
   }
 
   async function handleConfirmRemoveTimeout(interaction) {
-    if (!await requireAdmin(interaction, 'remove Spam Catcher timeouts')) return;
+    const locale = await getGuildLocale(configStore, interaction.guildId);
+    if (!await requireAdmin(interaction, 'spamCatcher.adminRemoveTimeout', locale)) return;
 
     const event = await getInteractionEvent(interaction);
     if (!event) {
-      await interaction.reply({ content: 'Spam Catcher event not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.reply({ content: t(locale, 'spamCatcher.eventNotFound'), flags: MessageFlags.Ephemeral }).catch(() => null);
       return;
     }
 
     if (!canReviewTimeout(event)) {
-      await interaction.update(buildReviewComponents(event)).catch(async () => {
-        await interaction.reply({ content: 'This Spam Catcher event is no longer waiting for timeout action.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.update(buildReviewComponents(event, locale)).catch(async () => {
+        await interaction.reply({ content: t(locale, 'spamCatcher.timeoutNoLongerPending'), flags: MessageFlags.Ephemeral }).catch(() => null);
       });
       return;
     }
@@ -759,61 +750,69 @@ function createSpamCatcherManager({ client, configStore }) {
       ? await interaction.guild.members.fetch(event.userId).catch(() => null)
       : null;
     if (!member) {
-      const updated = await configStore.updateSpamCatcherEventStatus(event.id, 'member_unavailable', interaction.user.id).catch(() => ({
+      const updated = await configStore.updateSpamCatcherEventModerationState(event.id, {
+        status: 'member_unavailable',
+        timeoutUntil: event.timeoutUntil,
+        banAfter: null,
+        decidedBy: interaction.user.id,
+      }).catch(() => ({
         ...event,
         status: 'member_unavailable',
         decidedBy: interaction.user.id,
       }));
-      await interaction.update(buildReviewComponents(updated || event)).catch(async () => {
-        await interaction.reply({ content: 'User is no longer available in this guild.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.update(buildReviewComponents(updated || event, locale)).catch(async () => {
+        await interaction.reply({ content: t(locale, 'spamCatcher.userUnavailable'), flags: MessageFlags.Ephemeral }).catch(() => null);
       });
-      await logAction(updated || event, 'Spam Catcher Member Unavailable', [
-        '- Reason: `Admin tried to remove timeout, but the user is no longer in the guild.`',
+      await logAction(updated || event, t(locale, 'spamCatcher.memberUnavailableTitle'), [
+        t(locale, 'spamCatcher.reason', { reason: t(locale, 'spamCatcher.adminRemoveUnavailableReason') }),
       ]);
       return;
     }
 
     let timeoutError = null;
-    await member.timeout(null, `Spam Catcher appeal accepted by ${interaction.user.id}`).catch((error) => {
+    await member.timeout(null, t(locale, 'spamCatcher.appealAcceptedReason', { adminId: interaction.user.id })).catch((error) => {
       console.error('Failed to remove Spam Catcher timeout:', error);
       timeoutError = error;
     });
 
     if (timeoutError) {
       await interaction.reply({
-        content: `Failed to remove timeout: ${timeoutError.message || timeoutError}`,
+        content: t(locale, 'spamCatcher.removeTimeoutFailed', { reason: timeoutError.message || timeoutError }),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return;
     }
 
     const updated = await configStore.resolveSpamCatcherAppeal(event.id, interaction.user.id).catch(() => event);
-    await interaction.update(buildResolvedReviewComponents(updated || event)).catch(async () => {
-      await interaction.reply({ content: 'Timeout removed, but failed to update review message.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    await interaction.update(buildResolvedReviewComponents(updated || event, locale)).catch(async () => {
+      await interaction.reply({ content: t(locale, 'spamCatcher.timeoutRemovedUpdateFailed'), flags: MessageFlags.Ephemeral }).catch(() => null);
     });
-    await logAction(updated || event, 'Spam Catcher Timeout Removed', [`- Removed by: <@${interaction.user.id}>`]);
+    await logAction(updated || event, t(locale, 'spamCatcher.timeoutRemovedTitle'), [
+      t(locale, 'spamCatcher.removedBy', { adminId: interaction.user.id }),
+    ]);
   }
 
   async function handleBanUser(interaction) {
-    if (!await requireAdmin(interaction, 'ban Spam Catcher users')) return;
+    const locale = await getGuildLocale(configStore, interaction.guildId);
+    if (!await requireAdmin(interaction, 'spamCatcher.adminBanUser', locale)) return;
 
     const event = await getInteractionEvent(interaction);
     if (!event) {
-      await interaction.reply({ content: 'Spam Catcher event not found.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.reply({ content: t(locale, 'spamCatcher.eventNotFound'), flags: MessageFlags.Ephemeral }).catch(() => null);
       return;
     }
     if (!canReviewTimeout(event)) {
-      await interaction.reply({ content: 'This Spam Catcher event is no longer waiting for admin action.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.reply({ content: t(locale, 'spamCatcher.adminNoLongerPending'), flags: MessageFlags.Ephemeral }).catch(() => null);
       return;
     }
     if (!interaction.guild) {
-      await interaction.reply({ content: 'Guild is not available for this action.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      await interaction.reply({ content: t(locale, 'spamCatcher.guildUnavailable'), flags: MessageFlags.Ephemeral }).catch(() => null);
       return;
     }
 
     await interaction.deferUpdate().catch(() => null);
     const updated = await handleImmediateBan(interaction.guild, event, { decidedBy: interaction.user.id });
-    await interaction.editReply(buildReviewComponents(updated || event)).catch(() => null);
+    await interaction.editReply(buildReviewComponents(updated || event, locale)).catch(() => null);
   }
 
   async function handleIntegrityCheck(interaction) {
@@ -821,6 +820,9 @@ function createSpamCatcherManager({ client, configStore }) {
     const [prefix, customGuildId, customChannelId] = customId.split(':');
     const guildId = customGuildId && customGuildId !== 'unknown' ? customGuildId : interaction.guildId;
     const channelId = customChannelId && customChannelId !== 'unknown' ? customChannelId : interaction.channelId;
+    const locale = guildId
+      ? await getGuildLocale(configStore, guildId)
+      : prefix === INTEGRITY_ID_PREFIX ? 'id' : 'en';
     console.info('Handling Spam Catcher integrity button:', {
       customId: interaction.customId,
       guildId,
@@ -843,13 +845,13 @@ function createSpamCatcherManager({ client, configStore }) {
     }
 
     if (!guildId || !channelId) {
-      await followUp('This integrity check is only available in a server channel.');
+      await followUp(t(locale, 'spamCatcher.integrityServerOnly'));
       return;
     }
 
     const config = await getConfig(guildId).catch(() => null);
     if (!config?.enabled || !config.integrityCheckEnabled || !config.channelIds.includes(channelId)) {
-      await followUp('Integrity check is not enabled for this notice.');
+      await followUp(t(locale, 'spamCatcher.integrityDisabled'));
       return;
     }
 
@@ -861,14 +863,14 @@ function createSpamCatcherManager({ client, configStore }) {
       });
 
     if (inserted === null) {
-      await followUp('Failed to record integrity check. Please try again.');
+      await followUp(t(locale, 'spamCatcher.integrityFailed'));
       return;
     }
 
     await followUp(
       inserted
-        ? 'Integrity checked. Thanks for reading.'
-        : 'You already checked integrity for this message.'
+        ? t(locale, 'spamCatcher.integritySuccess')
+        : t(locale, 'spamCatcher.integrityDuplicate')
     );
 
     if (inserted && interaction.guild) {

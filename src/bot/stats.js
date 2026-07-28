@@ -3,45 +3,51 @@ const {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } = require('discord.js');
+const { getGuildLocale, t } = require('../i18n');
 
 const ADMIN_ID = process.env.ADMIN_DISCORD_USER_ID || null;
 const STATS_COMMAND = 'stats';
 const VOICECHECK_COMMAND = 'voicecheck';
 const VOICECHECK_DELETE_PREFIX = 'voicecheck_delete';
 
-function formatDuration(totalMs) {
+function formatDuration(totalMs, locale = 'en') {
   const safeMs = Math.max(0, Number(totalMs) || 0);
   const totalMinutes = Math.floor(safeMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours <= 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
+  if (hours <= 0) return t(locale, 'common.durationMinutes', { minutes });
+  return t(locale, 'common.durationHoursMinutes', { hours, minutes });
 }
 
 function buildStatsCommand() {
   return new SlashCommandBuilder()
     .setName(STATS_COMMAND)
-    .setDescription('Lihat statistik voice temp channel')
+    .setDescription(t('en', 'stats.commandDescription'))
+    .setDescriptionLocalizations({ id: t('id', 'stats.commandDescription') })
     .addSubcommand((subcommand) =>
       subcommand
         .setName('me')
-        .setDescription('Lihat statistik akun kamu')
+        .setDescription(t('en', 'stats.meDescription'))
+        .setDescriptionLocalizations({ id: t('id', 'stats.meDescription') })
     )
     .addSubcommand((subcommand) =>
       subcommand
         .setName('user')
-        .setDescription('Lihat statistik user tertentu (admin only)')
+        .setDescription(t('en', 'stats.userDescription'))
+        .setDescriptionLocalizations({ id: t('id', 'stats.userDescription') })
         .addUserOption((option) =>
           option
             .setName('target')
-            .setDescription('User yang ingin dilihat statistiknya')
+            .setDescription(t('en', 'stats.targetDescription'))
+            .setDescriptionLocalizations({ id: t('id', 'stats.targetDescription') })
             .setRequired(true)
         )
     )
     .addSubcommand((subcommand) =>
       subcommand
         .setName('leaderboard')
-        .setDescription('Top 10 total durasi voice')
+        .setDescription(t('en', 'stats.leaderboardDescription'))
+        .setDescriptionLocalizations({ id: t('id', 'stats.leaderboardDescription') })
     )
     .toJSON();
 }
@@ -49,7 +55,8 @@ function buildStatsCommand() {
 function buildVoicecheckCommand() {
   return new SlashCommandBuilder()
     .setName(VOICECHECK_COMMAND)
-    .setDescription('Cek temp voice channel kosong / tidak ditemukan')
+    .setDescription(t('en', 'stats.voicecheckDescription'))
+    .setDescriptionLocalizations({ id: t('id', 'stats.voicecheckDescription') })
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .toJSON();
 }
@@ -102,7 +109,7 @@ async function getVoicecheckSnapshot(configStore, guild) {
   });
 }
 
-function buildVoicecheckPayload(rows) {
+function buildVoicecheckPayload(rows, locale = 'en') {
   const now = Date.now();
   const total = rows.length;
   const notFound = rows.filter((row) => row.state === 'not_found').length;
@@ -116,10 +123,10 @@ function buildVoicecheckPayload(rows) {
       : null;
     const stateLabel =
       row.state === 'not_found'
-        ? 'Not found'
+        ? t(locale, 'stats.notFound')
         : row.state === 'empty'
-          ? 'Empty'
-          : `Active (${row.activeCount})`;
+          ? t(locale, 'stats.empty')
+          : `${t(locale, 'stats.active')} (${row.activeCount})`;
     const canDelete = row.state === 'not_found' || row.state === 'empty';
 
     return {
@@ -129,15 +136,15 @@ function buildVoicecheckPayload(rows) {
           type: 10,
           content:
             `**<#${row.channelId}>**\n` +
-            `- Status: \`${stateLabel}\`\n` +
-            `- Owner: <@${row.ownerId}>\n` +
-            `- Umur: ${ageMinutes === null ? '-' : `\`${ageMinutes}m\``}`,
+            `- ${t(locale, 'stats.status')}: \`${stateLabel}\`\n` +
+            `- ${t(locale, 'stats.owner')}: <@${row.ownerId}>\n` +
+            `- ${t(locale, 'stats.age')}: ${ageMinutes === null ? '-' : `\`${t(locale, 'common.durationMinutes', { minutes: ageMinutes })}\``}`,
         },
       ],
       accessory: {
         type: 2,
         style: canDelete ? 4 : 2,
-        label: 'Delete',
+        label: t(locale, 'stats.delete'),
         custom_id: `${VOICECHECK_DELETE_PREFIX}:${row.channelId}`,
         disabled: !canDelete,
       },
@@ -154,9 +161,9 @@ function buildVoicecheckPayload(rows) {
           {
             type: 10,
             content:
-              '### Voice Check\n' +
-              `-# Track temp channels dari lfg-tool dan tandai yang \`Not found\` atau \`Empty\` untuk cleanup cepat.\n\n` +
-              `**Ringkasan** • Total: \`${total}\` • Active: \`${active}\` • Empty: \`${empty}\` • Not found: \`${notFound}\``,
+              `${t(locale, 'stats.voicecheckTitle')}\n` +
+              `${t(locale, 'stats.voicecheckHelp')}\n\n` +
+              `${t(locale, 'stats.summary')} • ${t(locale, 'stats.total')}: \`${total}\` • ${t(locale, 'stats.active')}: \`${active}\` • ${t(locale, 'stats.empty')}: \`${empty}\` • ${t(locale, 'stats.notFound')}: \`${notFound}\``,
           },
           { type: 14, divider: true, spacing: 1 },
           ...(rowComponents.length
@@ -164,7 +171,7 @@ function buildVoicecheckPayload(rows) {
             : [
                 {
                   type: 10,
-                  content: 'Tidak ada temp voice channel yang sedang terdaftar.',
+                  content: t(locale, 'stats.noTempChannels'),
                 },
               ]),
           ...(rows.length > 20
@@ -172,7 +179,7 @@ function buildVoicecheckPayload(rows) {
                 { type: 14, divider: true, spacing: 1 },
                 {
                   type: 10,
-                  content: `-# Menampilkan 20 dari ${rows.length} channel.`,
+                  content: t(locale, 'stats.showingChannels', { count: rows.length }),
                 },
               ]
             : []),
@@ -191,6 +198,7 @@ function buildStatsContainerPayload({
   accentColor = 0x3b82f6,
   mentionUserId = null,
   ephemeral = true,
+  locale = 'en',
 }) {
   const flags = ephemeral
     ? MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral
@@ -223,7 +231,7 @@ function buildStatsContainerPayload({
               media: {
                 url: avatarUrl,
               },
-              description: 'User avatar',
+               description: t(locale, 'stats.userAvatar'),
             },
           },
           {
@@ -249,6 +257,7 @@ async function buildUserStatsReplyPayload({
   guildId,
   targetUser,
   ephemeral = true,
+  locale = 'en',
 }) {
   const stats = await configStore.getVoiceStatsForUser(guildId, targetUser.id);
   const nowMs = Date.now();
@@ -261,21 +270,23 @@ async function buildUserStatsReplyPayload({
   const averageMs =
     stats.sessions > 0 ? Math.floor(stats.totalMs / stats.sessions) : 0;
 
-  const summaryParagraph =
-    `<@${targetUser.id}> sudah menghabiskan total \`${formatDuration(stats.totalMs)}\` ` +
-    `dalam \`${stats.sessions}\` sesi voice. Rata-rata durasi per sesi ` +
-    `adalah \`${formatDuration(averageMs)}\`, dengan sesi terpanjang ` +
-    `\`${formatDuration(stats.longestMs)}\`.`;
+  const summaryParagraph = t(locale, 'stats.userSummary', {
+    userId: targetUser.id,
+    total: formatDuration(stats.totalMs, locale),
+    sessions: stats.sessions,
+    average: formatDuration(averageMs, locale),
+    longest: formatDuration(stats.longestMs, locale),
+  });
 
   const activeStatus = stats.activeNow
-    ? `Aktif sekarang selama \`${formatDuration(currentSessionMs)}\``
-    : 'Tidak sedang aktif di voice';
+    ? t(locale, 'stats.activeNow', { duration: formatDuration(currentSessionMs, locale) })
+    : t(locale, 'stats.inactive');
 
   const lines = [
-    '**Detail Lainnya**',
-    `- Pernah Jadi Owner: \`${stats.ownerCount}\``,
-    `- Rank Server: \`${stats.rank ?? '-'}\``,
-    `- Status Voice: ${activeStatus}`,
+    t(locale, 'stats.moreDetails'),
+    t(locale, 'stats.ownerCount', { count: stats.ownerCount }),
+    t(locale, 'stats.serverRank', { rank: stats.rank ?? '-' }),
+    t(locale, 'stats.voiceStatus', { status: activeStatus }),
   ];
 
   const avatarUrl = targetUser.displayAvatarURL({
@@ -285,13 +296,14 @@ async function buildUserStatsReplyPayload({
   });
 
   return buildStatsContainerPayload({
-    title: '### Voice Stats',
+    title: t(locale, 'stats.voiceStatsTitle'),
     introParagraph: summaryParagraph,
     lines,
     avatarUrl,
     accentColor: 0x2563eb,
     mentionUserId: targetUser.id,
     ephemeral,
+    locale,
   });
 }
 
@@ -315,9 +327,10 @@ function createStatsManager({ client, configStore }) {
   }
 
   async function replyVoicecheck(interaction) {
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     if (!interaction.guildId || !interaction.guild) {
       await interaction.reply({
-        content: 'Perintah ini hanya bisa digunakan di server.',
+        content: t(locale, 'common.serverOnlyCommand'),
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -325,20 +338,21 @@ function createStatsManager({ client, configStore }) {
 
     if (!isVoicecheckAllowed(interaction)) {
       await interaction.reply({
-        content: 'Hanya user dengan permission Administrator yang bisa pakai command ini.',
+        content: t(locale, 'common.adminOnlyCommand'),
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
 
     const rows = await getVoicecheckSnapshot(configStore, interaction.guild);
-    await interaction.reply(buildVoicecheckPayload(rows));
+    await interaction.reply(buildVoicecheckPayload(rows, locale));
   }
 
   async function handleVoicecheckDelete(interaction) {
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     if (!interaction.guildId || !interaction.guild) {
       await interaction.reply({
-        content: 'Aksi ini hanya bisa digunakan di server.',
+        content: t(locale, 'common.serverOnlyAction'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -346,7 +360,7 @@ function createStatsManager({ client, configStore }) {
 
     if (!isVoicecheckAllowed(interaction)) {
       await interaction.reply({
-        content: 'Hanya user dengan permission Administrator yang bisa pakai aksi ini.',
+        content: t(locale, 'common.adminOnlyAction'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -355,7 +369,7 @@ function createStatsManager({ client, configStore }) {
     const [, channelId] = interaction.customId.split(':');
     if (!channelId) {
       await interaction.reply({
-        content: 'Channel ID tidak valid.',
+        content: t(locale, 'stats.invalidChannelId'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -368,7 +382,7 @@ function createStatsManager({ client, configStore }) {
       const row = rows.find((item) => item.channelId === channelId);
       if (!row) {
         await interaction.followUp({
-          content: 'Record temp channel tidak ditemukan atau sudah terhapus.',
+          content: t(locale, 'stats.missingRecord'),
           flags: MessageFlags.Ephemeral,
         });
         return true;
@@ -376,7 +390,7 @@ function createStatsManager({ client, configStore }) {
 
       if (row.state === 'active') {
         await interaction.followUp({
-          content: 'Channel masih aktif. Delete hanya untuk status Not found atau Empty.',
+          content: t(locale, 'stats.activeCannotDelete'),
           flags: MessageFlags.Ephemeral,
         });
         return true;
@@ -387,14 +401,14 @@ function createStatsManager({ client, configStore }) {
         const humanCount = channel.members?.filter((member) => !member.user?.bot).size || 0;
         if (humanCount > 0) {
           await interaction.followUp({
-            content: 'Channel masih ada user aktif, delete dibatalkan.',
+            content: t(locale, 'stats.activeUsersRemain'),
             flags: MessageFlags.Ephemeral,
           });
           return true;
         }
 
         await channel
-          .delete(`Voicecheck cleanup by ${interaction.user.id}`)
+          .delete(t(locale, 'stats.cleanupReason', { userId: interaction.user.id }))
           .catch((error) => {
             const rawCode =
               error?.code
@@ -414,16 +428,16 @@ function createStatsManager({ client, configStore }) {
       await configStore.removeTempChannel(channelId);
 
       const refreshed = await getVoicecheckSnapshot(configStore, interaction.guild);
-      await interaction.editReply(buildVoicecheckPayload(refreshed));
+      await interaction.editReply(buildVoicecheckPayload(refreshed, locale));
       await interaction.followUp({
-        content: `Cleanup berhasil untuk channel \`${channelId}\`.`,
+        content: t(locale, 'stats.cleanupSuccess', { channelId }),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     } catch (error) {
       console.error('Voicecheck delete failed:', error);
       await interaction.followUp({
-        content: 'Gagal menjalankan cleanup channel. Coba lagi sebentar.',
+        content: t(locale, 'stats.cleanupFailed'),
         flags: MessageFlags.Ephemeral,
       }).catch(() => null);
       return true;
@@ -432,9 +446,10 @@ function createStatsManager({ client, configStore }) {
 
   async function replyStats(interaction, targetUser, options = {}) {
     const guildId = interaction.guildId;
+    const locale = await getGuildLocale(configStore, guildId);
     if (!guildId) {
       await interaction.reply({
-        content: 'Perintah ini hanya bisa digunakan di server.',
+        content: t(locale, 'common.serverOnlyCommand'),
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -446,6 +461,7 @@ function createStatsManager({ client, configStore }) {
         guildId,
         targetUser,
         ephemeral: options.ephemeral ?? true,
+        locale,
       })
     );
   }
@@ -456,9 +472,10 @@ function createStatsManager({ client, configStore }) {
 
   async function replyLeaderboard(interaction, options = {}) {
     const guildId = interaction.guildId;
+    const locale = await getGuildLocale(configStore, guildId);
     if (!guildId) {
       await interaction.reply({
-        content: 'Perintah ini hanya bisa digunakan di server.',
+        content: t(locale, 'common.serverOnlyCommand'),
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -467,7 +484,7 @@ function createStatsManager({ client, configStore }) {
     const rows = await configStore.getVoiceLeaderboard(guildId, 10);
     if (!rows.length) {
       const payload = {
-        content: 'Belum ada data leaderboard voice.',
+        content: t(locale, 'stats.noLeaderboard'),
       };
       if (options.ephemeral !== false) {
         payload.flags = MessageFlags.Ephemeral;
@@ -479,7 +496,7 @@ function createStatsManager({ client, configStore }) {
     const lines = [];
     for (const row of rows) {
       lines.push(
-        `${row.rank}. <@${row.userId}> • \`${formatDuration(row.totalMs)}\` • ${row.sessions} sesi`
+        `${row.rank}. <@${row.userId}> • \`${formatDuration(row.totalMs, locale)}\` • ${t(locale, 'stats.sessions', { count: row.sessions })}`
       );
     }
 
@@ -492,10 +509,13 @@ function createStatsManager({ client, configStore }) {
       0
     );
     const topUser = rows[0];
-    const summaryParagraph =
-      `Top ${rows.length} leaderboard saat ini mencatat total \`${formatDuration(totalDurationMs)}\` ` +
-      `dalam \`${totalSessions}\` sesi voice. Peringkat pertama dipegang ` +
-      `<@${topUser.userId}> dengan total \`${formatDuration(topUser.totalMs)}\`.`;
+    const summaryParagraph = t(locale, 'stats.leaderboardSummary', {
+      count: rows.length,
+      total: formatDuration(totalDurationMs, locale),
+      sessions: totalSessions,
+      userId: topUser.userId,
+      userTotal: formatDuration(topUser.totalMs, locale),
+    });
 
     const avatarUrl = interaction.user.displayAvatarURL({
       extension: 'png',
@@ -505,12 +525,13 @@ function createStatsManager({ client, configStore }) {
 
     await interaction.reply(
       buildStatsContainerPayload({
-        title: '### Voice Leaderboard (Top 10)',
+        title: t(locale, 'stats.voiceLeaderboardTitle'),
         introParagraph: summaryParagraph,
         lines,
         avatarUrl,
         accentColor: 0xf59e0b,
         ephemeral: options.ephemeral ?? false,
+        locale,
       })
     );
   }
@@ -540,8 +561,9 @@ function createStatsManager({ client, configStore }) {
 
     if (subcommand === 'user') {
       if (!ADMIN_ID || interaction.user.id !== ADMIN_ID) {
+        const locale = await getGuildLocale(configStore, interaction.guildId);
         await interaction.reply({
-          content: 'Subcommand ini hanya untuk admin.',
+          content: t(locale, 'stats.adminSubcommand'),
           flags: MessageFlags.Ephemeral,
         });
         return true;
@@ -556,8 +578,9 @@ function createStatsManager({ client, configStore }) {
       return true;
     }
 
+    const locale = await getGuildLocale(configStore, interaction.guildId);
     await interaction.reply({
-      content: 'Subcommand tidak dikenal.',
+      content: t(locale, 'stats.unknownSubcommand'),
       flags: MessageFlags.Ephemeral,
     });
     return true;

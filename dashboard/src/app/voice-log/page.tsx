@@ -17,7 +17,7 @@ export default async function VoiceLogPage() {
             Voice Log
           </h1>
           <p className="text-sm text-muted-foreground">
-            Kamu harus login untuk melihat halaman ini.
+            You must log in to view this page.
           </p>
           <Button asChild>
             <Link href="/api/auth/signin/discord">Sign in with Discord</Link>

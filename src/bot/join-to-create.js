@@ -1,4 +1,5 @@
 const { ChannelType, MessageFlags, OverwriteType } = require('discord.js');
+const { getGuildLocale, normalizeLocale, t } = require('../i18n');
 
 function createJoinToCreateManager({ client, configStore, lfgManager, env, debugLog }) {
   const joinToCreatePending = new Set();
@@ -27,13 +28,13 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
     }
   }
 
-  function formatDuration(totalMs) {
+  function formatDuration(totalMs, locale = 'en') {
     const safeMs = Math.max(0, Number(totalMs) || 0);
     const totalMinutes = Math.floor(safeMs / 60000);
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    if (hours <= 0) return `${minutes}m`;
-    return `${hours}h ${minutes}m`;
+    if (hours <= 0) return t(locale, 'common.durationMinutes', { minutes });
+    return t(locale, 'common.durationHoursMinutes', { hours, minutes });
   }
 
   async function getDeletionLogChannelId(guildId) {
@@ -49,6 +50,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
     channelName,
     ownerId,
   }) {
+    const locale = await getGuildLocale(configStore, guildId);
     const dedupeKey = `${guildId || '-'}:${channelId}`;
     const recentAt = recentDeletionLog.get(dedupeKey) || 0;
     if (Date.now() - recentAt < DELETE_LOG_DEDUPE_MS) {
@@ -96,20 +98,23 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
 
     const historyLines = historyRows.length
       ? historyRows.slice(0, 20).map(
-        (row) => `- <@${row.userId}> • total: \`${formatDuration(row.totalMs)}\``
+        (row) => `- <@${row.userId}> • ${t(locale, 'jtc.total')}: \`${formatDuration(row.totalMs, locale)}\``
       )
-      : ['- Tidak ada riwayat user'];
+      : [t(locale, 'jtc.noHistory')];
 
     if (historyRows.length > 20) {
-      historyLines.push(`- ...dan ${historyRows.length - 20} lainnya`);
+      historyLines.push(t(locale, 'jtc.andMore', { count: historyRows.length - 20 }));
     }
 
     const detailLines = [
-      `- Channel: ${channelName ? `\`${channelName}\`` : '(unknown)'} (\`${channelId}\`)`,
-      `- Owner: <@${ownerId}>`,
-      `- Deleted: <t:${Math.floor(Date.now() / 1000)}:F>`,
+      t(locale, 'jtc.channel', {
+        channelName: channelName ? `\`${channelName}\`` : t(locale, 'jtc.unknownChannel'),
+        channelId,
+      }),
+      t(locale, 'jtc.owner', { ownerId }),
+      t(locale, 'jtc.deleted', { timestamp: `<t:${Math.floor(Date.now() / 1000)}:F>` }),
       '',
-      '**History**',
+      t(locale, 'jtc.history'),
       ...historyLines,
     ];
 
@@ -122,7 +127,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
           components: [
             {
               type: 10,
-              content: '### Temp Voice Channel Deleted',
+              content: t(locale, 'jtc.deletedTitle'),
             },
             {
               type: 14,
@@ -143,6 +148,9 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
   }
 
   async function sendJoinToCreateErrorLog({ guildId, memberId, lobbyChannelId, error, config }) {
+    const locale = config?.locale
+      ? normalizeLocale(config.locale)
+      : await getGuildLocale(configStore, guildId);
     const logChannelId = config?.logChannelId || env.LOG_CHANNEL_ID;
     if (!logChannelId) return;
 
@@ -150,10 +158,8 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
     if (!logChannel || !logChannel.isTextBased()) return;
 
     const errorCode = error?.code ? ` (${error.code})` : '';
-    const errorMessage = error?.message || 'Unknown error';
-    const missingPermHint = error?.code === 50013
-      ? '\nHint: Give bot permission to Manage Channels and Connect in this category.'
-      : '';
+    const errorMessage = error?.message || t(locale, 'jtc.unknownError');
+    const missingPermHint = error?.code === 50013;
 
     await logChannel.send({
       flags: MessageFlags.IsComponentsV2,
@@ -164,11 +170,11 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
           components: [
             {
               type: 10,
-              content: '### 🚨 Join-to-Create Error',
+              content: t(locale, 'jtc.errorTitle'),
             },
             {
               type: 10,
-              content: 'Bot gagal membuat atau memindahkan user ke temp voice channel.',
+              content: t(locale, 'jtc.errorIntro'),
             },
             {
               type: 14,
@@ -178,17 +184,15 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
             {
               type: 10,
               content: [
-                `- Guild: \`${guildId || '-'}\``,
-                `- Lobby Channel: ${lobbyChannelId ? `<#${lobbyChannelId}> (\`${lobbyChannelId}\`)` : '-'}`,
-                `- User: ${memberId ? `<@${memberId}> (\`${memberId}\`)` : '-'}`,
-                `- Error: \`${errorMessage}${errorCode}\``,
+                t(locale, 'jtc.guild', { guildId: guildId || '-' }),
+                t(locale, 'jtc.lobbyChannel', { channel: lobbyChannelId ? `<#${lobbyChannelId}> (\`${lobbyChannelId}\`)` : '-' }),
+                t(locale, 'jtc.user', { user: memberId ? `<@${memberId}> (\`${memberId}\`)` : '-' }),
+                t(locale, 'jtc.error', { message: `${errorMessage}${errorCode}` }),
               ].join('\n'),
             },
             {
               type: 10,
-              content: missingPermHint
-                ? 'Cek permission bot untuk Manage Channels dan Connect di kategori lobby.'
-                : 'Jika user sudah keluar dari lobby sebelum bot memindahkan mereka, error ini aman untuk diabaikan.',
+              content: t(locale, missingPermHint ? 'jtc.permissionHelp' : 'jtc.leftLobbyHelp'),
             },
             {
               type: 14,
@@ -197,7 +201,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
             },
             {
               type: 10,
-              content: '-# 🚨 Aman diabaikan jika terjadi sekali karena user keluar/jaringan terlambat; cek jika berulang.',
+              content: t(locale, 'jtc.errorFooter'),
             },
           ],
         },
@@ -208,12 +212,12 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
     });
   }
 
-  function buildChannelName(member, fallbackId) {
+  function buildChannelName(member, fallbackId, locale = 'en') {
     const base =
-      member?.displayName || member?.user?.username || `User-${fallbackId}`;
+      member?.displayName || member?.user?.username || t(locale, 'jtc.fallbackUser', { id: fallbackId });
     const trimmed = base.replace(/\s+/g, ' ').trim();
-    const name = trimmed || `User-${fallbackId}`;
-    return `${name.slice(0, 70)}'s Squad`;
+    const name = trimmed || t(locale, 'jtc.fallbackUser', { id: fallbackId });
+    return t(locale, 'jtc.squadName', { name: name.slice(0, 70) });
   }
 
   function getPermissionOverwrites(channel) {
@@ -265,7 +269,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
           channelName: oldState.channel?.name ?? null,
           ownerId: info.ownerId,
         });
-        await lfgManager.editLfgDisbandedMessage(info);
+        await lfgManager.editLfgDisbandedMessage({ ...info, guildId: oldState.guild?.id });
         await lfgManager.deleteLfgReminderMessage?.(info);
         await configStore.removeTempChannel(oldChannelId);
         return;
@@ -275,7 +279,8 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
 
       let deleted = false;
       try {
-        await channel.delete('Join-to-Create temp channel cleanup');
+        const locale = await getGuildLocale(configStore, oldState.guild?.id);
+        await channel.delete(t(locale, 'jtc.cleanupReason'));
         deleted = true;
       } catch (error) {
         console.error('Failed to delete temp channel:', error);
@@ -288,7 +293,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
           channelName: channel.name,
           ownerId: info.ownerId,
         });
-        await lfgManager.editLfgDisbandedMessage(info);
+        await lfgManager.editLfgDisbandedMessage({ ...info, guildId: oldState.guild?.id });
         await lfgManager.deleteLfgReminderMessage?.(info);
         await configStore.removeTempChannel(oldChannelId);
       }
@@ -309,6 +314,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
     const lobbyChannelId = newState.channelId;
 
     if (!guildId || !lobbyChannelId) return;
+    const locale = normalizeLocale(config.locale);
     if (oldState.channelId === lobbyChannelId) return;
     if (!lobbyIds.includes(lobbyChannelId)) return;
 
@@ -383,7 +389,7 @@ function createJoinToCreateManager({ client, configStore, lfgManager, env, debug
       const lobbyChannel = newState.channel;
       if (!lobbyChannel || !lobbyChannel.isVoiceBased()) return;
 
-      const channelName = buildChannelName(member, member.id);
+      const channelName = buildChannelName(member, member.id, locale);
       const channelType =
         lobbyChannel.type === ChannelType.GuildStageVoice
           ? ChannelType.GuildStageVoice

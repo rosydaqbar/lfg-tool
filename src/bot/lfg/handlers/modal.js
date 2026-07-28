@@ -20,10 +20,11 @@ async function handleModalInteraction(interaction, deps) {
     await handleLfgPostModal(interaction, deps, targetChannelId, { guildId });
     return true;
   }
+  const interactionLocale = await deps.getGuildLocale(deps.configStore, interaction.guildId);
 
   if (!interaction.guildId || !interaction.guild) {
     await interaction.reply({
-      content: 'This action can only be used in a server.',
+      content: deps.t(interactionLocale, 'common.serverOnlyAction'),
       flags: MessageFlags.Ephemeral,
     });
     return true;
@@ -37,22 +38,20 @@ async function handleModalInteraction(interaction, deps) {
     refreshJoinToCreatePrompt,
   } = deps;
 
-  function overrideNotice(tempInfo) {
-    return isAdminOverride?.(tempInfo, interaction.user.id)
-      ? '\n\n-# Override: aksi ini dijalankan oleh Discord Admin.'
-      : '';
-  }
-
   if (prefix === CHANNEL_NAME_MODAL_PREFIX) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const context = await getTempVoiceContext(interaction.guild, channelId);
+    const locale = context.locale || interactionLocale;
+    const overrideNotice = (tempInfo) => isAdminOverride?.(tempInfo, interaction.user.id)
+      ? deps.t(locale, 'common.override')
+      : '';
     if (context.error) {
       await interaction.editReply({ content: context.error });
       return true;
     }
     if (!isOwner(context.tempInfo, interaction.user.id)) {
       await interaction.editReply({
-        content: 'Hanya owner voice channel yang bisa mengubah setting ini.',
+        content: deps.t(locale, 'lfg.ownerOnlySettings'),
       });
       return true;
     }
@@ -61,13 +60,16 @@ async function handleModalInteraction(interaction, deps) {
       .getTextInputValue(CHANNEL_NAME_INPUT_ID)
       .trim();
     if (!newName) {
-      await interaction.editReply({ content: 'Nama channel tidak boleh kosong.' });
+      await interaction.editReply({ content: deps.t(locale, 'lfg.channelNameEmpty') });
       return true;
     }
 
-    await context.channel.setName(newName, `Renamed by ${interaction.user.id}`);
+    await context.channel.setName(newName, deps.t(locale, 'lfg.renamedBy', { userId: interaction.user.id }));
     await interaction.editReply({
-      content: `Nama channel berhasil diubah menjadi **${newName}**.${overrideNotice(context.tempInfo)}`,
+      content: deps.t(locale, 'lfg.channelNameChanged', {
+        name: newName,
+        notice: overrideNotice(context.tempInfo),
+      }),
     });
     await refreshJoinToCreatePrompt(interaction.guild, channelId);
     return true;
@@ -76,13 +78,17 @@ async function handleModalInteraction(interaction, deps) {
   if (prefix === CHANNEL_SIZE_MODAL_PREFIX) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const context = await getTempVoiceContext(interaction.guild, channelId);
+    const locale = context.locale || interactionLocale;
+    const overrideNotice = (tempInfo) => isAdminOverride?.(tempInfo, interaction.user.id)
+      ? deps.t(locale, 'common.override')
+      : '';
     if (context.error) {
       await interaction.editReply({ content: context.error });
       return true;
     }
     if (!isOwner(context.tempInfo, interaction.user.id)) {
       await interaction.editReply({
-        content: 'Hanya owner voice channel yang bisa mengubah setting ini.',
+        content: deps.t(locale, 'lfg.ownerOnlySettings'),
       });
       return true;
     }
@@ -92,8 +98,8 @@ async function handleModalInteraction(interaction, deps) {
       .trim();
     if (!/^\d+$/.test(rawLimit)) {
       await interaction.editReply({
-        content: 'Input harus berupa angka. Silakan coba lagi.',
-        components: [buildChannelSizeRetryRow(channelId)],
+        content: deps.t(locale, 'lfg.numericInput'),
+        components: [buildChannelSizeRetryRow(channelId, locale)],
       });
       return true;
     }
@@ -101,18 +107,18 @@ async function handleModalInteraction(interaction, deps) {
     const limit = Number.parseInt(rawLimit, 10);
     if (limit < 0 || limit > 99) {
       await interaction.editReply({
-        content: 'Batas member harus di antara 0 sampai 99.',
-        components: [buildChannelSizeRetryRow(channelId)],
+        content: deps.t(locale, 'lfg.memberLimitRange'),
+        components: [buildChannelSizeRetryRow(channelId, locale)],
       });
       return true;
     }
 
-    await context.channel.setUserLimit(limit, `User limit set by ${interaction.user.id}`);
+    await context.channel.setUserLimit(limit, deps.t(locale, 'lfg.limitSetBy', { userId: interaction.user.id }));
     await interaction.editReply({
       content:
         limit === 0
-          ? `Batas member diubah ke unlimited.${overrideNotice(context.tempInfo)}`
-          : `Batas member diubah ke ${limit}.${overrideNotice(context.tempInfo)}`,
+          ? deps.t(locale, 'lfg.memberLimitUnlimited', { notice: overrideNotice(context.tempInfo) })
+          : deps.t(locale, 'lfg.memberLimitChanged', { limit, notice: overrideNotice(context.tempInfo) }),
       components: [],
     });
     await refreshJoinToCreatePrompt(interaction.guild, channelId);

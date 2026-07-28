@@ -1,3 +1,5 @@
+const { getGuildLocale, t } = require('../../i18n');
+
 function createVoiceContextHelpers(configStore) {
   const privilegedOwnerId =
     typeof process.env.ADMIN_DISCORD_USER_ID === 'string'
@@ -5,17 +7,18 @@ function createVoiceContextHelpers(configStore) {
       : '';
 
   async function getTempVoiceContext(guild, channelId) {
+    const locale = await getGuildLocale(configStore, guild?.id);
     const tempInfo = await configStore.getTempChannelInfo(channelId);
     if (!tempInfo?.ownerId) {
-      return { error: 'Channel squad sudah tidak aktif.' };
+      return { error: t(locale, 'lfg.squadInactive'), locale };
     }
 
     const channel = await guild.channels.fetch(channelId).catch(() => null);
     if (!channel || !channel.isVoiceBased()) {
-      return { error: 'Voice channel tidak ditemukan.' };
+      return { error: t(locale, 'lfg.voiceNotFound'), locale };
     }
 
-    return { tempInfo, channel };
+    return { tempInfo, channel, locale };
   }
 
   function isOwner(tempInfo, userId) {

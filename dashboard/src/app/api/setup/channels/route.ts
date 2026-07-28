@@ -123,6 +123,7 @@ export async function POST(request: Request) {
       configVersion: existingConfig.configVersion,
       logChannelId,
       lfgChannelId,
+      locale: existingConfig.locale,
       enabledVoiceChannelIds: existingConfig.enabledVoiceChannelIds,
       joinToCreateLobbies: existingConfig.joinToCreateLobbies,
       autoRoleConfig: existingConfig.autoRoleConfig,

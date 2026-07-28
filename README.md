@@ -46,10 +46,17 @@ In plain terms: users join a lobby voice channel, the bot creates a private temp
   - Add or remove Join-to-Create lobby channels.
   - Choose which normal voice channels should track voice time.
   - Configure Spam Catcher trap channels, timeout duration, ban mode, ban delay, review channel, and webhook notice delivery.
+  - Choose English or Indonesian for the bot separately for each Discord server.
   - View currently active temporary voice channels.
   - View voice log history and leaderboard pages.
   - Check whether the bot token works and whether the bot is in the selected Discord server.
   - Only the configured owner or Discord users with Administrator permission can use the dashboard.
+
+## Bot Language
+
+Open Dashboard Settings and use the Language card to choose the bot language for the selected Discord server. English is the default, and Indonesian is also supported.
+
+The setting applies to Discord panels, interaction replies, notices, moderation and activity logs, setup flows, and DMs created or refreshed by the bot. The dashboard interface remains English. Previously sent Discord messages keep their existing text until the bot refreshes or replaces them.
 
 ## Spam Catcher
 
@@ -334,7 +341,7 @@ Discord commands:
 - `/setup` runs a two-step Discord setup wizard for server Administrators.
   - Step 1 configures two different Log and LFG text or announcement channels.
   - Step 2 requires at least one Join-to-Create lobby.
-  - Quick Setup asks for a category, creates a synced `+ New Group Channel` voice lobby and a mentionable `LFG` notification role, then adds them to the dashboard configuration.
+  - Quick Setup asks for a category, creates a synced voice lobby and a mentionable `LFG` notification role using the selected bot language, then adds them to the dashboard configuration.
   - Manual Setup adds or updates an existing voice lobby and notification role without removing other lobbies.
 - `/stats` shows voice statistics and the leaderboard.
 - `/voicecheck` lets server Administrators inspect and clean up temporary voice channels.

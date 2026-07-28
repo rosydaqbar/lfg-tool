@@ -19,22 +19,23 @@ async function handleSelectInteraction(interaction, deps) {
     transferChannelOwner,
     userIsInVoiceChannel,
   } = deps;
+  const locale = await deps.getGuildLocale(deps.configStore, interaction.guildId);
 
   if (!interaction.guildId || !interaction.guild) {
     await interaction.reply({
-      content: 'This action can only be used in a server.',
+      content: deps.t(locale, 'common.serverOnlyAction'),
       flags: MessageFlags.Ephemeral,
     });
     return true;
   }
 
+  const context = await getTempVoiceContext(interaction.guild, channelId);
+  const currentLocale = context.locale || locale;
   function overrideNotice(tempInfo) {
     return isAdminOverride?.(tempInfo, interaction.user.id)
-      ? '\n\n-# Override: aksi ini dijalankan oleh Discord Admin.'
+      ? deps.t(currentLocale, 'common.override')
       : '';
   }
-
-  const context = await getTempVoiceContext(interaction.guild, channelId);
   if (context.error) {
     await interaction.reply({
       content: context.error,
@@ -45,7 +46,7 @@ async function handleSelectInteraction(interaction, deps) {
 
   if (!isOwner(context.tempInfo, interaction.user.id)) {
     await interaction.reply({
-      content: 'Hanya owner voice channel yang bisa mengubah setting ini.',
+      content: deps.t(currentLocale, 'lfg.ownerOnlySettings'),
       flags: MessageFlags.Ephemeral,
     });
     return true;
@@ -55,21 +56,21 @@ async function handleSelectInteraction(interaction, deps) {
     const newOwnerId = interaction.values[0];
     if (!newOwnerId) {
       await interaction.reply({
-        content: 'User transfer tidak valid.',
+        content: deps.t(currentLocale, 'lfg.invalidTransferUser'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
     if (newOwnerId === context.tempInfo.ownerId) {
       await interaction.reply({
-        content: 'User tersebut sudah menjadi owner channel ini.',
+        content: deps.t(currentLocale, 'lfg.userAlreadyOwner'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
     if (!(await userIsInVoiceChannel(context.channel, newOwnerId))) {
       await interaction.reply({
-        content: 'User harus berada di voice channel ini.',
+        content: deps.t(currentLocale, 'lfg.transferUserMustJoin'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -77,7 +78,10 @@ async function handleSelectInteraction(interaction, deps) {
 
     await transferChannelOwner(channelId, newOwnerId);
     await interaction.update({
-      content: `Ownership berhasil dipindahkan ke <@${newOwnerId}>.${overrideNotice(context.tempInfo)}`,
+      content: deps.t(currentLocale, 'lfg.ownershipTransferred', {
+        userId: newOwnerId,
+        notice: overrideNotice(context.tempInfo),
+      }),
       components: [],
       allowedMentions: { users: [newOwnerId] },
     });
@@ -88,7 +92,7 @@ async function handleSelectInteraction(interaction, deps) {
   const choice = interaction.values[0];
   if (!choice) {
     await interaction.reply({
-      content: 'Region tidak valid.',
+      content: deps.t(currentLocale, 'lfg.invalidRegion'),
       flags: MessageFlags.Ephemeral,
     });
     return true;
@@ -99,7 +103,7 @@ async function handleSelectInteraction(interaction, deps) {
     const fetched = await deps.client.fetchVoiceRegions();
     if (!fetched.has(choice)) {
       await interaction.reply({
-        content: 'Region tidak tersedia.',
+        content: deps.t(currentLocale, 'lfg.regionUnavailable'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -109,13 +113,13 @@ async function handleSelectInteraction(interaction, deps) {
 
   await context.channel.setRTCRegion(
     rtcRegion,
-    `Region updated by ${interaction.user.id}`
+    deps.t(currentLocale, 'lfg.regionUpdatedBy', { userId: interaction.user.id })
   );
   await interaction.update({
     content:
       rtcRegion === null
-        ? `Region voice channel diubah ke Automatic.${overrideNotice(context.tempInfo)}`
-        : `Region voice channel diubah ke **${rtcRegion}**.${overrideNotice(context.tempInfo)}`,
+        ? deps.t(currentLocale, 'lfg.regionChangedAutomatic', { notice: overrideNotice(context.tempInfo) })
+        : deps.t(currentLocale, 'lfg.regionChanged', { region: rtcRegion, notice: overrideNotice(context.tempInfo) }),
     components: [],
   });
   await refreshJoinToCreatePrompt(interaction.guild, channelId);

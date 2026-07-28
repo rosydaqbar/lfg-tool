@@ -45,25 +45,26 @@ async function handleButtonInteraction(interaction, deps) {
     const guildId = channelId;
     const targetChannelId = arg1;
     if (!guildId || !targetChannelId) return false;
+    const locale = await deps.getGuildLocale(deps.configStore, guildId);
 
     const tempInfo = await deps.configStore.getTempChannelInfo(targetChannelId);
     if (!tempInfo?.ownerId) {
       await interaction.reply({
-        content: 'Channel squad sudah tidak aktif.',
+        content: deps.t(locale, 'lfg.squadInactive'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
     if (!isOwner(tempInfo, interaction.user.id)) {
       await interaction.reply({
-        content: 'Hanya pemilik Voice yang bisa mengirim pesan LFG',
+        content: deps.t(locale, 'lfg.ownerOnlyPost'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
     if (tempInfo.lfgEnabled === false) {
       await interaction.reply({
-        content: 'Fitur Send LFG Post dinonaktifkan untuk lobby ini.',
+        content: deps.t(locale, 'lfg.postDisabled'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -72,18 +73,18 @@ async function handleButtonInteraction(interaction, deps) {
     const remaining = getCooldownRemainingMs(guildId, interaction.user.id);
     if (remaining > 0) {
       await interaction.reply({
-        content: `Please wait ${formatCooldown(remaining)} before sending another LFG post.`,
+        content: deps.t(locale, 'lfg.cooldown', { duration: formatCooldown(remaining, locale) }),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
 
     try {
-      await interaction.showModal(buildLfgReminderModal(guildId, targetChannelId));
+      await interaction.showModal(buildLfgReminderModal(guildId, targetChannelId, locale));
     } catch (error) {
       console.error('Failed to show LFG reminder modal:', error);
       await interaction.reply({
-        content: 'Unable to open the LFG form right now.',
+        content: deps.t(locale, 'lfg.modalOpenFailed'),
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -91,9 +92,10 @@ async function handleButtonInteraction(interaction, deps) {
   }
 
   const guildId = interaction.guildId;
+  let currentLocale = await deps.getGuildLocale(deps.configStore, guildId);
   if (!guildId || !interaction.guild) {
     await interaction.reply({
-      content: 'This action can only be used in a server.',
+      content: deps.t(currentLocale, 'common.serverOnlyAction'),
       flags: MessageFlags.Ephemeral,
     });
     return true;
@@ -101,7 +103,7 @@ async function handleButtonInteraction(interaction, deps) {
 
   function overrideNotice(tempInfo) {
     return isAdminOverride?.(tempInfo, interaction.user.id)
-      ? '\n\n-# Override: aksi ini dijalankan oleh Discord Admin.'
+      ? deps.t(currentLocale, 'common.override')
       : '';
   }
 
@@ -109,21 +111,21 @@ async function handleButtonInteraction(interaction, deps) {
     const tempInfo = await deps.configStore.getTempChannelInfo(channelId);
     if (!tempInfo?.ownerId) {
       await interaction.reply({
-        content: 'Channel squad sudah tidak aktif.',
+        content: deps.t(currentLocale, 'lfg.squadInactive'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
     if (!isOwner(tempInfo, interaction.user.id)) {
       await interaction.reply({
-        content: 'Hanya pemilik Voice yang bisa mengirim pesan LFG',
+        content: deps.t(currentLocale, 'lfg.ownerOnlyPost'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
     if (tempInfo.lfgEnabled === false) {
       await interaction.reply({
-        content: 'Fitur Send LFG Post dinonaktifkan untuk lobby ini.',
+        content: deps.t(currentLocale, 'lfg.postDisabled'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -132,18 +134,18 @@ async function handleButtonInteraction(interaction, deps) {
     const remaining = getCooldownRemainingMs(guildId, interaction.user.id);
     if (remaining > 0) {
       await interaction.reply({
-        content: `Please wait ${formatCooldown(remaining)} before sending another LFG post.`,
+        content: deps.t(currentLocale, 'lfg.cooldown', { duration: formatCooldown(remaining, currentLocale) }),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
 
     try {
-      await interaction.showModal(buildLfgModal(channelId));
+      await interaction.showModal(buildLfgModal(channelId, currentLocale));
     } catch (error) {
       console.error('Failed to show LFG modal:', error);
       await interaction.reply({
-        content: 'Unable to open the LFG form right now.',
+        content: deps.t(currentLocale, 'lfg.modalOpenFailed'),
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -152,6 +154,7 @@ async function handleButtonInteraction(interaction, deps) {
 
   if (prefix === LFG_SETTINGS_PREFIX) {
     const context = await getTempVoiceContext(interaction.guild, channelId);
+    currentLocale = context.locale || currentLocale;
     if (context.error) {
       await interaction.reply({
         content: context.error,
@@ -161,10 +164,8 @@ async function handleButtonInteraction(interaction, deps) {
     }
 
     await interaction.reply({
-      content:
-        `Pengaturan voice channel <#${channelId}>. ` +
-        'Hanya owner yang bisa mengubah setting (kecuali Claim).',
-      components: buildVoiceSettingsRows(channelId),
+      content: deps.t(currentLocale, 'lfg.settingsIntro', { channelId }),
+      components: buildVoiceSettingsRows(channelId, currentLocale),
       allowedMentions: { parse: [] },
     });
     return true;
@@ -173,9 +174,10 @@ async function handleButtonInteraction(interaction, deps) {
   if (prefix === CLAIM_APPROVE_PREFIX || prefix === CLAIM_DECLINE_PREFIX) {
     const claimerId = arg1;
     const context = await getTempVoiceContext(interaction.guild, channelId);
+    currentLocale = context.locale || currentLocale;
     if (context.error || !claimerId) {
       await interaction.reply({
-        content: context.error || 'Permintaan claim tidak valid.',
+        content: context.error || deps.t(currentLocale, 'lfg.invalidClaim'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -183,7 +185,7 @@ async function handleButtonInteraction(interaction, deps) {
 
     if (!isOwner(context.tempInfo, interaction.user.id)) {
       await interaction.reply({
-        content: 'Hanya owner saat ini yang bisa merespon claim.',
+        content: deps.t(currentLocale, 'lfg.currentOwnerOnlyClaim'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -192,9 +194,11 @@ async function handleButtonInteraction(interaction, deps) {
     if (prefix === CLAIM_DECLINE_PREFIX) {
       const notice = overrideNotice(context.tempInfo);
       await interaction.update({
-        content:
-          `Hi <@${context.tempInfo.ownerId}> user <@${claimerId}> ingin mengambil ownership dari voice channel. ` +
-          `Permintaan ditolak.${notice}`,
+        content: deps.t(currentLocale, 'lfg.claimDeclined', {
+          ownerId: context.tempInfo.ownerId,
+          claimerId,
+          notice,
+        }),
         components: [],
         allowedMentions: {
           users: [context.tempInfo.ownerId, claimerId],
@@ -206,9 +210,11 @@ async function handleButtonInteraction(interaction, deps) {
     if (!(await userIsInVoiceChannel(context.channel, claimerId))) {
       const notice = overrideNotice(context.tempInfo);
       await interaction.update({
-        content:
-          `Hi <@${context.tempInfo.ownerId}> user <@${claimerId}> ingin mengambil ownership dari voice channel. ` +
-          `Transfer dibatalkan karena user tidak ada di voice channel.${notice}`,
+        content: deps.t(currentLocale, 'lfg.claimTransferMissing', {
+          ownerId: context.tempInfo.ownerId,
+          claimerId,
+          notice,
+        }),
         components: [],
         allowedMentions: {
           users: [context.tempInfo.ownerId, claimerId],
@@ -220,7 +226,7 @@ async function handleButtonInteraction(interaction, deps) {
     await transferChannelOwner(channelId, claimerId);
     const notice = overrideNotice(context.tempInfo);
     await interaction.update({
-      content: `Ownership voice channel dipindahkan ke <@${claimerId}>.${notice}`,
+      content: deps.t(currentLocale, 'lfg.ownershipTransferred', { userId: claimerId, notice }),
       components: [],
       allowedMentions: { users: [claimerId] },
     });
@@ -230,6 +236,7 @@ async function handleButtonInteraction(interaction, deps) {
 
   if (prefix === CLAIM_PREFIX) {
     const context = await getTempVoiceContext(interaction.guild, channelId);
+    currentLocale = context.locale || currentLocale;
     if (context.error) {
       await interaction.reply({
         content: context.error,
@@ -240,7 +247,7 @@ async function handleButtonInteraction(interaction, deps) {
 
     if (isOwner(context.tempInfo, interaction.user.id)) {
       await interaction.reply({
-        content: 'Kamu pemilik channel ini.',
+        content: deps.t(currentLocale, 'lfg.alreadyOwner'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -248,7 +255,7 @@ async function handleButtonInteraction(interaction, deps) {
 
     if (!(await userIsInVoiceChannel(context.channel, interaction.user.id))) {
       await interaction.reply({
-        content: 'Kamu harus berada di voice channel ini untuk claim ownership.',
+        content: deps.t(currentLocale, 'lfg.claimMustJoin'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -262,25 +269,26 @@ async function handleButtonInteraction(interaction, deps) {
     if (!ownerPresent) {
       await transferChannelOwner(channelId, interaction.user.id);
       await interaction.reply({
-        content: `Owner tidak berada di channel. Ownership otomatis dipindahkan ke <@${interaction.user.id}>.`,
+        content: deps.t(currentLocale, 'lfg.ownerAbsentTransfer', { userId: interaction.user.id }),
         allowedMentions: { users: [interaction.user.id] },
       });
       await refreshJoinToCreatePrompt(interaction.guild, channelId);
       return true;
     }
 
-    const prompt =
-      `Hi <@${context.tempInfo.ownerId}> user <@${interaction.user.id}> ingin mengambil ownership dari voice channel. ` +
-      'Transfer kepemilikan channel?';
+    const prompt = deps.t(currentLocale, 'lfg.claimRequest', {
+      ownerId: context.tempInfo.ownerId,
+      claimerId: interaction.user.id,
+    });
 
     await interaction.reply({
-      content: 'Permintaan claim dikirim ke owner saat ini.',
+      content: deps.t(currentLocale, 'lfg.claimSent'),
       flags: MessageFlags.Ephemeral,
     });
 
     await interaction.channel.send({
       content: prompt,
-      components: [buildClaimApprovalRow(channelId, interaction.user.id)],
+      components: [buildClaimApprovalRow(channelId, interaction.user.id, currentLocale)],
       allowedMentions: {
         users: [context.tempInfo.ownerId, interaction.user.id],
       },
@@ -291,7 +299,7 @@ async function handleButtonInteraction(interaction, deps) {
   if (prefix === MY_STATS_PREFIX) {
     if (typeof deps.replyMyStats !== 'function') {
       await interaction.reply({
-        content: 'Fitur stats belum siap. Coba lagi sebentar.',
+        content: deps.t(currentLocale, 'lfg.statsNotReady'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -304,7 +312,7 @@ async function handleButtonInteraction(interaction, deps) {
   if (prefix === LEADERBOARD_PREFIX) {
     if (typeof deps.replyLeaderboard !== 'function') {
       await interaction.reply({
-        content: 'Fitur leaderboard belum siap. Coba lagi sebentar.',
+        content: deps.t(currentLocale, 'lfg.leaderboardNotReady'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
@@ -329,6 +337,7 @@ async function handleButtonInteraction(interaction, deps) {
   }
 
   const context = await getTempVoiceContext(interaction.guild, channelId);
+  currentLocale = context.locale || currentLocale;
   if (context.error) {
     await interaction.reply({
       content: context.error,
@@ -339,7 +348,7 @@ async function handleButtonInteraction(interaction, deps) {
 
   if (!isOwner(context.tempInfo, interaction.user.id)) {
     await interaction.reply({
-      content: 'Hanya owner voice channel yang bisa mengubah setting ini.',
+      content: deps.t(currentLocale, 'lfg.ownerOnlySettings'),
       flags: MessageFlags.Ephemeral,
     });
     return true;
@@ -347,14 +356,14 @@ async function handleButtonInteraction(interaction, deps) {
 
   if (prefix === CHANNEL_NAME_PREFIX) {
     await interaction.showModal(
-      buildChannelNameModal(channelId, context.channel.name)
+      buildChannelNameModal(channelId, context.channel.name, currentLocale)
     );
     return true;
   }
 
   if (prefix === CHANNEL_SIZE_PREFIX || prefix === CHANNEL_SIZE_RETRY_PREFIX) {
     await interaction.showModal(
-      buildChannelSizeModal(channelId, context.channel.userLimit ?? 0)
+      buildChannelSizeModal(channelId, context.channel.userLimit ?? 0, currentLocale)
     );
     return true;
   }
@@ -371,16 +380,16 @@ async function handleButtonInteraction(interaction, deps) {
 
     if (transferCandidates.length === 0) {
       await interaction.reply({
-        content: 'Tidak ada member lain di voice channel untuk transfer ownership.',
+        content: deps.t(currentLocale, 'lfg.noTransferCandidates'),
         flags: MessageFlags.Ephemeral,
       });
       return true;
     }
 
     await interaction.reply({
-      content: 'Pilih member untuk menerima ownership channel ini.',
+      content: deps.t(currentLocale, 'lfg.selectTransferUser'),
       components: [
-        buildTransferMemberSelectRow(channelId, transferCandidates),
+        buildTransferMemberSelectRow(channelId, transferCandidates, currentLocale),
       ],
       flags: MessageFlags.Ephemeral,
     });
@@ -393,9 +402,9 @@ async function handleButtonInteraction(interaction, deps) {
       a.name.localeCompare(b.name)
     );
     await interaction.reply({
-      content: 'Pilih region voice channel.',
+      content: deps.t(currentLocale, 'lfg.selectRegion'),
       components: [
-        buildRegionSelectRow(channelId, regions, context.channel.rtcRegion),
+        buildRegionSelectRow(channelId, regions, context.channel.rtcRegion, currentLocale),
       ],
       flags: MessageFlags.Ephemeral,
     });
@@ -413,16 +422,16 @@ async function handleButtonInteraction(interaction, deps) {
     {
       reason:
         prefix === CHANNEL_LOCK_PREFIX
-          ? `Locked by ${interaction.user.id}`
-          : `Unlocked by ${interaction.user.id}`,
+          ? deps.t(currentLocale, 'lfg.lockedBy', { userId: interaction.user.id })
+          : deps.t(currentLocale, 'lfg.unlockedBy', { userId: interaction.user.id }),
     }
   );
 
     await interaction.reply({
       content:
         prefix === CHANNEL_LOCK_PREFIX
-          ? `Voice channel berhasil dikunci.${overrideNotice(context.tempInfo)}`
-          : `Voice channel berhasil dibuka.${overrideNotice(context.tempInfo)}`,
+          ? deps.t(currentLocale, 'lfg.channelLocked', { notice: overrideNotice(context.tempInfo) })
+          : deps.t(currentLocale, 'lfg.channelUnlocked', { notice: overrideNotice(context.tempInfo) }),
     });
   await refreshJoinToCreatePrompt(interaction.guild, channelId);
   return true;

@@ -83,7 +83,7 @@ export function VoiceLogPageClient({
           <div>
             <h1 className="font-[var(--font-display)] text-3xl text-foreground">Voice Log</h1>
             <p className="text-sm text-muted-foreground">
-              Riwayat gabungan temp channel terhapus dan sesi manual voice channel.
+              Combined history of deleted temp channels and manual voice channel sessions.
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
@@ -108,7 +108,7 @@ export function VoiceLogPageClient({
             Voice Logs (Mixed)
           </CardTitle>
           <CardDescription>
-            Halaman {page + 1} • Menampilkan sampai {PAGE_SIZE} item per halaman.
+            Page {page + 1} • Showing up to {PAGE_SIZE} items per page.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -165,7 +165,7 @@ export function VoiceLogPageClient({
                         ))}
                       </div>
                     ) : (
-                      <div className="text-xs text-muted-foreground">Tidak ada riwayat user</div>
+                      <div className="text-xs text-muted-foreground">No user history</div>
                     )}
                   </div>
                 </div>
@@ -173,7 +173,7 @@ export function VoiceLogPageClient({
             </div>
           ) : (
             <div className={dashboardEmpty}>
-              Tidak ada data untuk halaman ini.
+              No data for this page.
             </div>
           )}
 

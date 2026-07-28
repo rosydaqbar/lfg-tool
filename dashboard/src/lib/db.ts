@@ -8,6 +8,7 @@ type GuildConfig = {
   configVersion: string | null;
   logChannelId: string | null;
   lfgChannelId: string | null;
+  locale: "en" | "id";
   enabledVoiceChannelIds: string[];
   joinToCreateLobbies: {
     channelId: string;
@@ -417,6 +418,7 @@ function getSqliteDb() {
       created_at TEXT NOT NULL
     );
   `);
+  ensureColumn("guild_config", "locale", "TEXT NOT NULL DEFAULT 'en'");
   ensureColumn("join_to_create_lobbies", "role_id", "TEXT");
   ensureColumn("join_to_create_lobbies", "lfg_enabled", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn("join_to_create_lobbies", "lfg_reminder_enabled", "INTEGER NOT NULL DEFAULT 0");
@@ -627,6 +629,9 @@ async function ensureCoreConfigTables() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `
+    );
+    await query(
+      "ALTER TABLE IF EXISTS guild_config ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en'"
     );
     await query(
       `
@@ -1244,11 +1249,16 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
       `
     );
 
+    await client.query(
+      "ALTER TABLE IF EXISTS guild_config ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en'"
+    );
+
     const configRes = await client.query(
       `
         SELECT
           log_channel_id,
           lfg_channel_id,
+          locale,
           (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
         FROM guild_config
         WHERE guild_id = $1
@@ -1289,6 +1299,7 @@ async function getGuildConfigWithDatabaseUrl(databaseUrl: string, guildId: strin
       configVersion: configRow.config_version ?? null,
       logChannelId: configRow.log_channel_id ?? null,
       lfgChannelId: configRow.lfg_channel_id ?? null,
+      locale: (configRow.locale as string) === "id" ? "id" : "en",
       enabledVoiceChannelIds: watchlistRes.rows.map(
         (row) => row.voice_channel_id
       ),
@@ -1318,9 +1329,9 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
     const db = getSqliteDb();
     const configRow = db
       .prepare(
-        "SELECT log_channel_id, lfg_channel_id, updated_at FROM guild_config WHERE guild_id = ?"
+        "SELECT log_channel_id, lfg_channel_id, locale, updated_at FROM guild_config WHERE guild_id = ?"
       )
-      .get(guildId) as { log_channel_id?: string | null; lfg_channel_id?: string | null; updated_at?: string | null } | undefined;
+      .get(guildId) as { log_channel_id?: string | null; lfg_channel_id?: string | null; locale?: string | null; updated_at?: string | null } | undefined;
 
     const watchRows = db
       .prepare(
@@ -1365,6 +1376,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
       configVersion: configRow?.updated_at ?? null,
       logChannelId: configRow?.log_channel_id ?? null,
       lfgChannelId: configRow?.lfg_channel_id ?? null,
+      locale: configRow?.locale === 'id' ? 'id' : 'en',
       enabledVoiceChannelIds: watchRows.map((row) => row.voice_channel_id),
       joinToCreateLobbies: lobbyRows.map((row) => ({
         channelId: row.lobby_channel_id,
@@ -1386,6 +1398,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
       SELECT
         log_channel_id,
         lfg_channel_id,
+        locale,
         (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT::TEXT AS config_version
       FROM guild_config
       WHERE guild_id = $1
@@ -1426,6 +1439,7 @@ export async function getGuildConfig(guildId: string): Promise<GuildConfig> {
     configVersion: configRow.config_version ?? null,
     logChannelId: configRow.log_channel_id ?? null,
     lfgChannelId: configRow.lfg_channel_id ?? null,
+    locale: (configRow.locale as string) === "id" ? "id" : "en",
     enabledVoiceChannelIds: watchlistRes.rows.map(
       (row) => row.voice_channel_id
     ),
@@ -1554,15 +1568,20 @@ async function saveGuildConfigWithClient(
   );
 
   await client.query(
+    "ALTER TABLE IF EXISTS guild_config ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en'"
+  );
+
+  await client.query(
     `
-      INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, updated_at)
-      VALUES ($1, $2, $3, NOW())
+      INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, locale, updated_at)
+      VALUES ($1, $2, $3, $4, NOW())
       ON CONFLICT(guild_id) DO UPDATE SET
         log_channel_id = EXCLUDED.log_channel_id,
         lfg_channel_id = EXCLUDED.lfg_channel_id,
+        locale = EXCLUDED.locale,
         updated_at = EXCLUDED.updated_at
     `,
-    [guildId, config.logChannelId, config.lfgChannelId]
+    [guildId, config.logChannelId, config.lfgChannelId, config.locale === "id" ? "id" : "en"]
   );
 
   await client.query("DELETE FROM voice_watchlist WHERE guild_id = $1", [guildId]);
@@ -1788,14 +1807,15 @@ export async function saveGuildConfig(guildId: string, config: GuildConfig) {
 
       db.prepare(
         `
-          INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, updated_at)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO guild_config (guild_id, log_channel_id, lfg_channel_id, locale, updated_at)
+          VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(guild_id) DO UPDATE SET
             log_channel_id = excluded.log_channel_id,
             lfg_channel_id = excluded.lfg_channel_id,
+            locale = excluded.locale,
             updated_at = excluded.updated_at
         `
-      ).run(guildId, config.logChannelId, config.lfgChannelId, now);
+      ).run(guildId, config.logChannelId, config.lfgChannelId, config.locale === "id" ? "id" : "en", now);
 
       db.prepare("DELETE FROM voice_watchlist WHERE guild_id = ?").run(guildId);
       for (const channelId of config.enabledVoiceChannelIds) {
@@ -3882,6 +3902,48 @@ export async function saveSpamCatcherNoticeMessages(
       ]
     );
   }
+}
+
+export async function deleteSpamCatcherNoticeMessages(
+  guildId: string,
+  channelIds: string[]
+) {
+  const uniqueChannelIds = Array.from(new Set(channelIds.filter((id) => id.trim().length > 0)));
+  if (uniqueChannelIds.length === 0) return;
+
+  if (!DATABASE_URL) {
+    const setupDatabaseUrl = getSetupDatabaseUrlFallback();
+    if (setupDatabaseUrl) {
+      const scopedPool = new Pool({
+        connectionString: sanitizePgConnectionString(setupDatabaseUrl),
+        ssl: buildPgSslConfig(),
+      });
+      const client = await scopedPool.connect();
+      try {
+        await client.query(
+          "DELETE FROM spam_catcher_notice_messages WHERE guild_id = $1 AND channel_id = ANY($2::text[])",
+          [guildId, uniqueChannelIds]
+        );
+      } finally {
+        client.release();
+        await scopedPool.end().catch(() => null);
+      }
+      return;
+    }
+
+    const db = getSqliteDb();
+    const placeholders = uniqueChannelIds.map(() => "?").join(", ");
+    db.prepare(
+      `DELETE FROM spam_catcher_notice_messages WHERE guild_id = ? AND channel_id IN (${placeholders})`
+    ).run(guildId, ...uniqueChannelIds);
+    return;
+  }
+
+  await ensureCoreConfigTables();
+  await query(
+    "DELETE FROM spam_catcher_notice_messages WHERE guild_id = $1 AND channel_id = ANY($2::text[])",
+    [guildId, uniqueChannelIds]
+  );
 }
 
 export async function getSpamCatcherNoticeMessages(

@@ -26,6 +26,7 @@ const { createStatsManager } = require('./bot/stats');
 const { createAutoRoleManager } = require('./bot/auto-role');
 const { createSpamCatcherManager } = require('./bot/spam-catcher');
 const { createLogger } = require('./lib/logger');
+const { getGuildLocale, t } = require('./i18n');
 
 const logger = createLogger('bot');
 
@@ -146,6 +147,25 @@ async function registerGuildCommandsSafely(guild) {
     }
     logger.error(`Failed to register commands for guild ${guild.id}:`, error);
   }
+}
+
+async function getInteractionLocale(interaction) {
+  if (interaction.guildId) {
+    return getGuildLocale(configStore, interaction.guildId);
+  }
+  const customId = typeof interaction.customId === 'string' ? interaction.customId : '';
+  const [prefix, firstArg] = customId.split(':');
+  if (prefix === 'lfg_reminder_send' || prefix === 'lfg_reminder_modal') {
+    return getGuildLocale(configStore, firstArg);
+  }
+  if (prefix === 'spamcatcher_integrity_id' || prefix === 'spamcatcher_integrity_en') {
+    return getGuildLocale(configStore, firstArg);
+  }
+  if (prefix === 'spamcatcher_appeal' || prefix === 'spamcatcher_appeal_modal') {
+    const event = await configStore.getSpamCatcherEventById(Number(firstArg)).catch(() => null);
+    return getGuildLocale(configStore, event?.guildId);
+  }
+  return 'en';
 }
 
 let shuttingDown = false;
@@ -269,10 +289,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } catch (error) {
     console.error('Failed to handle interaction:', error);
     if (!interaction.isRepliable()) return;
+    const locale = await getInteractionLocale(interaction);
     if (interaction.deferred || interaction.replied) {
       await interaction
         .followUp({
-          content: 'Terjadi kesalahan saat memproses interaksi.',
+          content: t(locale, 'common.interactionError'),
           flags: MessageFlags.Ephemeral,
         })
         .catch(() => null);
@@ -280,7 +301,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
     await interaction
       .reply({
-        content: 'Terjadi kesalahan saat memproses interaksi.',
+        content: t(locale, 'common.interactionError'),
         flags: MessageFlags.Ephemeral,
       })
       .catch(() => null);

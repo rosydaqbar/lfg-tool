@@ -1,18 +1,19 @@
 const { PERSISTENT_LFG_INTERVAL_MS } = require('./constants');
 const { buildPersistentLfgEmbed } = require('./builders');
+const { t } = require('../../i18n');
 
 function createPersistentLfgManager({ client, configStore, env }) {
   const persistentLfgRunning = new Set();
   let persistentInterval = null;
 
-  function buildPersistentLfgContent(guildId, lobbyIds) {
+  function buildPersistentLfgContent(guildId, lobbyIds, locale) {
     if (!lobbyIds.length) return null;
     const links = lobbyIds.map(
       (id) => `https://discordapp.com/channels/${guildId}/${id}`
     );
     return [
-      '### Buat atau cari squad',
-      'Untuk mencari teman/squad baru, silahkan buat voice channel terlebih dahulu:',
+      t(locale, 'lfg.persistentTitle'),
+      t(locale, 'lfg.persistentBody'),
       links.join(' '),
     ].join('\n');
   }
@@ -68,12 +69,14 @@ function createPersistentLfgManager({ client, configStore, env }) {
         return;
       }
 
-      const content = buildPersistentLfgContent(guildId, lobbyIds);
+      const locale = config.locale || 'en';
+      const content = buildPersistentLfgContent(guildId, lobbyIds, locale);
       if (!content) return;
       const embed = await buildPersistentLfgEmbed({
         client,
         configStore,
         guildId,
+        locale,
       });
 
       const latest = await channel.messages.fetch({ limit: 1 }).catch(() => null);

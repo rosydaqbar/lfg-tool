@@ -31,6 +31,7 @@
 ## Database And Schema
 - `src/config-store.js` auto-adds several bot-needed columns with `ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT EXISTS`; fresh schema is in `scripts/schema-postgres.sql`.
 - When adding DB fields used by both bot and dashboard, update all relevant places: `src/config-store.js`, `scripts/schema-postgres.sql`, and `dashboard/src/lib/db.ts`.
+- Guild bot language is stored in `guild_config.locale`; supported values are `en` and `id`, with `en` as the fallback/default. Keep `src/i18n/`, dashboard config persistence, and API-built Discord notices aligned.
 - Existing deployments may not have old data for newly tracked message IDs; cleanup code should tolerate missing/null IDs.
 - Spam Catcher data spans `spam_catcher_config`, `spam_catcher_events`, `spam_catcher_notice_messages`, and `spam_catcher_integrity_checks`; keep root store, dashboard DB helpers, and fresh schema aligned.
 
@@ -39,6 +40,7 @@
 - Settings intentionally lazy-loads channels and roles only when a selector opens; opening Settings should primarily load `/api/guilds/:id/config`.
 - Dashboard bot status checks Discord via the dashboard's configured bot token; it does not prove gateway presence of the running bot process.
 - Spam Catcher ban delays are stored as minutes. Dashboard UI supports minute choices from 1-60 and hour choices from 2-24; normalization should preserve hour delays up to 1440 minutes.
+- The Settings Language card controls Discord bot output for the selected guild; it does not change the dashboard interface language.
 
 ## Discord Bot Gotchas
 - DM role mentions do not render like guild messages; avoid putting role mentions in reminder DM copy or `allowedMentions.roles`.

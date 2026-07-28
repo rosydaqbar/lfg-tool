@@ -14,6 +14,7 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
   } = deps;
 
   const guildId = options.guildId || interaction.guildId;
+  const locale = await deps.getGuildLocale(configStore, guildId);
   const remaining = getCooldownRemainingMs(guildId, interaction.user.id);
   try {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -25,30 +26,30 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
   const tempInfo = await configStore.getTempChannelInfo(channelId);
   if (!tempInfo?.ownerId) {
     await interaction.editReply({
-      content: 'Channel squad sudah tidak aktif.',
+      content: deps.t(locale, 'lfg.squadInactive'),
     });
     return;
   }
   if (!isOwner(tempInfo, interaction.user.id)) {
     await interaction.editReply({
-      content: 'Hanya pemilik Voice yang bisa mengirim pesan LFG',
+      content: deps.t(locale, 'lfg.ownerOnlyPost'),
     });
     return;
   }
 
   const overrideNotice = isAdminOverride?.(tempInfo, interaction.user.id)
-    ? '\n\n-# Override: aksi ini dijalankan oleh Discord Admin.'
+    ? deps.t(locale, 'common.override')
     : '';
   if (tempInfo.lfgEnabled === false) {
     await interaction.editReply({
-      content: 'Fitur Send LFG Post dinonaktifkan untuk lobby ini.',
+      content: deps.t(locale, 'lfg.postDisabled'),
     });
     return;
   }
 
   if (remaining > 0) {
     await interaction.editReply({
-      content: `Please wait ${formatCooldown(remaining)} before sending another LFG post.`,
+      content: deps.t(locale, 'lfg.cooldown', { duration: formatCooldown(remaining, locale) }),
     });
     return;
   }
@@ -69,7 +70,7 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
     config.lfgChannelId || config.logChannelId || env.LOG_CHANNEL_ID;
   if (!logChannelId) {
     await interaction.editReply({
-      content: 'No log channel is configured.',
+      content: deps.t(locale, 'lfg.logChannelMissing'),
     });
     return;
   }
@@ -77,7 +78,7 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
   const logChannel = await getLogChannel(logChannelId);
   if (!logChannel) {
     await interaction.editReply({
-      content: 'Unable to access the log channel.',
+      content: deps.t(locale, 'lfg.logChannelUnavailable'),
     });
     return;
   }
@@ -91,14 +92,14 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
     if (!roleId) {
       await interaction.editReply({
         content:
-          'Role LFG untuk lobby ini belum dikonfigurasi. Hubungi admin.',
+          deps.t(locale, 'lfg.roleMissing'),
       });
       return;
     }
     const guild = interaction.guild || await deps.client.guilds.fetch(guildId).catch(() => null);
     if (!guild) {
       await interaction.editReply({
-        content: 'Unable to access the server for this LFG post.',
+        content: deps.t(locale, 'lfg.serverUnavailable'),
       });
       return;
     }
@@ -117,14 +118,14 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
       : [];
     const lines = [
       `-# <@&${roleId}>`,
-      `<@${interaction.user.id}> sedang mencari squad, join: ${voiceLink}`,
+      deps.t(locale, 'lfg.lookingForSquad', { userId: interaction.user.id, voiceLink }),
       '',
     ];
     if (quoteLines.length > 0) {
-      lines.push('-# Pesan:', ...quoteLines, '');
+      lines.push(deps.t(locale, 'lfg.messageHeading'), ...quoteLines, '');
     }
-    lines.push(`-# Dibuat pada: <t:${createdTimestamp}:f>`);
-    lines.push(`-# Info lebih lanjut: <@${interaction.user.id}>`);
+    lines.push(deps.t(locale, 'lfg.createdLine', { timestamp: `<t:${createdTimestamp}:f>` }));
+    lines.push(`${deps.t(locale, 'lfg.moreInfoHeading')} <@${interaction.user.id}>`);
 
     const lfgMessage = await logChannel.send({
       content: lines.join('\n'),
@@ -137,13 +138,13 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
     );
     setCooldown(guildId, interaction.user.id);
     await interaction.editReply({
-      content: `LFG post sent.${overrideNotice}`,
+      content: `${deps.t(locale, 'lfg.postSent')}${overrideNotice}`,
     });
   } catch (error) {
     console.error('Failed to send LFG post:', error);
     await interaction
       .editReply({
-        content: 'Failed to send the LFG post.',
+        content: deps.t(locale, 'lfg.postFailed'),
       })
       .catch((replyError) => {
         console.error('Failed to reply to LFG modal:', replyError);

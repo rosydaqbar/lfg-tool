@@ -12,6 +12,7 @@ import { HeaderSection } from "@/components/dashboard/header-section";
 import { VoiceSettingsSection } from "@/components/dashboard/voice-settings-section";
 import { AutoRoleSection } from "@/components/dashboard/auto-role-section";
 import { SpamCatcherSection } from "@/components/dashboard/spam-catcher-section";
+import { LocalizationSection } from "@/components/dashboard/localization-section";
 import { AutoRoleRequestsCard } from "@/components/dashboard/auto-role-requests-card";
 import { ActiveTempChannelsCard } from "@/components/dashboard/active-temp-channels-card";
 import { VoiceLeaderboardCard } from "@/components/dashboard/voice-leaderboard-card";
@@ -192,6 +193,7 @@ export default function DashboardClient({
   const [configVersion, setConfigVersion] = useState<string | null>(null);
   const [logChannelId, setLogChannelId] = useState("");
   const [lfgChannelId, setLfgChannelId] = useState("");
+  const [locale, setLocale] = useState<"en" | "id">("en");
   const [enabledVoiceIds, setEnabledVoiceIds] = useState<string[]>([]);
   const [joinToCreateLobbies, setJoinToCreateLobbies] = useState<
     JoinToCreateLobby[]
@@ -417,6 +419,7 @@ export default function DashboardClient({
       setEnabledVoiceIds([]);
       setJoinToCreateLobbies([]);
       setAutoRoleConfig(DEFAULT_AUTO_ROLE_CONFIG);
+      setLocale("en");
       setLogChannelId("");
       setLfgChannelId("");
       setLoadingConfig(false);
@@ -440,6 +443,7 @@ export default function DashboardClient({
     setJoinToCreateLobbies([]);
     setAutoRoleConfig(DEFAULT_AUTO_ROLE_CONFIG);
     setSpamCatcherConfig(DEFAULT_SPAM_CATCHER_CONFIG);
+    setLocale("en");
     setConfigVersion(null);
     setLogChannelId("");
     setLfgChannelId("");
@@ -457,6 +461,7 @@ export default function DashboardClient({
         setConfigVersion(config.configVersion ?? null);
         setLogChannelId(config.logChannelId ?? "");
         setLfgChannelId(config.lfgChannelId ?? "");
+        setLocale(config.locale === "id" ? "id" : "en");
         setEnabledVoiceIds(config.enabledVoiceChannelIds ?? []);
         setJoinToCreateLobbies(
           (config.joinToCreateLobbies ?? []).map((item) => ({
@@ -603,6 +608,7 @@ export default function DashboardClient({
           configVersion,
           logChannelId: trimmedLogChannelId,
           lfgChannelId: trimmedLfgChannelId.length > 0 ? trimmedLfgChannelId : null,
+          locale,
           enabledVoiceChannelIds,
           joinToCreateLobbies: joinToCreateLobbiesPayload,
           autoRoleConfig,
@@ -652,6 +658,7 @@ export default function DashboardClient({
     enabledVoiceIds,
     joinToCreateLobbies,
     lfgChannelId,
+    locale,
     logChannelId,
     autoRoleConfig,
     spamCatcherConfig,
@@ -1036,6 +1043,14 @@ export default function DashboardClient({
             webhookDestinationChecks={webhookDestinationChecks}
             onChange={setSpamCatcherConfig}
             onOpenTextChannels={handleLoadChannels}
+            onSave={handleSave}
+          />
+
+          <LocalizationSection
+            loadingConfig={loadingConfig}
+            saving={saving}
+            value={locale}
+            onChange={setLocale}
             onSave={handleSave}
           />
 

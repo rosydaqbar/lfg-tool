@@ -133,6 +133,7 @@ export type ConfigResponse = {
   configVersion: string | null;
   logChannelId: string | null;
   lfgChannelId: string | null;
+  locale: "en" | "id";
   enabledVoiceChannelIds: string[];
   joinToCreateLobbies: JoinToCreateLobby[];
   autoRoleConfig: AutoRoleConfig;

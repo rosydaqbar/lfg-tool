@@ -7,29 +7,30 @@ const {
   TextDisplayBuilder,
 } = require('discord.js');
 const { LEADERBOARD_PREFIX, MY_STATS_PREFIX } = require('./lfg/constants');
+const { getGuildLocale, normalizeLocale, t } = require('../i18n');
 
-function formatDuration(totalMs) {
+function formatDuration(totalMs, locale = 'en') {
   const safeMs = Math.max(0, Number(totalMs) || 0);
   const totalMinutes = Math.floor(safeMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   const seconds = Math.floor((safeMs % 60000) / 1000);
   if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
+    return t(locale, 'common.durationHoursMinutesSeconds', { hours, minutes, seconds });
   }
   if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
+    return t(locale, 'common.durationMinutesSeconds', { minutes, seconds });
   }
-  return `${seconds}s`;
+  return t(locale, 'common.durationSeconds', { seconds });
 }
 
-function formatSummaryDuration(totalMs) {
+function formatSummaryDuration(totalMs, locale = 'en') {
   const safeMs = Math.max(0, Number(totalMs) || 0);
   const totalMinutes = Math.floor(safeMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours <= 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
+  if (hours <= 0) return t(locale, 'common.durationMinutes', { minutes });
+  return t(locale, 'common.durationHoursMinutes', { hours, minutes });
 }
 
 function formatDateTime(value) {
@@ -37,41 +38,41 @@ function formatDateTime(value) {
   if (Number.isNaN(date.getTime())) {
     return '-';
   }
-  return date.toLocaleString();
+  return `<t:${Math.floor(date.getTime() / 1000)}:F>`;
 }
 
-function buildVoiceActivitySummaryBody(activity) {
+function buildVoiceActivitySummaryBody(activity, locale = 'en') {
   const active = (activity?.active || []).slice(0, 10);
   const history = (activity?.history || []).slice(0, 10);
 
   const activeLines = active.length
     ? active.map(
-      (row) => `- <@${row.userId}> • masuk: ${row.joinedAt ? `<t:${Math.floor(row.joinedAt.getTime() / 1000)}:R>` : '-'}`
+      (row) => `- <@${row.userId}> • ${t(locale, 'voiceLog.joined')}: ${row.joinedAt ? `<t:${Math.floor(row.joinedAt.getTime() / 1000)}:R>` : '-'}`
     )
-    : ['- Tidak ada user aktif'];
+    : [t(locale, 'voiceLog.noActive')];
 
   const historyLines = history.length
     ? history.map(
-      (row) => `- <@${row.userId}> • total: \`${formatSummaryDuration(row.totalMs)}\``
+      (row) => `- <@${row.userId}> • ${t(locale, 'voiceLog.total')}: \`${formatSummaryDuration(row.totalMs, locale)}\``
     )
-    : ['- Belum ada history'];
+    : [t(locale, 'voiceLog.noHistory')];
 
   if ((activity?.activeCount || 0) > active.length) {
-    activeLines.push(`- ...dan ${(activity.activeCount || 0) - active.length} lainnya`);
+    activeLines.push(t(locale, 'voiceLog.andMore', { count: (activity.activeCount || 0) - active.length }));
   }
 
   if ((activity?.historyCount || 0) > history.length) {
-    historyLines.push(`- ...dan ${(activity.historyCount || 0) - history.length} lainnya`);
+    historyLines.push(t(locale, 'voiceLog.andMore', { count: (activity.historyCount || 0) - history.length }));
   }
 
   return [
-    '### Voice Log',
-    '-# Pantau siapa yang sedang aktif di voice channel ini dan riwayat durasi user yang sudah keluar.',
+    t(locale, 'voiceLog.title'),
+    t(locale, 'voiceLog.help'),
     '',
-    '**Aktif Saat Ini**',
+    t(locale, 'voiceLog.activeTitle'),
     ...activeLines,
     '',
-    '**History**',
+    t(locale, 'voiceLog.history'),
     ...historyLines,
   ].join('\n');
 }
@@ -90,8 +91,8 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
     }
   }
 
-  function buildManualPanelPayload(channelId, activity) {
-    const body = buildVoiceActivitySummaryBody(activity);
+  function buildManualPanelPayload(channelId, activity, locale = 'en') {
+    const body = buildVoiceActivitySummaryBody(activity, locale);
 
     const container = new ContainerBuilder()
       .setAccentColor(0x0ea5e9)
@@ -101,12 +102,12 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
           new ButtonBuilder()
             .setCustomId(`${MY_STATS_PREFIX}:${channelId}`)
             .setEmoji('📊')
-            .setLabel('My Stats')
+            .setLabel(t(locale, 'voiceLog.myStats'))
             .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
             .setCustomId(`${LEADERBOARD_PREFIX}:${channelId}`)
             .setEmoji('🏆')
-            .setLabel('Leaderboard')
+            .setLabel(t(locale, 'voiceLog.leaderboard'))
             .setStyle(ButtonStyle.Secondary)
         )
       );
@@ -123,7 +124,8 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
       return;
     }
 
-    const payload = buildManualPanelPayload(voiceChannel.id, activity);
+    const locale = await getGuildLocale(configStore, voiceChannel.guild?.id);
+    const payload = buildManualPanelPayload(voiceChannel.id, activity, locale);
 
     try {
       if (configStore?.getManualVoicePanelMessage) {
@@ -166,7 +168,8 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
       return;
     }
 
-    const payload = buildManualPanelPayload(voiceChannel.id, activity);
+    const locale = await getGuildLocale(configStore, guildId);
+    const payload = buildManualPanelPayload(voiceChannel.id, activity, locale);
     const messageId = await configStore
       .getManualVoicePanelMessage(guildId, voiceChannel.id)
       .catch(() => null);
@@ -250,12 +253,16 @@ function createVoiceLogger({ getLogChannel, env, debugLog, configStore }) {
     const logChannel = await getLogChannel(logChannelId);
     if (!logChannel) return;
 
+    const locale = normalizeLocale(config.locale);
     const body = [
-      '### Manual Voice Session Leave',
-      `- User: <@${userId}> (\`${userId}\`)`,
-      `- Channel: ${channelName || '(unknown)'} (\`${channelId}\`)`,
-      `- Left at: ${formatDateTime(leftAt)}`,
-      `- Session: ${formatDuration(totalMs)}`,
+      t(locale, 'voiceLog.manualLeaveTitle'),
+      t(locale, 'voiceLog.user', { userId }),
+      t(locale, 'voiceLog.channel', {
+        channelName: channelName || t(locale, 'voiceLog.unknownChannel'),
+        channelId,
+      }),
+      t(locale, 'voiceLog.leftAt', { timestamp: formatDateTime(leftAt) }),
+      t(locale, 'voiceLog.session', { duration: formatDuration(totalMs, locale) }),
     ].join('\n');
 
     const container = new ContainerBuilder()

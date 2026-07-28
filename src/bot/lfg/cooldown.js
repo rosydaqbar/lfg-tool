@@ -1,4 +1,5 @@
 const { LFG_COOLDOWN_MS } = require('./constants');
+const { t } = require('../../i18n');
 
 function createCooldownTracker() {
   const lfgCooldowns = new Map();
@@ -20,12 +21,12 @@ function createCooldownTracker() {
     lfgCooldowns.set(key, Date.now());
   }
 
-  function formatCooldown(ms) {
+  function formatCooldown(ms, locale = 'en') {
     const totalSeconds = Math.ceil(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
-    if (minutes <= 0) return `${seconds}s`;
-    return `${minutes}m ${seconds}s`;
+    if (minutes <= 0) return t(locale, 'common.durationSeconds', { seconds });
+    return t(locale, 'common.durationMinutesSeconds', { minutes, seconds });
   }
 
   return {

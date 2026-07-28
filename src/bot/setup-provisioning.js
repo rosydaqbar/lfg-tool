@@ -1,8 +1,7 @@
 const { randomUUID } = require('crypto');
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
+const { t } = require('../i18n');
 
-const QUICK_LOBBY_NAME = '+ New Group Channel';
-const QUICK_ROLE_NAME = 'LFG';
 const OPERATION_STALE_MS = 15 * 60 * 1000;
 const quickSetupLocks = new Set();
 
@@ -63,46 +62,49 @@ async function findValidConfiguredLobby(guild, config) {
   return null;
 }
 
-function getQuickSetupPermissionError(guild, category) {
+function getQuickSetupPermissionError(guild, category, locale = 'en') {
   if (!category || category.guildId !== guild.id || category.type !== ChannelType.GuildCategory) {
-    return 'Select a category from this server.';
+    return t(locale, 'setup.selectServerCategory');
   }
   const botMember = guild.members.me;
   if (!botMember) {
-    return 'The bot could not verify its server permissions. Please try again.';
+    return t(locale, 'setup.permissionCheckFailedRetry');
   }
 
   const guildRequirements = [
-    [PermissionFlagsBits.ManageChannels, 'Manage Channels'],
-    [PermissionFlagsBits.ManageRoles, 'Manage Roles'],
-    [PermissionFlagsBits.MoveMembers, 'Move Members'],
+    [PermissionFlagsBits.ManageChannels, t(locale, 'setup.manageChannels')],
+    [PermissionFlagsBits.ManageRoles, t(locale, 'setup.manageRoles')],
+    [PermissionFlagsBits.MoveMembers, t(locale, 'setup.moveMembers')],
   ];
   const missingGuildPermissions = guildRequirements
     .filter(([permission]) => !botMember.permissions.has(permission))
     .map(([, label]) => label);
   if (missingGuildPermissions.length > 0) {
-    return `The bot is missing ${missingGuildPermissions.join(', ')} in this server.`;
+    return t(locale, 'setup.missingPermissionsServer', { permissions: missingGuildPermissions.join(', ') });
   }
 
   const categoryRequirements = [
-    [PermissionFlagsBits.ViewChannel, 'View Channel'],
-    [PermissionFlagsBits.ManageChannels, 'Manage Channels'],
-    [PermissionFlagsBits.Connect, 'Connect'],
-    [PermissionFlagsBits.MoveMembers, 'Move Members'],
-    [PermissionFlagsBits.SendMessages, 'Send Messages'],
-    [PermissionFlagsBits.ReadMessageHistory, 'Read Message History'],
+    [PermissionFlagsBits.ViewChannel, t(locale, 'setup.viewChannel')],
+    [PermissionFlagsBits.ManageChannels, t(locale, 'setup.manageChannels')],
+    [PermissionFlagsBits.Connect, t(locale, 'setup.connect')],
+    [PermissionFlagsBits.MoveMembers, t(locale, 'setup.moveMembers')],
+    [PermissionFlagsBits.SendMessages, t(locale, 'setup.sendMessages')],
+    [PermissionFlagsBits.ReadMessageHistory, t(locale, 'setup.readHistory')],
   ];
   const categoryPermissions = botMember.permissionsIn(category);
   const missingCategoryPermissions = categoryRequirements
     .filter(([permission]) => !categoryPermissions.has(permission))
     .map(([, label]) => label);
   if (missingCategoryPermissions.length > 0) {
-    return `The bot is missing ${missingCategoryPermissions.join(', ')} in ${category.name}.`;
+    return t(locale, 'setup.missingPermissionsCategory', {
+      permissions: missingCategoryPermissions.join(', '),
+      category: category.name,
+    });
   }
   return null;
 }
 
-async function cleanupOperationResources(guild, operation) {
+async function cleanupOperationResources(guild, operation, locale = 'en') {
   const errors = [];
   const channelTargets = new Map();
   const roleTargets = new Map();
@@ -150,13 +152,13 @@ async function cleanupOperationResources(guild, operation) {
 
   for (const [channelId, channel] of channelTargets) {
     if (protectedChannelIds.has(channelId)) continue;
-    await channel.delete('Rollback incomplete LFG Tool Quick Setup').catch((error) => {
+    await channel.delete(t(locale, 'setup.rollbackReason')).catch((error) => {
       errors.push(`channel ${channelId}: ${error?.message || error}`);
     });
   }
   for (const [roleId, role] of roleTargets) {
     if (protectedRoleIds.has(roleId)) continue;
-    await role.delete('Rollback incomplete LFG Tool Quick Setup').catch((error) => {
+    await role.delete(t(locale, 'setup.rollbackReason')).catch((error) => {
       errors.push(`role ${roleId}: ${error?.message || error}`);
     });
   }
@@ -199,13 +201,14 @@ function protectAdoptedOperationResources(resources, operation) {
 }
 
 function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () => {} }) {
-  async function cleanupWithCurrentProtection(guild, operation) {
+  async function cleanupWithCurrentProtection(guild, operation, locale = 'en') {
     try {
       return await configStore.withGuildSetupResourceProtection(
         guild.id,
         (resources) => cleanupOperationResources(
           guild,
-          protectAdoptedOperationResources(resources, operation)
+          protectAdoptedOperationResources(resources, operation),
+          locale
         )
       );
     } catch (error) {
@@ -223,8 +226,14 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
     let createdRole = null;
     let createdChannel = null;
     let saveAttempted = false;
+    let locale = 'en';
     try {
       let config = await configStore.getGuildConfig(guild.id);
+      locale = config.locale || 'en';
+      const quickLobbyName = t(locale, 'setup.quickLobbyName');
+      const quickRoleName = t(locale, 'setup.quickRoleName');
+      const quickLobbyNames = new Set([quickLobbyName, t('en', 'setup.quickLobbyName')]);
+      const quickRoleNames = new Set([quickRoleName.toLowerCase(), t('en', 'setup.quickRoleName').toLowerCase()]);
       const existingLobby = await findValidConfiguredLobby(guild, config);
       const existingOperation = await configStore.getGuildSetupOperation(guild.id);
       const operationLobby = existingOperation
@@ -305,7 +314,8 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
         }
         const cleanupErrors = await cleanupWithCurrentProtection(
           guild,
-          recoverableOperation
+          recoverableOperation,
+          locale
         );
         if (cleanupErrors.length > 0) {
           await configStore.updateGuildSetupOperation({
@@ -340,7 +350,7 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
         return { status: 'recovery_complete' };
       }
 
-      const permissionError = getQuickSetupPermissionError(guild, category);
+      const permissionError = getQuickSetupPermissionError(guild, category, config.locale);
       if (permissionError) {
         return { status: 'invalid', error: permissionError };
       }
@@ -350,11 +360,11 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
         guild.channels.fetch(),
       ]);
       const roleConflict = roles.find(
-        (role) => role.name.toLowerCase() === QUICK_ROLE_NAME.toLowerCase()
+        (role) => quickRoleNames.has(role.name.toLowerCase())
       );
       const channelConflict = channels.find(
         (channel) => channel?.type === ChannelType.GuildVoice
-          && channel.name === QUICK_LOBBY_NAME
+          && quickLobbyNames.has(channel.name)
       );
       if (roleConflict || channelConflict) {
         return {
@@ -385,11 +395,11 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
 
       const marker = operationMarker(operationId);
       createdRole = await guild.roles.create({
-        name: `${QUICK_ROLE_NAME} ${marker}`,
+        name: `${quickRoleName} ${marker}`,
         permissions: 0n,
         hoist: false,
         mentionable: true,
-        reason: 'LFG Tool Quick Setup',
+        reason: t(locale, 'setup.quickSetupReason'),
       });
       const recordedRole = await configStore.updateGuildSetupOperation({
         guildId: guild.id,
@@ -402,10 +412,10 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
       }
 
       createdChannel = await guild.channels.create({
-        name: `${QUICK_LOBBY_NAME} ${marker}`,
+        name: `${quickLobbyName} ${marker}`,
         type: ChannelType.GuildVoice,
         parent: category.id,
-        reason: 'LFG Tool Quick Setup',
+        reason: t(locale, 'setup.quickSetupReason'),
       });
       if (createdChannel.permissionsLocked !== true) {
         await createdChannel.lockPermissions();
@@ -422,8 +432,8 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
       }
 
       await Promise.all([
-        createdRole.setName(QUICK_ROLE_NAME, 'Finalize LFG Tool Quick Setup'),
-        createdChannel.setName(QUICK_LOBBY_NAME, 'Finalize LFG Tool Quick Setup'),
+        createdRole.setName(quickRoleName, t(locale, 'setup.finalizeReason')),
+        createdChannel.setName(quickLobbyName, t(locale, 'setup.finalizeReason')),
       ]);
 
       const markedSaving = await configStore.updateGuildSetupOperation({
@@ -456,7 +466,7 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
         resourceMarker: operationId,
         channelId: null,
         roleId: null,
-      });
+      }, locale);
       if (duplicateCleanupErrors.length > 0) {
         await configStore.updateGuildSetupOperation({
           guildId: guild.id,
@@ -505,7 +515,7 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
             resourceMarker: operationId,
             channelId: null,
             roleId: null,
-          });
+          }, locale);
           if (duplicateCleanupErrors.length > 0) {
             await configStore.updateGuildSetupOperation({
               guildId: guild.id,
@@ -593,8 +603,8 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
         }
       }
       const cleanupErrors = operationId
-        ? await cleanupWithCurrentProtection(guild, cleanupTarget)
-        : await cleanupOperationResources(guild, cleanupTarget);
+        ? await cleanupWithCurrentProtection(guild, cleanupTarget, locale)
+        : await cleanupOperationResources(guild, cleanupTarget, locale);
       if (operationId && cleanupErrors.length === 0) {
         await configStore.clearGuildSetupOperation(guild.id, operationId).catch(() => null);
       } else if (operationId) {
@@ -622,8 +632,6 @@ function createQuickSetupProvisioner({ configStore, onGuildConfigUpdated = () =>
 }
 
 module.exports = {
-  QUICK_LOBBY_NAME,
-  QUICK_ROLE_NAME,
   createQuickSetupProvisioner,
   findValidConfiguredLobby,
   getQuickSetupPermissionError,
