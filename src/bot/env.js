@@ -1,8 +1,42 @@
-const { DISCORD_TOKEN, LOG_CHANNEL_ID, VOICE_CHANNEL_ID, DEBUG } = process.env;
+const { networkInterfaces } = require('os');
+const { DISCORD_TOKEN, LOG_CHANNEL_ID, VOICE_CHANNEL_ID, DEBUG, DASHBOARD_URL } = process.env;
 const fs = require('fs');
 const path = require('path');
 
 const SETUP_STATE_PATH = path.resolve(__dirname, '..', '..', '.setup-state.json');
+
+function isPrivateIpv4(address) {
+  return address.startsWith('10.')
+    || address.startsWith('192.168.')
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(address);
+}
+
+function getLocalIpv4Address() {
+  const addresses = Object.values(networkInterfaces())
+    .flat()
+    .filter((entry) => entry && !entry.internal && (entry.family === 'IPv4' || entry.family === 4))
+    .map((entry) => entry.address);
+  return addresses.find((address) => address.startsWith('192.168.'))
+    || addresses.find((address) => address.startsWith('10.'))
+    || addresses.find(isPrivateIpv4)
+    || addresses[0]
+    || '127.0.0.1';
+}
+
+function getDashboardUrl() {
+  const configured = String(DASHBOARD_URL || '').trim();
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        return url.toString().replace(/\/$/, '');
+      }
+    } catch {
+      // Fall through to the local dashboard URL.
+    }
+  }
+  return `http://${getLocalIpv4Address()}:3000`;
+}
 
 function requireToken() {
   if (!DISCORD_TOKEN) {
@@ -34,6 +68,8 @@ module.exports = {
   LOG_CHANNEL_ID,
   VOICE_CHANNEL_ID,
   DEBUG,
+  DASHBOARD_URL,
+  getDashboardUrl,
   requireBotRuntimeEnv,
   requireToken,
 };

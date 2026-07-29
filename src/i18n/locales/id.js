@@ -457,6 +457,7 @@ module.exports = {
     changeChannels: 'Ubah Channel',
     manageJtc: 'Kelola JTC',
     runCheck: 'Jalankan Pemeriksaan Setup',
+    dashboardInfo: '### Lanjutkan setup di Web Dashboard\nSetup lengkap dan pengaturan lanjutan tersedia di sini: [Buka Web Dashboard]({url})',
     invalidLobbyWarning: '-# Peringatan: {count} konfigurasi lobby tambahan perlu diperiksa.',
     cleanupWarning: '-# Setup Cepat masih memiliki pekerjaan pembersihan atau verifikasi. Buka Kelola JTC dan pilih Selesaikan Setup.',
     step1Modal: 'Langkah 1: Channel Pesan',

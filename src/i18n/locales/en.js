@@ -457,6 +457,7 @@ module.exports = {
     changeChannels: 'Change Channels',
     manageJtc: 'Manage JTC',
     runCheck: 'Run Setup Check',
+    dashboardInfo: '### Continue setup in the Web Dashboard\nFull setup and advanced settings are available here: [Open Web Dashboard]({url})',
     invalidLobbyWarning: '-# Warning: {count} additional saved lobby configuration(s) need attention.',
     cleanupWarning: '-# Quick Setup still has cleanup or verification work. Open Manage JTC and choose Finish Setup.',
     step1Modal: 'Step 1: Message Channels',

@@ -26,6 +26,7 @@
 - Bot startup calls `src/bot/runtime-config.js` before validation; it can hydrate `DISCORD_TOKEN`, `DATABASE_URL`, and owner ID from `.setup-state.json` using `SETUP_SECRET` or `NEXTAUTH_SECRET`.
 - Required bot runtime vars after hydration are `DISCORD_TOKEN` and `DATABASE_URL`; missing values cause `src/bot/env.js` to exit.
 - Cloud/dashboard env setup uses `SETUP_COMPLETE=true`, `OWNER_DISCORD_ID`, `SELECTED_GUILD_ID`, Discord OAuth vars, bot token, `DATABASE_URL`, `NEXTAUTH_URL`, and `NEXTAUTH_SECRET`.
+- `DASHBOARD_URL` controls the Web Dashboard link shown by Discord `/setup`; empty or invalid values fall back to `http://<local-network-ip>:3000`.
 - Supabase should use the Transaction Pooler URL on port `6543` with `sslmode=require`; keep pool envs low (`BOT_POSTGRES_POOL_MAX=2`, `POSTGRES_POOL_MAX=1` is documented).
 
 ## Database And Schema

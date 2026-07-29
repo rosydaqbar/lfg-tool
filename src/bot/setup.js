@@ -19,6 +19,7 @@ const {
   createQuickSetupProvisioner,
   getQuickSetupPermissionError,
 } = require('./setup-provisioning');
+const { getDashboardUrl } = require('./env');
 const { getGuildLocale, normalizeLocale, t } = require('../i18n');
 
 const SETUP_COMMAND = 'setup';
@@ -366,6 +367,7 @@ function buildStep2Payload(state, notice = null) {
 
 function buildCompletePayload(state, notice = null) {
   const locale = normalizeLocale(state.config.locale);
+  const dashboardUrl = getDashboardUrl();
   const lobbyLines = state.validLobbies.slice(0, 5).map(
     (item) => t(locale, 'setup.usingRole', { channelId: item.channel.id, roleId: item.role.id })
   );
@@ -427,6 +429,9 @@ function buildCompletePayload(state, notice = null) {
   return {
     components: [
       addNotice(container, notice, locale),
+      new TextDisplayBuilder().setContent(
+        t(locale, 'setup.dashboardInfo', { url: dashboardUrl })
+      ),
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(SETUP_REFRESH_ID)

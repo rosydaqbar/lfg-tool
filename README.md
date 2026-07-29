@@ -186,6 +186,7 @@ Required local/VPS values before opening `/setup`:
 ```env
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=replace_with_a_long_random_string
+DASHBOARD_URL=https://your-dashboard-domain.com
 ```
 
 These two values are only for dashboard login. You will enter the bot token, Discord server ID, owner ID, channel IDs, and database URL later in the setup page.
