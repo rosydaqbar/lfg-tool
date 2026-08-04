@@ -13,11 +13,11 @@ type RolesPayload = {
 const rolesCache = new Map<string, { expiresAt: number; payload: RolesPayload }>();
 const rolesInFlight = new Map<string, Promise<RolesPayload>>();
 
-async function loadDiscordRoles(guildId: string, botToken: string) {
+async function loadDiscordRoles(guildId: string, botToken: string, forceRefresh = false) {
   const cacheKey = `${guildId}:${botToken.slice(0, 12)}`;
   const now = Date.now();
   const cached = rolesCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.payload;
+  if (!forceRefresh && cached && cached.expiresAt > now) return cached.payload;
 
   const active = rolesInFlight.get(cacheKey);
   if (active) return active;
@@ -103,10 +103,11 @@ async function loadDiscordRoles(guildId: string, botToken: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const forceRefresh = new URL(request.url).searchParams.get("refresh") === "1";
   const access = await requireDashboardGuildAccess(id);
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
@@ -121,7 +122,7 @@ export async function GET(
   }
 
   try {
-    return NextResponse.json(await loadDiscordRoles(id, botToken));
+    return NextResponse.json(await loadDiscordRoles(id, botToken, forceRefresh));
   } catch (error) {
     const details = error as Error & { status?: number; code?: number | null };
     return NextResponse.json(

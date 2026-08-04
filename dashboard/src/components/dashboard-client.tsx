@@ -837,9 +837,9 @@ export default function DashboardClient({
     }
   }, [hasMoreGuilds, loadingMoreGuilds, loadGuildPage, locale, nextGuildOffset, selectedGuildId]);
 
-  const handleLoadChannels = useCallback(async () => {
-    if (!selectedGuildId || loadedChannelsGuildId === selectedGuildId) return;
-    const cached = readChannelsCache(selectedGuildId);
+  const handleLoadChannels = useCallback(async (forceRefresh = false) => {
+    if (!selectedGuildId || (!forceRefresh && loadedChannelsGuildId === selectedGuildId)) return;
+    const cached = forceRefresh ? null : readChannelsCache(selectedGuildId);
     if (cached) {
       setVoiceChannels(cached.voiceChannels);
       setTextChannels(cached.textChannels);
@@ -851,12 +851,13 @@ export default function DashboardClient({
       setVoiceChannels(channels.voiceChannels);
       setTextChannels(channels.textChannels);
       setLoadedChannelsGuildId(selectedGuildId);
-      return;
+      if (!forceRefresh) return;
     }
     setLoadingChannels(true);
     setError(null);
     try {
-      const request = fetch(`/api/guilds/${selectedGuildId}/channels`, { cache: "no-store" })
+      const refreshQuery = forceRefresh ? "?refresh=1" : "";
+      const request = fetch(`/api/guilds/${selectedGuildId}/channels${refreshQuery}`, { cache: "no-store" })
         .then(async (response) => {
           if (!response.ok) {
             const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -908,9 +909,9 @@ export default function DashboardClient({
     }
   }, [loadedChannelsGuildId, locale, readChannelsCache, selectedGuildId, writeChannelsCache]);
 
-  const handleLoadRoles = useCallback(async () => {
-    if (!selectedGuildId || loadedRolesGuildId === selectedGuildId) return;
-    const cached = readRolesCache(selectedGuildId);
+  const handleLoadRoles = useCallback(async (forceRefresh = false) => {
+    if (!selectedGuildId || (!forceRefresh && loadedRolesGuildId === selectedGuildId)) return;
+    const cached = forceRefresh ? null : readRolesCache(selectedGuildId);
     if (cached) {
       setRoles(cached.roles ?? []);
       setLoadedRolesGuildId(selectedGuildId);
@@ -920,12 +921,13 @@ export default function DashboardClient({
       const rolesResponse = await rolesRequestRef.current;
       setRoles(rolesResponse.roles ?? []);
       setLoadedRolesGuildId(selectedGuildId);
-      return;
+      if (!forceRefresh) return;
     }
     setLoadingRoles(true);
     setError(null);
     try {
-      const request = fetch(`/api/guilds/${selectedGuildId}/roles`, { cache: "no-store" })
+      const refreshQuery = forceRefresh ? "?refresh=1" : "";
+      const request = fetch(`/api/guilds/${selectedGuildId}/roles${refreshQuery}`, { cache: "no-store" })
         .then(async (response) => {
           if (!response.ok) {
             const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -1218,7 +1220,7 @@ export default function DashboardClient({
             selectedGuildId={selectedGuildId}
             onLogChannelChange={setLogChannelId}
             onLfgChannelChange={setLfgChannelId}
-            onOpenTextChannels={handleLoadChannels}
+            onOpenTextChannels={() => void handleLoadChannels(true)}
           />
 
           <VoiceSettingsSection
@@ -1240,8 +1242,8 @@ export default function DashboardClient({
             onRemoveLobbyChannel={handleRemoveLobbyChannel}
             onAddEnabledVoiceChannel={handleAddEnabledVoiceChannel}
             onRemoveEnabledVoiceChannel={handleRemoveEnabledVoiceChannel}
-            onOpenVoiceChannels={handleLoadChannels}
-            onOpenRoles={handleLoadRoles}
+            onOpenVoiceChannels={() => void handleLoadChannels(true)}
+            onOpenRoles={() => void handleLoadRoles(true)}
             onSave={handleSave}
           />
 
@@ -1256,8 +1258,8 @@ export default function DashboardClient({
             textChannels={memoTextChannels}
             value={autoRoleConfig}
             onChange={setAutoRoleConfig}
-            onOpenTextChannels={handleLoadChannels}
-            onOpenRoles={handleLoadRoles}
+            onOpenTextChannels={() => void handleLoadChannels(true)}
+            onOpenRoles={() => void handleLoadRoles(true)}
             onSave={handleSave}
           />
 
@@ -1270,7 +1272,7 @@ export default function DashboardClient({
             value={spamCatcherConfig}
             webhookDestinationChecks={webhookDestinationChecks}
             onChange={setSpamCatcherConfig}
-            onOpenTextChannels={handleLoadChannels}
+            onOpenTextChannels={() => void handleLoadChannels(true)}
             onSave={handleSave}
           />
 

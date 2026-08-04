@@ -16,11 +16,11 @@ type ChannelsPayload = {
 const channelsCache = new Map<string, { expiresAt: number; payload: ChannelsPayload }>();
 const channelsInFlight = new Map<string, Promise<ChannelsPayload>>();
 
-async function loadDiscordChannels(guildId: string, botToken: string) {
+async function loadDiscordChannels(guildId: string, botToken: string, forceRefresh = false) {
   const cacheKey = `${guildId}:${botToken.slice(0, 12)}`;
   const now = Date.now();
   const cached = channelsCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.payload;
+  if (!forceRefresh && cached && cached.expiresAt > now) return cached.payload;
 
   const active = channelsInFlight.get(cacheKey);
   if (active) return active;
@@ -114,10 +114,11 @@ async function loadDiscordChannels(guildId: string, botToken: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const forceRefresh = new URL(request.url).searchParams.get("refresh") === "1";
   const access = await requireDashboardGuildAccess(id);
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status });
@@ -132,7 +133,7 @@ export async function GET(
   }
 
   try {
-    return NextResponse.json(await loadDiscordChannels(id, botToken));
+    return NextResponse.json(await loadDiscordChannels(id, botToken, forceRefresh));
   } catch (error) {
     const details = error as Error & { status?: number; code?: number | null };
     return NextResponse.json(
