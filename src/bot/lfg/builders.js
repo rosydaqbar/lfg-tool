@@ -29,6 +29,7 @@ const {
   CLAIM_PREFIX,
   LFG_MESSAGE_INPUT_ID,
   LFG_MODAL_PREFIX,
+  LFG_PANEL_PAGE_PREFIX,
   LFG_REMINDER_MODAL_PREFIX,
   LFG_REMINDER_SEND_PREFIX,
   LFG_SEND_PREFIX,
@@ -392,47 +393,32 @@ function buildClaimApprovalRow(channelId, claimerId, locale = 'en') {
   );
 }
 
-async function buildPersistentLfgPanelPayload({
-  client,
-  configStore,
+function isValidHttpUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function buildPersistentLfgPanelPayload({
   guildId,
   locale = 'en',
   lobbyItems = [],
+  squadItems = [],
+  page = 0,
 }) {
-  const tempChannels = await configStore.getTempChannelsForGuild(guildId);
-  const items = await Promise.all(
-    tempChannels.map(async (row) => {
-      const channel = await client.channels.fetch(row.channel_id).catch(() => null);
-      if (!channel || !channel.isVoiceBased()) {
-        return null;
-      }
-      const userLimit = channel.userLimit ?? 0;
-      const availableCount = Math.max(userLimit - channel.members.size, 0);
-      let availabilityLabel = '\u221e';
-      if (userLimit > 0) {
-        availabilityLabel = availableCount === 0
-          ? t(locale, 'lfg.full')
-          : `${availableCount}/${userLimit}`;
-      }
-      return {
-        channelId: channel.id,
-        channelName: channel.name,
-        availabilityLabel,
-      };
-    })
-  );
-
   const doubleTick = '``';
-  // Lobby invite creation and unavailable-invite notices are handled by persistent.js.
-  const squadItems = items.filter(Boolean);
-  const squadLines = squadItems.slice(0, 25).map((item) => {
+  const squadLines = squadItems.filter((item) => !isValidHttpUrl(item.url)).slice(0, 25).map((item) => {
     const label = sanitizePanelLabel(item.channelName) || item.channelName;
     return `- ${label} ${doubleTick}${item.availabilityLabel}${doubleTick}`;
   });
-  if (squadItems.length > 25) {
-    squadLines.push(t(locale, 'lfg.andMore', { count: squadItems.length - 25 }));
+  const unavailableSquadCount = squadItems.filter((item) => !isValidHttpUrl(item.url)).length;
+  if (unavailableSquadCount > 25) {
+    squadLines.push(t(locale, 'lfg.andMore', { count: unavailableSquadCount - 25 }));
   }
-  if (squadLines.length === 0) squadLines.push(t(locale, 'lfg.noSquads'));
+  if (squadItems.length === 0) squadLines.push(t(locale, 'lfg.noSquads'));
   const description = [
     t(locale, 'lfg.respect'),
     t(locale, 'lfg.availableSquads'),
@@ -443,6 +429,53 @@ async function buildPersistentLfgPanelPayload({
     .setContent(t(locale, 'lfg.persistentTitle'));
   const bodyDisplay = new TextDisplayBuilder()
     .setContent(t(locale, 'lfg.persistentBody'));
+  const buttonItems = [
+    ...lobbyItems
+      .filter((item) => isValidHttpUrl(item.url))
+      .map((item) => ({
+        label: sanitizePanelLabel(item.channelName).slice(0, 80),
+        url: item.url,
+      })),
+    ...squadItems
+      .filter((item) => isValidHttpUrl(item.url))
+      .map((item) => ({
+        label: `${sanitizePanelLabel(item.channelName).slice(0, 71)} ${item.availabilityLabel}`,
+        url: item.url,
+      })),
+  ].filter((item) => item.label);
+  const contentPerPage = 20;
+  const pageCount = Math.max(1, Math.ceil(buttonItems.length / contentPerPage));
+  const safePage = Math.max(0, Math.min(Number(page) || 0, pageCount - 1));
+  const pageButtons = buttonItems.slice(
+    safePage * contentPerPage,
+    (safePage + 1) * contentPerPage
+  ).map((item) => new ButtonBuilder()
+    .setStyle(ButtonStyle.Link)
+    .setLabel(item.label)
+    .setURL(item.url));
+  const buttonRows = [];
+  for (let i = 0; i < pageButtons.length; i += 5) {
+    buttonRows.push(new ActionRowBuilder().addComponents(pageButtons.slice(i, i + 5)));
+  }
+  if (buttonItems.length > contentPerPage) {
+    buttonRows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${LFG_PANEL_PAGE_PREFIX}:${guildId}:prev:${safePage === 0 ? safePage : safePage - 1}`)
+        .setLabel(t(locale, 'lfg.panelPagePrev'))
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(safePage === 0),
+      new ButtonBuilder()
+        .setCustomId(`${LFG_PANEL_PAGE_PREFIX}:${guildId}:label`)
+        .setLabel(t(locale, 'lfg.panelPageLabel', { current: safePage + 1, total: pageCount }))
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId(`${LFG_PANEL_PAGE_PREFIX}:${guildId}:next:${safePage + 1}`)
+        .setLabel(t(locale, 'lfg.panelPageNext'))
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(safePage === pageCount - 1)
+    ));
+  }
   const container = new ContainerBuilder()
     .setAccentColor(0xff0000)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
@@ -457,11 +490,24 @@ async function buildPersistentLfgPanelPayload({
     components: [
       titleDisplay,
       bodyDisplay,
-      ...buildLobbyInviteButtonRows(lobbyItems),
+      ...buttonRows,
       container,
     ],
     flags: MessageFlags.IsComponentsV2,
   };
+}
+
+function getPanelPageFromMessage(message, guildId) {
+  const prefix = `${LFG_PANEL_PAGE_PREFIX}:${guildId}:prev:`;
+  for (const row of message?.components || []) {
+    for (const component of row?.components || []) {
+      if (!component?.customId?.startsWith(prefix)) continue;
+      if (component.disabled) return 0;
+      const targetPage = Number(component.customId.slice(prefix.length));
+      return Number.isFinite(targetPage) ? targetPage + 1 : 0;
+    }
+  }
+  return 0;
 }
 
 module.exports = {
@@ -476,6 +522,7 @@ module.exports = {
   buildLobbyInviteButtonRows,
   buildJoinToCreatePromptPayload,
   buildPersistentLfgPanelPayload,
+  getPanelPageFromMessage,
   buildRegionSelectRow,
   sanitizePanelLabel,
   buildTransferMemberSelectRow,

@@ -10,13 +10,14 @@ const {
   buildRegionSelectRow,
   buildTransferMemberSelectRow,
   buildVoiceSettingsRows,
+  getPanelPageFromMessage,
 } = require('./builders');
 const { createCooldownTracker } = require('./cooldown');
 const { createVoiceContextHelpers } = require('./context');
 const { handleButtonInteraction } = require('./handlers/button');
 const { handleModalInteraction } = require('./handlers/modal');
 const { handleSelectInteraction } = require('./handlers/select');
-const { createPersistentLfgManager } = require('./persistent');
+const { createPersistentLfgManager, buildPersistentPanel } = require('./persistent');
 const {
   CHANNEL_NAME_PREFIX,
   CHANNEL_SIZE_PREFIX,
@@ -455,6 +456,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     buildRegionSelectRow,
     buildTransferMemberSelectRow,
     buildVoiceSettingsRows,
+    buildPersistentPanel,
     client,
     configStore,
     env,
@@ -462,6 +464,7 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
     replyLeaderboard: statsManager?.replyLeaderboard,
     replyMyStats: statsManager?.replyMyStats,
     getGuildLocale,
+    getPanelPageFromMessage,
     t,
   };
 

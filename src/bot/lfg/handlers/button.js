@@ -12,6 +12,7 @@ const {
   LEADERBOARD_PREFIX,
   LFG_SEND_PREFIX,
   LFG_REMINDER_SEND_PREFIX,
+  LFG_PANEL_PAGE_PREFIX,
   LFG_SETTINGS_PREFIX,
   MY_STATS_PREFIX,
   REGION_PREFIX,
@@ -40,6 +41,29 @@ async function handleButtonInteraction(interaction, deps) {
     userIsInVoiceChannel,
     refreshJoinToCreatePrompt,
   } = deps;
+
+  if (prefix === LFG_PANEL_PAGE_PREFIX) {
+    const guildId = channelId;
+    const direction = arg1;
+    if (!guildId || (direction !== 'prev' && direction !== 'next')) return false;
+    try {
+      await interaction.deferUpdate();
+      const locale = await deps.getGuildLocale(deps.configStore, guildId);
+      const current = deps.getPanelPageFromMessage(interaction.message, guildId);
+      const target = direction === 'next' ? current + 1 : Math.max(current - 1, 0);
+      const { payload } = await deps.buildPersistentPanel({
+        client: deps.client,
+        configStore: deps.configStore,
+        guildId,
+        locale,
+        page: target,
+      });
+      await interaction.message.edit({ ...payload, allowedMentions: { parse: [] } });
+    } catch (error) {
+      console.error('Failed to switch LFG panel page:', error?.message || error);
+    }
+    return true;
+  }
 
   if (prefix === LFG_REMINDER_SEND_PREFIX) {
     const guildId = channelId;

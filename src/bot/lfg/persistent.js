@@ -1,8 +1,52 @@
 const { MessageFlags, Routes } = require('discord.js');
 const { PERSISTENT_LFG_INTERVAL_MS } = require('./constants');
-const { buildPersistentLfgPanelPayload } = require('./builders');
+const { buildPersistentLfgPanelPayload, getPanelPageFromMessage } = require('./builders');
 const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
 const { t } = require('../../i18n');
+
+async function buildPersistentPanel({ client, configStore, guildId, locale, page = 0 }) {
+  const config = await configStore.getGuildConfig(guildId)
+  const lobbyItems = []
+  const failedLobbyIds = []
+  for (const id of config.lfgEnabledLobbyIds || []) {
+    const inviteInfo = await getChannelInvite(client, id)
+    if (inviteInfo) {
+      lobbyItems.push(inviteInfo)
+    } else {
+      failedLobbyIds.push(id)
+    }
+  }
+
+  const tempChannels = await configStore.getTempChannelsForGuild(guildId)
+  const squadItems = []
+  for (const row of tempChannels) {
+    const channel = await client.channels.fetch(row.channel_id).catch(() => null)
+    if (!channel || !channel.isVoiceBased()) continue
+    const userLimit = channel.userLimit ?? 0
+    const availableCount = Math.max(userLimit - channel.members.size, 0)
+    const availabilityLabel = userLimit === 0
+      ? '\u221e'
+      : availableCount === 0
+        ? t(locale, 'lfg.full')
+        : `${availableCount}/${userLimit}`
+    const inviteInfo = await getChannelInvite(client, channel.id)
+    squadItems.push({
+      channelId: channel.id,
+      channelName: channel.name,
+      availabilityLabel,
+      url: inviteInfo?.url ?? null,
+    })
+  }
+
+  const payload = buildPersistentLfgPanelPayload({
+    guildId,
+    locale,
+    lobbyItems,
+    squadItems,
+    page,
+  })
+  return { payload, lobbyItems, squadItems, failedLobbyIds }
+}
 
 function createPersistentLfgManager({ client, configStore, env }) {
   const persistentLfgRunning = new Set();
@@ -60,45 +104,40 @@ function createPersistentLfgManager({ client, configStore, env }) {
       }
 
       const locale = config.locale || 'en';
-      const lobbyItems = [];
-      const failedLobbyIds = [];
-      for (const id of lobbyIds) {
-        const inviteInfo = await getChannelInvite(client, id);
-        if (inviteInfo) {
-          lobbyItems.push(inviteInfo);
-        } else {
-          failedLobbyIds.push(id);
-        }
-      }
-      for (const id of failedLobbyIds) {
-        await notifyAdminInviteUnavailable({
-          client,
-          channelId: id,
-          logChannelId: targetChannelId,
-          locale,
-          t,
-        });
-      }
-      const panelPayload = await buildPersistentLfgPanelPayload({
-        client,
-        configStore,
-        guildId,
-        locale,
-        lobbyItems,
-      });
 
       const latest = await channel.messages.fetch({ limit: 1 }).catch(() => null);
       const latestMessage = latest?.first?.();
       const latestMessageId = latestMessage?.id ?? null;
+      let panel = null;
 
       if (record && record.channelId === channel.id) {
         const existing = await channel.messages
           .fetch(record.messageId)
           .catch(() => null);
+        const currentPage = existing
+          ? getPanelPageFromMessage(existing, guildId)
+          : 0;
+        const { payload: panelPayload, failedLobbyIds } = await buildPersistentPanel({
+          client,
+          configStore,
+          guildId,
+          locale,
+          page: currentPage,
+        });
+        panel = { payload: panelPayload, failedLobbyIds };
+        for (const id of panel.failedLobbyIds) {
+          await notifyAdminInviteUnavailable({
+            client,
+            channelId: id,
+            logChannelId: targetChannelId,
+            locale,
+            t,
+          });
+        }
         if (existing && latestMessageId === record.messageId) {
           const isV2 = existing.flags?.has(MessageFlags.IsComponentsV2);
           if (isV2) {
-            await existing.edit({ ...panelPayload, allowedMentions: { parse: [] } });
+            await existing.edit({ ...panel.payload, allowedMentions: { parse: [] } });
             await configStore.setPersistentLfgMessage(guildId, channel.id, record.messageId);
             return;
           }
@@ -108,7 +147,7 @@ function createPersistentLfgManager({ client, configStore, env }) {
               body: {
                 content: null,
                 embeds: [],
-                components: (panelPayload.components || []).map((c) =>
+                components: (panel.payload.components || []).map((c) =>
                   c && typeof c.toJSON === 'function' ? c.toJSON() : c
                 ),
                 flags: MessageFlags.IsComponentsV2,
@@ -126,7 +165,7 @@ function createPersistentLfgManager({ client, configStore, env }) {
             return;
           }
 
-          const sent = await channel.send({ ...panelPayload, allowedMentions: { parse: [] } });
+          const sent = await channel.send({ ...panel.payload, allowedMentions: { parse: [] } });
           if (existing.pinned) await sent.pin().catch(() => null);
           await tryDeleteMessage(record.channelId, record.messageId);
           await configStore.setPersistentLfgMessage(guildId, channel.id, sent.id);
@@ -134,7 +173,25 @@ function createPersistentLfgManager({ client, configStore, env }) {
         }
       }
 
-      const sent = await channel.send({ ...panelPayload, allowedMentions: { parse: [] } });
+      if (!panel) {
+        panel = await buildPersistentPanel({
+          client,
+          configStore,
+          guildId,
+          locale,
+        });
+        for (const id of panel.failedLobbyIds) {
+          await notifyAdminInviteUnavailable({
+            client,
+            channelId: id,
+            logChannelId: targetChannelId,
+            locale,
+            t,
+          });
+        }
+      }
+
+      const sent = await channel.send({ ...panel.payload, allowedMentions: { parse: [] } });
       if (record) {
         await tryDeleteMessage(record.channelId, record.messageId);
       }
@@ -171,4 +228,4 @@ function createPersistentLfgManager({ client, configStore, env }) {
   };
 }
 
-module.exports = { createPersistentLfgManager };
+module.exports = { createPersistentLfgManager, buildPersistentPanel };

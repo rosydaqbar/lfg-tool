@@ -22,6 +22,7 @@ const REGION_PREFIX = 'jtc_region';
 const REGION_SELECT_PREFIX = 'jtc_region_select';
 const MY_STATS_PREFIX = 'jtc_my_stats';
 const LEADERBOARD_PREFIX = 'jtc_leaderboard';
+const LFG_PANEL_PAGE_PREFIX = 'jtc_panel_page';
 
 const LFG_COOLDOWN_MS = 10 * 60 * 1000;
 const PERSISTENT_LFG_INTERVAL_MS = 15 * 1000;
@@ -44,6 +45,7 @@ module.exports = {
   LFG_COOLDOWN_MS,
   LFG_MESSAGE_INPUT_ID,
   LFG_MODAL_PREFIX,
+  LFG_PANEL_PAGE_PREFIX,
   LFG_REMINDER_MODAL_PREFIX,
   LFG_REMINDER_SEND_PREFIX,
   LFG_SEND_PREFIX,
