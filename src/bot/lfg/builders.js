@@ -53,14 +53,6 @@ function sanitizePanelLabel(name) {
   return cleaned;
 }
 
-function sanitizeMaskedLinkLabel(name) {
-  return String(name || '')
-    .replace(/[[\]()*_~`|<>\\]/g, '')
-    .replace(/[^\x20-\x7E]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function buildLfgPromptRows(channelId, locale = 'en') {
   return [
     new ActionRowBuilder().addComponents(
@@ -409,65 +401,53 @@ async function buildPersistentLfgPanelPayload({
   const doubleTick = '``';
   // Lobby invite creation and unavailable-invite notices are handled by persistent.js.
   const squadItems = items.filter(Boolean);
-  const squadLines = squadItems.slice(0, 25).map((item) => {
+  const linksRaw = lobbyItems
+    .map((item) => {
+      const label = sanitizePanelLabel(item.channelName) || item.channelName;
+      const url = String(item.url || '');
+      return url ? `**${label}** ${url}` : null;
+    })
+    .filter(Boolean);
+  const squadLinesRaw = squadItems.map((item) => {
     const label = sanitizePanelLabel(item.channelName) || item.channelName;
     return `- ${label} ${doubleTick}${item.availabilityLabel}${doubleTick}`;
   });
-  if (squadItems.length > 25) {
-    squadLines.push(t(locale, 'lfg.andMore', { count: squadItems.length - 25 }));
-  }
-  if (squadLines.length === 0) squadLines.push(t(locale, 'lfg.noSquads'));
-  const description = [
-    t(locale, 'lfg.respect'),
-    t(locale, 'lfg.availableSquads'),
-    ...squadLines,
-  ].join('\n');
+  const title = t(locale, 'lfg.persistentTitle');
+  const body = t(locale, 'lfg.persistentBody');
+  const respect = t(locale, 'lfg.respect');
+  const heading = t(locale, 'lfg.availableSquads');
+  const footer = t(locale, 'lfg.squadFooter');
+  const noSquads = t(locale, 'lfg.noSquads');
+  const andMore = (count) => t(locale, 'lfg.andMore', { count }).replace(/^-\s*/, '');
 
-  const titleDisplay = new TextDisplayBuilder()
-    .setContent(t(locale, 'lfg.persistentTitle'));
-  const bodyDisplay = new TextDisplayBuilder()
-    .setContent(t(locale, 'lfg.persistentBody'));
-  const validLobbyLinks = lobbyItems
-    .map((item) => {
-      const rawName = String(item.channelName || '');
-      const emojiPrefix = (rawName.match(/[^\x20-\x7E]/g) || []).join('');
-      const label = sanitizeMaskedLinkLabel(rawName);
-      const url = String(item.url || '');
-      const link = label && url
-        ? `[${label}](${url})`
-        : url
-          ? `[${url.replace(/^https?:\/\//i, '')}](${url})`
-          : null;
-      if (!link) return null;
-      return emojiPrefix ? `${emojiPrefix} ${link}` : link;
-    })
-    .filter(Boolean);
-  const lobbyLinks = validLobbyLinks.slice(0, 25);
-  if (validLobbyLinks.length > 25) {
-    lobbyLinks.push(
-      t(locale, 'lfg.andMore', { count: validLobbyLinks.length - 25 }).replace(/^-\s*/, '')
-    );
+  const MAX_LINES = 25;
+  const MAX_CONTENT = 2000;
+  let linkShown = Math.min(linksRaw.length, MAX_LINES);
+  let squadShown = Math.min(squadLinesRaw.length, MAX_LINES);
+  const assemble = () => {
+    const links = linksRaw.slice(0, linkShown);
+    if (linksRaw.length > linkShown) links.push(andMore(linksRaw.length - linkShown));
+    const squads = squadLinesRaw.slice(0, squadShown);
+    if (squadLinesRaw.length > squadShown) squads.push(andMore(squadLinesRaw.length - squadShown));
+    if (squads.length === 0) squads.push(noSquads);
+    const lines = [title, body];
+    if (links.length > 0) lines.push(links.join('\n'));
+    lines.push(respect, heading, ...squads, footer);
+    return lines.join('\n');
+  };
+  let content = assemble();
+  while (content.length > MAX_CONTENT && squadShown > 0) {
+    squadShown -= 1;
+    content = assemble();
   }
-  const container = new ContainerBuilder()
-    .setAccentColor(0xff0000)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
-
-  container
-    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(t(locale, 'lfg.squadFooter'))
-    );
+  while (content.length > MAX_CONTENT && linkShown > 0) {
+    linkShown -= 1;
+    content = assemble();
+  }
+  content = content.slice(0, MAX_CONTENT);
 
   return {
-    components: [
-      titleDisplay,
-      bodyDisplay,
-      ...(lobbyLinks.length > 0
-        ? [new TextDisplayBuilder().setContent(lobbyLinks.join('\n'))]
-        : []),
-      container,
-    ],
-    flags: MessageFlags.IsComponentsV2,
+    content,
   };
 }
 
@@ -483,7 +463,6 @@ module.exports = {
   buildJoinToCreatePromptPayload,
   buildPersistentLfgPanelPayload,
   buildRegionSelectRow,
-  sanitizeMaskedLinkLabel,
   sanitizePanelLabel,
   buildTransferMemberSelectRow,
   buildVoiceSettingsRows,

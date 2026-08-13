@@ -1,3 +1,4 @@
+const { MessageFlags } = require('discord.js');
 const { PERSISTENT_LFG_INTERVAL_MS } = require('./constants');
 const { buildPersistentLfgPanelPayload } = require('./builders');
 const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
@@ -94,19 +95,18 @@ function createPersistentLfgManager({ client, configStore, env }) {
         const existing = await channel.messages
           .fetch(record.messageId)
           .catch(() => null);
-        if (existing && latestMessageId === record.messageId) {
-          const { flags: _ignoredFlags, ...editPayload } = panelPayload;
-          await existing.edit({ ...editPayload, content: '', allowedMentions: { parse: [] } });
-          await configStore.setPersistentLfgMessage(
-            guildId,
-            channel.id,
-            record.messageId
-          );
+        const canEditInPlace =
+          existing &&
+          latestMessageId === record.messageId &&
+          !existing.flags.has(MessageFlags.IsComponentsV2);
+        if (canEditInPlace) {
+          await existing.edit({ ...panelPayload, allowedMentions: { parse: [] } });
+          await configStore.setPersistentLfgMessage(guildId, channel.id, record.messageId);
           return;
         }
       }
 
-      const sent = await channel.send({ ...panelPayload, content: '', allowedMentions: { parse: [] } });
+      const sent = await channel.send({ ...panelPayload, allowedMentions: { parse: [] } });
       if (record) {
         await tryDeleteMessage(record.channelId, record.messageId);
       }

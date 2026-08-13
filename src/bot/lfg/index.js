@@ -388,11 +388,9 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
         return;
       }
 
-      const { flags: _ignoredFlags, ...editPayload } = payload;
-
       const edited = await message
         .edit({
-          ...editPayload,
+          ...payload,
           allowedMentions: { parse: [] },
         })
         .then(() => true)
@@ -496,9 +494,8 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       if (existingMessageId) {
         const existingMessage = await channel.messages.fetch(existingMessageId).catch(() => null);
         if (existingMessage && isPromptMessageForChannel(existingMessage, channel.id)) {
-          const { flags: _ignoredFlags, ...editPayload } = payload;
           const edited = await existingMessage
-            .edit({ ...editPayload, allowedMentions: { parse: [] } })
+            .edit({ ...payload, allowedMentions: { parse: [] } })
             .then(() => true)
             .catch(async (error) => {
               logPromptRefreshIssue({
