@@ -419,10 +419,9 @@ function buildPersistentLfgPanelPayload({
     squadLines.push(t(locale, 'lfg.andMore', { count: unavailableSquadCount - 25 }));
   }
   if (squadItems.length === 0) squadLines.push(t(locale, 'lfg.noSquads'));
-  const description = [
+  const headerText = [
     t(locale, 'lfg.respect'),
     t(locale, 'lfg.availableSquads'),
-    ...squadLines,
   ].join('\n');
 
   const titleDisplay = new TextDisplayBuilder()
@@ -487,28 +486,28 @@ function buildPersistentLfgPanelPayload({
         .setDisabled(safePage === pageCount - 1)
     );
   }
-  const squadHeaderContainer = new ContainerBuilder()
+  const squadContainer = new ContainerBuilder()
     .setAccentColor(0xff0000)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
-  const footerContainer = new ContainerBuilder()
-    .setAccentColor(0xff0000)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(headerText))
+    .addActionRowComponents(...pageSquadRows);
+  if (squadLines.length > 0) {
+    squadContainer.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(squadLines.join('\n'))
+    );
+  }
+  squadContainer
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(t(locale, 'lfg.squadFooter'))
     );
-  const shouldShowSquadHeader = squadItems.length === 0
-    || squadPortion > 0
-    || squadLines.length > 0;
 
   return {
     components: [
       titleDisplay,
       bodyDisplay,
       ...pageLobbyRows,
-      ...(shouldShowSquadHeader ? [squadHeaderContainer] : []),
-      ...pageSquadRows,
+      squadContainer,
       ...(navRow ? [navRow] : []),
-      footerContainer,
     ],
     flags: MessageFlags.IsComponentsV2,
   };
