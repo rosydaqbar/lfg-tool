@@ -1,4 +1,3 @@
-const { MessageFlags } = require('discord.js');
 const { PERSISTENT_LFG_INTERVAL_MS } = require('./constants');
 const { buildPersistentLfgPanelPayload } = require('./builders');
 const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
@@ -95,11 +94,7 @@ function createPersistentLfgManager({ client, configStore, env }) {
         const existing = await channel.messages
           .fetch(record.messageId)
           .catch(() => null);
-        const canEditInPlace =
-          existing &&
-          latestMessageId === record.messageId &&
-          !existing.flags.has(MessageFlags.IsComponentsV2);
-        if (canEditInPlace) {
+        if (existing && latestMessageId === record.messageId) {
           await existing.edit({ ...panelPayload, allowedMentions: { parse: [] } });
           await configStore.setPersistentLfgMessage(guildId, channel.id, record.messageId);
           return;

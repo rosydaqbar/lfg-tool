@@ -212,6 +212,30 @@ function buildLfgReminderModal(guildId, channelId, locale = 'en') {
   return modal;
 }
 
+function buildLobbyInviteButtonRows(lobbyItems) {
+  const buttons = lobbyItems
+    .filter((item) => {
+      try {
+        const url = new URL(item.url);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    })
+    .map((item) => ({ ...item, label: sanitizePanelLabel(item.channelName).slice(0, 80) }))
+    .filter((item) => item.label)
+    .slice(0, 25)
+    .map((item) => new ButtonBuilder()
+      .setStyle(ButtonStyle.Link)
+      .setLabel(item.label)
+      .setURL(item.url));
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 5) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+  }
+  return rows;
+}
+
 function buildJoinToCreatePromptPayload({
   channelId,
   createdTimestamp,
@@ -401,53 +425,42 @@ async function buildPersistentLfgPanelPayload({
   const doubleTick = '``';
   // Lobby invite creation and unavailable-invite notices are handled by persistent.js.
   const squadItems = items.filter(Boolean);
-  const linksRaw = lobbyItems
-    .map((item) => {
-      const label = sanitizePanelLabel(item.channelName) || item.channelName;
-      const url = String(item.url || '');
-      return url ? `**${label}** ${url}` : null;
-    })
-    .filter(Boolean);
-  const squadLinesRaw = squadItems.map((item) => {
+  const squadLines = squadItems.slice(0, 25).map((item) => {
     const label = sanitizePanelLabel(item.channelName) || item.channelName;
     return `- ${label} ${doubleTick}${item.availabilityLabel}${doubleTick}`;
   });
-  const title = t(locale, 'lfg.persistentTitle');
-  const body = t(locale, 'lfg.persistentBody');
-  const respect = t(locale, 'lfg.respect');
-  const heading = t(locale, 'lfg.availableSquads');
-  const footer = t(locale, 'lfg.squadFooter');
-  const noSquads = t(locale, 'lfg.noSquads');
-  const andMore = (count) => t(locale, 'lfg.andMore', { count }).replace(/^-\s*/, '');
+  if (squadItems.length > 25) {
+    squadLines.push(t(locale, 'lfg.andMore', { count: squadItems.length - 25 }));
+  }
+  if (squadLines.length === 0) squadLines.push(t(locale, 'lfg.noSquads'));
+  const description = [
+    t(locale, 'lfg.respect'),
+    t(locale, 'lfg.availableSquads'),
+    ...squadLines,
+  ].join('\n');
 
-  const MAX_LINES = 25;
-  const MAX_CONTENT = 2000;
-  let linkShown = Math.min(linksRaw.length, MAX_LINES);
-  let squadShown = Math.min(squadLinesRaw.length, MAX_LINES);
-  const assemble = () => {
-    const links = linksRaw.slice(0, linkShown);
-    if (linksRaw.length > linkShown) links.push(andMore(linksRaw.length - linkShown));
-    const squads = squadLinesRaw.slice(0, squadShown);
-    if (squadLinesRaw.length > squadShown) squads.push(andMore(squadLinesRaw.length - squadShown));
-    if (squads.length === 0) squads.push(noSquads);
-    const lines = [title, body];
-    if (links.length > 0) lines.push(links.join('\n'));
-    lines.push(respect, heading, ...squads, footer);
-    return lines.join('\n');
-  };
-  let content = assemble();
-  while (content.length > MAX_CONTENT && squadShown > 0) {
-    squadShown -= 1;
-    content = assemble();
-  }
-  while (content.length > MAX_CONTENT && linkShown > 0) {
-    linkShown -= 1;
-    content = assemble();
-  }
-  content = content.slice(0, MAX_CONTENT);
+  const titleDisplay = new TextDisplayBuilder()
+    .setContent(t(locale, 'lfg.persistentTitle'));
+  const bodyDisplay = new TextDisplayBuilder()
+    .setContent(t(locale, 'lfg.persistentBody'));
+  const container = new ContainerBuilder()
+    .setAccentColor(0xff0000)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
+
+  container
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(t(locale, 'lfg.squadFooter'))
+    );
 
   return {
-    content,
+    components: [
+      titleDisplay,
+      bodyDisplay,
+      ...buildLobbyInviteButtonRows(lobbyItems),
+      container,
+    ],
+    flags: MessageFlags.IsComponentsV2,
   };
 }
 
@@ -460,6 +473,7 @@ module.exports = {
   buildLfgReminderModal,
   buildLfgReminderRows,
   buildLfgPromptRows,
+  buildLobbyInviteButtonRows,
   buildJoinToCreatePromptPayload,
   buildPersistentLfgPanelPayload,
   buildRegionSelectRow,
