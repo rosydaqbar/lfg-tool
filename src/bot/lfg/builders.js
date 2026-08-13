@@ -449,7 +449,7 @@ function buildPersistentLfgPanelPayload({
   const squadRows = buildButtonRows(squadItems
     .filter((item) => isValidHttpUrl(item.url))
     .map((item) => ({
-      label: `${sanitizePanelLabel(item.channelName).slice(0, 71)} ${item.availabilityLabel}`,
+      label: `🔊 ${sanitizePanelLabel(item.channelName).slice(0, 69)} ${item.availabilityLabel}`,
       url: item.url,
     }))
     .filter((item) => item.label));
