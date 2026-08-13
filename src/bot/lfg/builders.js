@@ -212,22 +212,6 @@ function buildLfgReminderModal(guildId, channelId, locale = 'en') {
   return modal;
 }
 
-function buildLobbyInviteButtonRows(lobbyItems) {
-  const buttons = lobbyItems
-    .map((item) => ({ ...item, label: sanitizePanelLabel(item.channelName).slice(0, 80) }))
-    .filter((item) => item.label)
-    .slice(0, 25)
-    .map((item) => new ButtonBuilder()
-      .setStyle(ButtonStyle.Link)
-      .setLabel(item.label)
-      .setURL(item.url));
-  const rows = [];
-  for (let i = 0; i < buttons.length; i += 5) {
-    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
-  }
-  return rows;
-}
-
 function buildJoinToCreatePromptPayload({
   channelId,
   createdTimestamp,
@@ -407,6 +391,7 @@ async function buildPersistentLfgPanelPayload({
           : `${availableCount}/${userLimit}`;
       }
       return {
+        channelId: channel.id,
         channelName: channel.name,
         availabilityLabel,
       };
@@ -416,9 +401,10 @@ async function buildPersistentLfgPanelPayload({
   const doubleTick = '``';
   // Lobby invite creation and unavailable-invite notices are handled by persistent.js.
   const squadItems = items.filter(Boolean);
-  const squadLines = squadItems.slice(0, 25).map(
-    (item) => `- ${sanitizePanelLabel(item.channelName)} ${doubleTick}${item.availabilityLabel}${doubleTick}`
-  );
+  const squadLines = squadItems.slice(0, 25).map((item) => {
+    const label = sanitizePanelLabel(item.channelName) || item.channelName;
+    return `- ${label} ${doubleTick}${item.availabilityLabel}${doubleTick}`;
+  });
   if (squadItems.length > 25) {
     squadLines.push(t(locale, 'lfg.andMore', { count: squadItems.length - 25 }));
   }
@@ -433,13 +419,21 @@ async function buildPersistentLfgPanelPayload({
     .setContent(t(locale, 'lfg.persistentTitle'));
   const bodyDisplay = new TextDisplayBuilder()
     .setContent(t(locale, 'lfg.persistentBody'));
+  const validLobbyLinks = lobbyItems
+    .map((item) => {
+      const label = sanitizePanelLabel(item.channelName);
+      return label ? `[${label}](${item.url})` : null;
+    })
+    .filter(Boolean);
+  const lobbyLinks = validLobbyLinks.slice(0, 25);
+  if (validLobbyLinks.length > 25) {
+    lobbyLinks.push(
+      t(locale, 'lfg.andMore', { count: validLobbyLinks.length - 25 }).replace(/^-\s*/, '')
+    );
+  }
   const container = new ContainerBuilder()
     .setAccentColor(0xff0000)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
-
-  if (lobbyItems.length > 0) {
-    container.addActionRowComponents(...buildLobbyInviteButtonRows(lobbyItems));
-  }
 
   container
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
@@ -448,7 +442,14 @@ async function buildPersistentLfgPanelPayload({
     );
 
   return {
-    components: [titleDisplay, bodyDisplay, container],
+    components: [
+      titleDisplay,
+      bodyDisplay,
+      ...(lobbyLinks.length > 0
+        ? [new TextDisplayBuilder().setContent(lobbyLinks.join(' '))]
+        : []),
+      container,
+    ],
     flags: MessageFlags.IsComponentsV2,
   };
 }
@@ -462,7 +463,6 @@ module.exports = {
   buildLfgReminderModal,
   buildLfgReminderRows,
   buildLfgPromptRows,
-  buildLobbyInviteButtonRows,
   buildJoinToCreatePromptPayload,
   buildPersistentLfgPanelPayload,
   buildRegionSelectRow,

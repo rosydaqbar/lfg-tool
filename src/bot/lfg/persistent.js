@@ -96,7 +96,7 @@ function createPersistentLfgManager({ client, configStore, env }) {
           .catch(() => null);
         if (existing && latestMessageId === record.messageId) {
           const { flags: _ignoredFlags, ...editPayload } = panelPayload;
-          await existing.edit({ ...editPayload, content: '' });
+          await existing.edit({ ...editPayload, content: '', allowedMentions: { parse: [] } });
           await configStore.setPersistentLfgMessage(
             guildId,
             channel.id,
@@ -106,7 +106,7 @@ function createPersistentLfgManager({ client, configStore, env }) {
         }
       }
 
-      const sent = await channel.send({ ...panelPayload, content: '' });
+      const sent = await channel.send({ ...panelPayload, content: '', allowedMentions: { parse: [] } });
       if (record) {
         await tryDeleteMessage(record.channelId, record.messageId);
       }

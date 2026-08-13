@@ -7,6 +7,10 @@
 - Dashboard is a Next.js app under `dashboard/`. App/API routes live in `dashboard/src/app/*`; shared dashboard DB/env logic is in `dashboard/src/lib/*`.
 - Landing page is a separate Next.js app under `landing/`; root npm scripts proxy to it as `landing:*`.
 
+## Interpretation Before Work
+- The owner demands interpretation FIRST: before implementing any change, restate what was asked — scope (which surfaces), mechanism (e.g. embeds vs Components V2 vs markdown links vs buttons), and fallback behavior — and explicitly ask when anything is ambiguous. Never build on assumptions.
+- If a prior mechanism was rejected (e.g. "embed are not allowed", "use components v2", "it should be markdown link"), never reintroduce it without being asked.
+
 ## Commands
 - Bot runtime: `npm start`.
 - Deploy Discord commands: `npm run deploy:commands`.
@@ -56,3 +60,4 @@
 - Integrity Checked temporarily bypasses webhook delivery and uses bot-delivered notices, but webhook settings should be preserved read-only so turning Integrity Checked off restores the prior webhook setup.
 - Dashboard validates webhook URL format before calling Discord, auto-checks each per-trap-channel webhook after typing stops, and config save rejects missing/mismatched webhooks or webhooks whose `guild_id` does not match the selected guild.
 - Immediate-ban DM delivery sends the DM before banning; keep this order because DMs after a ban can fail.
+- LFG panel conventions (owner-confirmed): channel invites render as markdown links `[ChannelName](inviteUrl)` inside Component V2 TextDisplay text; do NOT use Link buttons or embeds for the LFG panel. Message `content` cannot render markdown links; TextDisplay/embeds can.
