@@ -5,11 +5,11 @@ const inviteFailures = new Map();
 const inviteRequests = new Map();
 const notifiedChannelIds = new Set();
 
-async function getChannelInviteUrl(client, channelId) {
+async function getChannelInvite(client, channelId) {
   const now = Date.now();
   const cached = inviteCache.get(channelId);
   if (cached && now - cached.fetchedAt < INVITE_TTL_MS) {
-    return cached.url;
+    return { url: cached.url, channelName: cached.channelName };
   }
 
   const failedAt = inviteFailures.get(channelId);
@@ -29,9 +29,10 @@ async function getChannelInviteUrl(client, channelId) {
       }
 
       const invite = await channel.createInvite({ maxAge: 0, maxUses: 0 });
-      inviteCache.set(channelId, { url: invite.url, fetchedAt: Date.now() });
+      const inviteInfo = { url: invite.url, channelName: channel.name };
+      inviteCache.set(channelId, { ...inviteInfo, fetchedAt: Date.now() });
       inviteFailures.delete(channelId);
-      return invite.url;
+      return inviteInfo;
     } catch (error) {
       inviteFailures.set(channelId, now);
       return null;
@@ -62,4 +63,4 @@ async function notifyAdminInviteUnavailable({
   }).catch(() => null);
 }
 
-module.exports = { getChannelInviteUrl, notifyAdminInviteUnavailable };
+module.exports = { getChannelInvite, notifyAdminInviteUnavailable };

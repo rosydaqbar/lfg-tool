@@ -1,6 +1,6 @@
 const { MessageFlags } = require('discord.js');
 const { LFG_MESSAGE_INPUT_ID } = require('./constants');
-const { getChannelInviteUrl, notifyAdminInviteUnavailable } = require('./invites');
+const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
 
 async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
   const {
@@ -111,8 +111,8 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
     const createdTimestamp = Math.floor(
       (channel?.createdTimestamp ?? Date.now()) / 1000
     );
-    const inviteUrl = await getChannelInviteUrl(deps.client, channelId);
-    if (!inviteUrl) {
+    const inviteInfo = await getChannelInvite(deps.client, channelId);
+    if (!inviteInfo) {
       await notifyAdminInviteUnavailable({
         client: deps.client,
         channelId,
@@ -121,7 +121,9 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
         t: deps.t,
       });
     }
-    const voiceLink = inviteUrl ?? deps.t(locale, 'lfg.inviteUnavailableInline');
+    const voiceLink = inviteInfo
+      ? `[${inviteInfo.channelName.replace(/[[\]()]/g, '')}](${inviteInfo.url})`
+      : deps.t(locale, 'lfg.inviteUnavailableInline');
     const quoteLines = customMessage
       ? customMessage
           .split(/\r?\n/)

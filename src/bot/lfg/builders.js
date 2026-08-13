@@ -40,7 +40,7 @@ const {
   TRANSFER_PREFIX,
   TRANSFER_SELECT_PREFIX,
 } = require('./constants');
-const { getChannelInviteUrl, notifyAdminInviteUnavailable } = require('./invites');
+const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
 const { t } = require('../../i18n');
 
 function buildLfgPromptRows(channelId, locale = 'en') {
@@ -380,10 +380,11 @@ async function buildPersistentLfgEmbed({
           ? t(locale, 'lfg.full')
           : `${availableCount}/${userLimit}`;
       }
-      const inviteUrl = await getChannelInviteUrl(client, channel.id);
+      const inviteInfo = await getChannelInvite(client, channel.id);
       return {
         channelId: channel.id,
-        inviteUrl,
+        inviteUrl: inviteInfo?.url ?? null,
+        channelName: inviteInfo?.channelName ?? null,
         availabilityLabel,
       };
     })
@@ -403,7 +404,8 @@ async function buildPersistentLfgEmbed({
 
   const availableLines = items
     .filter((item) => item?.inviteUrl)
-    .map((item) => `- ${item.inviteUrl} ${doubleTick}${item.availabilityLabel}${doubleTick}`);
+    // Strip markdown link delimiters from channel names before using them as labels.
+    .map((item) => `- [${item.channelName.replace(/[[\]()]/g, '')}](${item.inviteUrl}) ${doubleTick}${item.availabilityLabel}${doubleTick}`);
 
   if (availableLines.length === 0) {
     availableLines.push(t(locale, 'lfg.noSquads'));

@@ -1,18 +1,22 @@
 const { PERSISTENT_LFG_INTERVAL_MS } = require('./constants');
 const { buildPersistentLfgEmbed } = require('./builders');
-const { getChannelInviteUrl, notifyAdminInviteUnavailable } = require('./invites');
+const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
 const { t } = require('../../i18n');
 
 function createPersistentLfgManager({ client, configStore, env }) {
   const persistentLfgRunning = new Set();
   let persistentInterval = null;
 
-  function buildPersistentLfgContent(lobbyLinks, locale) {
-    if (!lobbyLinks.length) return null;
+  function buildPersistentLfgContent(lobbyItems, locale) {
+    if (!lobbyItems.length) return null;
+    // Strip markdown link delimiters from channel names before using them as labels.
+    const links = lobbyItems.map((item) => (
+      `[${item.channelName.replace(/[[\]()]/g, '')}](${item.url})`
+    ));
     return [
       t(locale, 'lfg.persistentTitle'),
       t(locale, 'lfg.persistentBody'),
-      lobbyLinks.join(' '),
+      links.join(' '),
     ].join('\n');
   }
 
@@ -68,17 +72,17 @@ function createPersistentLfgManager({ client, configStore, env }) {
       }
 
       const locale = config.locale || 'en';
-      const lobbyLinks = [];
+      const lobbyItems = [];
       const failedLobbyIds = [];
       for (const id of lobbyIds) {
-        const inviteUrl = await getChannelInviteUrl(client, id);
-        if (inviteUrl) {
-          lobbyLinks.push(inviteUrl);
+        const inviteInfo = await getChannelInvite(client, id);
+        if (inviteInfo) {
+          lobbyItems.push(inviteInfo);
         } else {
           failedLobbyIds.push(id);
         }
       }
-      const content = buildPersistentLfgContent(lobbyLinks, locale);
+      const content = buildPersistentLfgContent(lobbyItems, locale);
       for (const id of failedLobbyIds) {
         await notifyAdminInviteUnavailable({
           client,
