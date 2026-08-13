@@ -2,7 +2,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   MessageFlags,
   ModalBuilder,
   StringSelectMenuBuilder,
@@ -40,8 +39,19 @@ const {
   TRANSFER_PREFIX,
   TRANSFER_SELECT_PREFIX,
 } = require('./constants');
-const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
 const { t } = require('../../i18n');
+
+function sanitizePanelLabel(name) {
+  const cleaned = name.replace(/[[\]()*_~`]/g, '');
+  const schemeIndex = cleaned.search(/https?:\/\//i);
+  if (schemeIndex !== -1) {
+    const dotIndex = cleaned.indexOf('.', schemeIndex + 7);
+    if (dotIndex !== -1) {
+      return cleaned.slice(0, dotIndex) + '\u200b' + cleaned.slice(dotIndex);
+    }
+  }
+  return cleaned;
+}
 
 function buildLfgPromptRows(channelId, locale = 'en') {
   return [
@@ -202,6 +212,22 @@ function buildLfgReminderModal(guildId, channelId, locale = 'en') {
   return modal;
 }
 
+function buildLobbyInviteButtonRows(lobbyItems) {
+  const buttons = lobbyItems
+    .map((item) => ({ ...item, label: sanitizePanelLabel(item.channelName).slice(0, 80) }))
+    .filter((item) => item.label)
+    .slice(0, 25)
+    .map((item) => new ButtonBuilder()
+      .setStyle(ButtonStyle.Link)
+      .setLabel(item.label)
+      .setURL(item.url));
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 5) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+  }
+  return rows;
+}
+
 function buildJoinToCreatePromptPayload({
   channelId,
   createdTimestamp,
@@ -358,12 +384,12 @@ function buildClaimApprovalRow(channelId, claimerId, locale = 'en') {
   );
 }
 
-async function buildPersistentLfgEmbed({
+async function buildPersistentLfgPanelPayload({
   client,
   configStore,
   guildId,
   locale = 'en',
-  logChannelId,
+  lobbyItems = [],
 }) {
   const tempChannels = await configStore.getTempChannelsForGuild(guildId);
   const items = await Promise.all(
@@ -380,47 +406,51 @@ async function buildPersistentLfgEmbed({
           ? t(locale, 'lfg.full')
           : `${availableCount}/${userLimit}`;
       }
-      const inviteInfo = await getChannelInvite(client, channel.id);
       return {
-        channelId: channel.id,
-        inviteUrl: inviteInfo?.url ?? null,
-        channelName: inviteInfo?.channelName ?? null,
+        channelName: channel.name,
         availabilityLabel,
       };
     })
   );
 
   const doubleTick = '``';
-  const missingInviteItems = items.filter((item) => item && !item.inviteUrl);
-  await Promise.all(
-    missingInviteItems.map((item) => notifyAdminInviteUnavailable({
-      client,
-      channelId: item.channelId,
-      logChannelId,
-      locale,
-      t,
-    }))
+  // Lobby invite creation and unavailable-invite notices are handled by persistent.js.
+  const squadItems = items.filter(Boolean);
+  const squadLines = squadItems.slice(0, 25).map(
+    (item) => `- ${sanitizePanelLabel(item.channelName)} ${doubleTick}${item.availabilityLabel}${doubleTick}`
   );
-
-  const availableLines = items
-    .filter((item) => item?.inviteUrl)
-    // Strip markdown link delimiters from channel names before using them as labels.
-    .map((item) => `- [${item.channelName.replace(/[[\]()]/g, '')}](${item.inviteUrl}) ${doubleTick}${item.availabilityLabel}${doubleTick}`);
-
-  if (availableLines.length === 0) {
-    availableLines.push(t(locale, 'lfg.noSquads'));
+  if (squadItems.length > 25) {
+    squadLines.push(t(locale, 'lfg.andMore', { count: squadItems.length - 25 }));
   }
-
+  if (squadLines.length === 0) squadLines.push(t(locale, 'lfg.noSquads'));
   const description = [
     t(locale, 'lfg.respect'),
     t(locale, 'lfg.availableSquads'),
-    ...availableLines,
+    ...squadLines,
   ].join('\n');
 
-  return new EmbedBuilder()
-    .setColor(0xff0000)
-    .setDescription(description)
-    .setFooter({ text: t(locale, 'lfg.squadFooter') });
+  const titleDisplay = new TextDisplayBuilder()
+    .setContent(t(locale, 'lfg.persistentTitle'));
+  const bodyDisplay = new TextDisplayBuilder()
+    .setContent(t(locale, 'lfg.persistentBody'));
+  const container = new ContainerBuilder()
+    .setAccentColor(0xff0000)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
+
+  if (lobbyItems.length > 0) {
+    container.addActionRowComponents(...buildLobbyInviteButtonRows(lobbyItems));
+  }
+
+  container
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(t(locale, 'lfg.squadFooter'))
+    );
+
+  return {
+    components: [titleDisplay, bodyDisplay, container],
+    flags: MessageFlags.IsComponentsV2,
+  };
 }
 
 module.exports = {
@@ -432,9 +462,11 @@ module.exports = {
   buildLfgReminderModal,
   buildLfgReminderRows,
   buildLfgPromptRows,
+  buildLobbyInviteButtonRows,
   buildJoinToCreatePromptPayload,
-  buildPersistentLfgEmbed,
+  buildPersistentLfgPanelPayload,
   buildRegionSelectRow,
+  sanitizePanelLabel,
   buildTransferMemberSelectRow,
   buildVoiceSettingsRows,
 };

@@ -1,5 +1,11 @@
-const { MessageFlags } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags,
+} = require('discord.js');
 const { LFG_MESSAGE_INPUT_ID } = require('./constants');
+const { sanitizePanelLabel } = require('./builders');
 const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
 
 async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
@@ -121,9 +127,22 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
         t: deps.t,
       });
     }
-    const voiceLink = inviteInfo
-      ? `[${inviteInfo.channelName.replace(/[[\]()]/g, '')}](${inviteInfo.url})`
+    const linkLabel = inviteInfo
+      ? sanitizePanelLabel(inviteInfo.channelName).slice(0, 80)
+      : null;
+    const voiceLink = linkLabel
+      ? `**${linkLabel}**`
       : deps.t(locale, 'lfg.inviteUnavailableInline');
+    const components = inviteInfo && linkLabel
+      ? [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setStyle(ButtonStyle.Link)
+              .setLabel(linkLabel)
+              .setURL(inviteInfo.url)
+          ),
+        ]
+      : [];
     const quoteLines = customMessage
       ? customMessage
           .split(/\r?\n/)
@@ -143,6 +162,7 @@ async function handleLfgPostModal(interaction, deps, channelId, options = {}) {
     const lfgMessage = await logChannel.send({
       content: lines.join('\n'),
       allowedMentions: { roles: [roleId], users: [interaction.user.id] },
+      components,
     });
     await configStore.updateTempChannelMessage(
       channelId,

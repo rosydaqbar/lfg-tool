@@ -1,24 +1,11 @@
 const { PERSISTENT_LFG_INTERVAL_MS } = require('./constants');
-const { buildPersistentLfgEmbed } = require('./builders');
+const { buildPersistentLfgPanelPayload } = require('./builders');
 const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
 const { t } = require('../../i18n');
 
 function createPersistentLfgManager({ client, configStore, env }) {
   const persistentLfgRunning = new Set();
   let persistentInterval = null;
-
-  function buildPersistentLfgContent(lobbyItems, locale) {
-    if (!lobbyItems.length) return null;
-    // Strip markdown link delimiters from channel names before using them as labels.
-    const links = lobbyItems.map((item) => (
-      `[${item.channelName.replace(/[[\]()]/g, '')}](${item.url})`
-    ));
-    return [
-      t(locale, 'lfg.persistentTitle'),
-      t(locale, 'lfg.persistentBody'),
-      links.join(' '),
-    ].join('\n');
-  }
 
   async function tryDeleteMessage(channelId, messageId) {
     if (!channelId || !messageId) return;
@@ -82,7 +69,6 @@ function createPersistentLfgManager({ client, configStore, env }) {
           failedLobbyIds.push(id);
         }
       }
-      const content = buildPersistentLfgContent(lobbyItems, locale);
       for (const id of failedLobbyIds) {
         await notifyAdminInviteUnavailable({
           client,
@@ -92,13 +78,12 @@ function createPersistentLfgManager({ client, configStore, env }) {
           t,
         });
       }
-      if (!content) return;
-      const embed = await buildPersistentLfgEmbed({
+      const panelPayload = await buildPersistentLfgPanelPayload({
         client,
         configStore,
         guildId,
         locale,
-        logChannelId: targetChannelId,
+        lobbyItems,
       });
 
       const latest = await channel.messages.fetch({ limit: 1 }).catch(() => null);
@@ -110,7 +95,8 @@ function createPersistentLfgManager({ client, configStore, env }) {
           .fetch(record.messageId)
           .catch(() => null);
         if (existing && latestMessageId === record.messageId) {
-          await existing.edit({ content, embeds: [embed] });
+          const { flags: _ignoredFlags, ...editPayload } = panelPayload;
+          await existing.edit({ ...editPayload, content: '' });
           await configStore.setPersistentLfgMessage(
             guildId,
             channel.id,
@@ -120,7 +106,7 @@ function createPersistentLfgManager({ client, configStore, env }) {
         }
       }
 
-      const sent = await channel.send({ content, embeds: [embed] });
+      const sent = await channel.send({ ...panelPayload, content: '' });
       if (record) {
         await tryDeleteMessage(record.channelId, record.messageId);
       }
