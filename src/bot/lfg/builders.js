@@ -422,7 +422,7 @@ async function buildPersistentLfgPanelPayload({
   const validLobbyLinks = lobbyItems
     .map((item) => {
       const label = sanitizePanelLabel(item.channelName);
-      return label ? `[${label}](${item.url})` : null;
+      return label ? `**${label}** ${item.url}` : null;
     })
     .filter(Boolean);
   const lobbyLinks = validLobbyLinks.slice(0, 25);
@@ -446,7 +446,7 @@ async function buildPersistentLfgPanelPayload({
       titleDisplay,
       bodyDisplay,
       ...(lobbyLinks.length > 0
-        ? [new TextDisplayBuilder().setContent(lobbyLinks.join(' '))]
+        ? [new TextDisplayBuilder().setContent(lobbyLinks.join('\n'))]
         : []),
       container,
     ],
