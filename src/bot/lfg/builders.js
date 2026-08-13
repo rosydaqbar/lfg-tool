@@ -53,6 +53,14 @@ function sanitizePanelLabel(name) {
   return cleaned;
 }
 
+function sanitizeMaskedLinkLabel(name) {
+  return String(name || '')
+    .replace(/[[\]()*_~`|<>\\]/g, '')
+    .replace(/[^\x20-\x7E]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function buildLfgPromptRows(channelId, locale = 'en') {
   return [
     new ActionRowBuilder().addComponents(
@@ -421,8 +429,17 @@ async function buildPersistentLfgPanelPayload({
     .setContent(t(locale, 'lfg.persistentBody'));
   const validLobbyLinks = lobbyItems
     .map((item) => {
-      const label = sanitizePanelLabel(item.channelName);
-      return label ? `**${label}** ${item.url}` : null;
+      const rawName = String(item.channelName || '');
+      const emojiPrefix = (rawName.match(/[^\x20-\x7E]/g) || []).join('');
+      const label = sanitizeMaskedLinkLabel(rawName);
+      const url = String(item.url || '');
+      const link = label && url
+        ? `[${label}](${url})`
+        : url
+          ? `[${url.replace(/^https?:\/\//i, '')}](${url})`
+          : null;
+      if (!link) return null;
+      return emojiPrefix ? `${emojiPrefix} ${link}` : link;
     })
     .filter(Boolean);
   const lobbyLinks = validLobbyLinks.slice(0, 25);
@@ -466,6 +483,7 @@ module.exports = {
   buildJoinToCreatePromptPayload,
   buildPersistentLfgPanelPayload,
   buildRegionSelectRow,
+  sanitizeMaskedLinkLabel,
   sanitizePanelLabel,
   buildTransferMemberSelectRow,
   buildVoiceSettingsRows,
