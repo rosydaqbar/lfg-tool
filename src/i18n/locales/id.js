@@ -55,6 +55,8 @@ module.exports = {
     leaderboardNotReady: 'Fitur leaderboard belum siap. Coba lagi sebentar.',
     roleMissing: 'Role LFG untuk lobby ini belum dikonfigurasi. Hubungi admin.',
     lookingForSquad: '<@{userId}> sedang mencari squad, join: {voiceLink}',
+    inviteUnavailableAdmin: '⚠️ Tidak dapat membuat tautan undangan untuk <#{channelId}>. Minta admin untuk mengaktifkan izin **Create Instant Invite** untuk bot.',
+    inviteUnavailableInline: 'Tautan undangan tidak tersedia — minta admin mengaktifkan Create Instant Invite, lalu coba lagi.',
     createdLine: '-# Dibuat pada: {timestamp}',
     reminderLine1: 'Hi <@{userId}>, channel sudah dibuat. Apakah Anda ingin mengirimkan pesan mencari squad di <#{lfgChannelId}>?',
     reminderLine2: 'LFG akan membantu mention member agar kamu bisa mencari anggota squad dengan mudah.',

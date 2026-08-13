@@ -55,6 +55,8 @@ module.exports = {
     leaderboardNotReady: 'Leaderboard feature is not ready yet. Try again in a moment.',
     roleMissing: 'The LFG role for this lobby is not configured. Contact an admin.',
     lookingForSquad: '<@{userId}> is looking for a squad, join: {voiceLink}',
+    inviteUnavailableAdmin: '⚠️ Could not create an invite link for <#{channelId}>. Please ask an admin to enable the **Create Instant Invite** permission for the bot.',
+    inviteUnavailableInline: 'Invite link unavailable — ask an admin to enable Create Instant Invite, then try again.',
     createdLine: '-# Created: {timestamp}',
     reminderLine1: 'Hi <@{userId}>, your channel has been created. Would you like to post a squad-finder message in <#{lfgChannelId}>?',
     reminderLine2: 'LFG can help you mention members, so you can find squad members easily.',

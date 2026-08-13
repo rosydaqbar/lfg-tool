@@ -40,6 +40,7 @@ const {
   TRANSFER_PREFIX,
   TRANSFER_SELECT_PREFIX,
 } = require('./constants');
+const { getChannelInviteUrl, notifyAdminInviteUnavailable } = require('./invites');
 const { t } = require('../../i18n');
 
 function buildLfgPromptRows(channelId, locale = 'en') {
@@ -357,7 +358,13 @@ function buildClaimApprovalRow(channelId, claimerId, locale = 'en') {
   );
 }
 
-async function buildPersistentLfgEmbed({ client, configStore, guildId, locale = 'en' }) {
+async function buildPersistentLfgEmbed({
+  client,
+  configStore,
+  guildId,
+  locale = 'en',
+  logChannelId,
+}) {
   const tempChannels = await configStore.getTempChannelsForGuild(guildId);
   const items = await Promise.all(
     tempChannels.map(async (row) => {
@@ -373,18 +380,30 @@ async function buildPersistentLfgEmbed({ client, configStore, guildId, locale = 
           ? t(locale, 'lfg.full')
           : `${availableCount}/${userLimit}`;
       }
+      const inviteUrl = await getChannelInviteUrl(client, channel.id);
       return {
         channelId: channel.id,
+        inviteUrl,
         availabilityLabel,
       };
     })
   );
 
   const doubleTick = '``';
+  const missingInviteItems = items.filter((item) => item && !item.inviteUrl);
+  await Promise.all(
+    missingInviteItems.map((item) => notifyAdminInviteUnavailable({
+      client,
+      channelId: item.channelId,
+      logChannelId,
+      locale,
+      t,
+    }))
+  );
 
   const availableLines = items
-    .filter(Boolean)
-    .map((item) => `- <#${item.channelId}> ${doubleTick}${item.availabilityLabel}${doubleTick}`);
+    .filter((item) => item?.inviteUrl)
+    .map((item) => `- ${item.inviteUrl} ${doubleTick}${item.availabilityLabel}${doubleTick}`);
 
   if (availableLines.length === 0) {
     availableLines.push(t(locale, 'lfg.noSquads'));

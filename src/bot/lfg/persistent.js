@@ -1,20 +1,18 @@
 const { PERSISTENT_LFG_INTERVAL_MS } = require('./constants');
 const { buildPersistentLfgEmbed } = require('./builders');
+const { getChannelInviteUrl, notifyAdminInviteUnavailable } = require('./invites');
 const { t } = require('../../i18n');
 
 function createPersistentLfgManager({ client, configStore, env }) {
   const persistentLfgRunning = new Set();
   let persistentInterval = null;
 
-  function buildPersistentLfgContent(guildId, lobbyIds, locale) {
-    if (!lobbyIds.length) return null;
-    const links = lobbyIds.map(
-      (id) => `https://discordapp.com/channels/${guildId}/${id}`
-    );
+  function buildPersistentLfgContent(lobbyLinks, locale) {
+    if (!lobbyLinks.length) return null;
     return [
       t(locale, 'lfg.persistentTitle'),
       t(locale, 'lfg.persistentBody'),
-      links.join(' '),
+      lobbyLinks.join(' '),
     ].join('\n');
   }
 
@@ -70,13 +68,33 @@ function createPersistentLfgManager({ client, configStore, env }) {
       }
 
       const locale = config.locale || 'en';
-      const content = buildPersistentLfgContent(guildId, lobbyIds, locale);
+      const lobbyLinks = [];
+      const failedLobbyIds = [];
+      for (const id of lobbyIds) {
+        const inviteUrl = await getChannelInviteUrl(client, id);
+        if (inviteUrl) {
+          lobbyLinks.push(inviteUrl);
+        } else {
+          failedLobbyIds.push(id);
+        }
+      }
+      const content = buildPersistentLfgContent(lobbyLinks, locale);
+      for (const id of failedLobbyIds) {
+        await notifyAdminInviteUnavailable({
+          client,
+          channelId: id,
+          logChannelId: targetChannelId,
+          locale,
+          t,
+        });
+      }
       if (!content) return;
       const embed = await buildPersistentLfgEmbed({
         client,
         configStore,
         guildId,
         locale,
+        logChannelId: targetChannelId,
       });
 
       const latest = await channel.messages.fetch({ limit: 1 }).catch(() => null);
