@@ -6,3 +6,5 @@ data/
 .setup-state.json.bak
 docs/
 .github/workflows/
+.opencode/
+opencode.json
