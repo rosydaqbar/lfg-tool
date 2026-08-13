@@ -429,36 +429,47 @@ function buildPersistentLfgPanelPayload({
     .setContent(t(locale, 'lfg.persistentTitle'));
   const bodyDisplay = new TextDisplayBuilder()
     .setContent(t(locale, 'lfg.persistentBody'));
-  const buttonItems = [
-    ...lobbyItems
-      .filter((item) => isValidHttpUrl(item.url))
-      .map((item) => ({
-        label: sanitizePanelLabel(item.channelName).slice(0, 80),
-        url: item.url,
-      })),
-    ...squadItems
-      .filter((item) => isValidHttpUrl(item.url))
-      .map((item) => ({
-        label: `${sanitizePanelLabel(item.channelName).slice(0, 71)} ${item.availabilityLabel}`,
-        url: item.url,
-      })),
-  ].filter((item) => item.label);
-  const contentPerPage = 20;
-  const pageCount = Math.max(1, Math.ceil(buttonItems.length / contentPerPage));
-  const safePage = Math.max(0, Math.min(Number(page) || 0, pageCount - 1));
-  const pageButtons = buttonItems.slice(
-    safePage * contentPerPage,
-    (safePage + 1) * contentPerPage
-  ).map((item) => new ButtonBuilder()
-    .setStyle(ButtonStyle.Link)
-    .setLabel(item.label)
-    .setURL(item.url));
-  const buttonRows = [];
-  for (let i = 0; i < pageButtons.length; i += 5) {
-    buttonRows.push(new ActionRowBuilder().addComponents(pageButtons.slice(i, i + 5)));
-  }
-  if (buttonItems.length > contentPerPage) {
-    buttonRows.push(new ActionRowBuilder().addComponents(
+  const buildButtonRows = (items) => {
+    const rows = [];
+    for (let i = 0; i < items.length; i += 5) {
+      const buttons = items.slice(i, i + 5).map((item) => new ButtonBuilder()
+        .setStyle(ButtonStyle.Link)
+        .setLabel(item.label)
+        .setURL(item.url));
+      rows.push(new ActionRowBuilder().addComponents(buttons));
+    }
+    return rows;
+  };
+  const lobbyRows = buildButtonRows(lobbyItems
+    .filter((item) => isValidHttpUrl(item.url))
+    .map((item) => ({
+      label: sanitizePanelLabel(item.channelName).slice(0, 80),
+      url: item.url,
+    }))
+    .filter((item) => item.label));
+  const squadRows = buildButtonRows(squadItems
+    .filter((item) => isValidHttpUrl(item.url))
+    .map((item) => ({
+      label: `${sanitizePanelLabel(item.channelName).slice(0, 71)} ${item.availabilityLabel}`,
+      url: item.url,
+    }))
+    .filter((item) => item.label));
+  const contentRows = [...lobbyRows, ...squadRows];
+  const isPaginated = contentRows.length > 5;
+  const pageCount = isPaginated ? Math.ceil(contentRows.length / 4) : 1;
+  const safePage = isPaginated
+    ? Math.max(0, Math.min(Number(page) || 0, pageCount - 1))
+    : 0;
+  const pageRows = isPaginated
+    ? contentRows.slice(safePage * 4, safePage * 4 + 4)
+    : contentRows;
+  const lobbyPortion = Math.max(0, Math.min(lobbyRows.length - safePage * 4, pageRows.length));
+  const squadPortion = pageRows.length - lobbyPortion;
+  const pageLobbyRows = pageRows.slice(0, lobbyPortion);
+  const pageSquadRows = pageRows.slice(lobbyPortion, lobbyPortion + squadPortion);
+  let navRow;
+  if (isPaginated) {
+    navRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`${LFG_PANEL_PAGE_PREFIX}:${guildId}:prev:${safePage === 0 ? safePage : safePage - 1}`)
         .setLabel(t(locale, 'lfg.panelPagePrev'))
@@ -474,24 +485,30 @@ function buildPersistentLfgPanelPayload({
         .setLabel(t(locale, 'lfg.panelPageNext'))
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(safePage === pageCount - 1)
-    ));
+    );
   }
-  const container = new ContainerBuilder()
+  const squadHeaderContainer = new ContainerBuilder()
     .setAccentColor(0xff0000)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
-
-  container
+  const footerContainer = new ContainerBuilder()
+    .setAccentColor(0xff0000)
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(t(locale, 'lfg.squadFooter'))
     );
+  const shouldShowSquadHeader = squadItems.length === 0
+    || squadPortion > 0
+    || squadLines.length > 0;
 
   return {
     components: [
       titleDisplay,
       bodyDisplay,
-      ...buttonRows,
-      container,
+      ...pageLobbyRows,
+      ...(shouldShowSquadHeader ? [squadHeaderContainer] : []),
+      ...pageSquadRows,
+      ...(navRow ? [navRow] : []),
+      footerContainer,
     ],
     flags: MessageFlags.IsComponentsV2,
   };
