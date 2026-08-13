@@ -30,6 +30,7 @@ const {
   LEADERBOARD_PREFIX,
   JTC_PROMPT_RECONCILE_INTERVAL_MS,
 } = require('./constants');
+const { MessageFlags } = require('discord.js');
 const { getGuildLocale, t } = require('../../i18n');
 
 function createLfgManager({ client, getLogChannel, configStore, env, statsManager }) {
@@ -368,6 +369,12 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
           await rememberPromptMessageId(channelId, message.id);
         }
       }
+      if (message && !message.flags?.has(MessageFlags.IsComponentsV2)) {
+        // Legacy pre-V2 prompt: delete it; a fresh V2 prompt is sent below.
+        await message.delete().catch(() => null);
+        await clearPromptMessageId(channelId);
+        message = null;
+      }
       if (!message) {
         const sent = await channel.send({
           ...payload,
@@ -494,25 +501,30 @@ function createLfgManager({ client, getLogChannel, configStore, env, statsManage
       if (existingMessageId) {
         const existingMessage = await channel.messages.fetch(existingMessageId).catch(() => null);
         if (existingMessage && isPromptMessageForChannel(existingMessage, channel.id)) {
-          const edited = await existingMessage
-            .edit({ ...payload, allowedMentions: { parse: [] } })
-            .then(() => true)
-            .catch(async (error) => {
-              logPromptRefreshIssue({
-                guildId: channel.guild?.id,
-                channelId: channel.id,
-                messageId: existingMessage.id,
-                locale,
-              }, error);
-              if (describePromptError(error, locale).expected) {
-                await clearPromptMessageId(channel.id);
-              }
-              return false;
-            });
-          if (edited) {
-            await rememberPromptMessageId(channel.id, existingMessage.id);
-            await refreshPersistentLfgForGuild(channel.guild?.id);
-            return;
+          if (existingMessage.flags?.has(MessageFlags.IsComponentsV2)) {
+            const edited = await existingMessage
+              .edit({ ...payload, allowedMentions: { parse: [] } })
+              .then(() => true)
+              .catch(async (error) => {
+                logPromptRefreshIssue({
+                  guildId: channel.guild?.id,
+                  channelId: channel.id,
+                  messageId: existingMessage.id,
+                  locale,
+                }, error);
+                if (describePromptError(error, locale).expected) {
+                  await clearPromptMessageId(channel.id);
+                }
+                return false;
+              });
+            if (edited) {
+              await rememberPromptMessageId(channel.id, existingMessage.id);
+              await refreshPersistentLfgForGuild(channel.guild?.id);
+              return;
+            }
+          } else {
+            await existingMessage.delete().catch(() => null);
+            await clearPromptMessageId(channel.id);
           }
         }
       }

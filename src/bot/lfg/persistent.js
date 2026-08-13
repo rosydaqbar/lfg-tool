@@ -1,3 +1,4 @@
+const { MessageFlags, Routes } = require('discord.js');
 const { PERSISTENT_LFG_INTERVAL_MS } = require('./constants');
 const { buildPersistentLfgPanelPayload } = require('./builders');
 const { getChannelInvite, notifyAdminInviteUnavailable } = require('./invites');
@@ -95,8 +96,40 @@ function createPersistentLfgManager({ client, configStore, env }) {
           .fetch(record.messageId)
           .catch(() => null);
         if (existing && latestMessageId === record.messageId) {
-          await existing.edit({ ...panelPayload, allowedMentions: { parse: [] } });
-          await configStore.setPersistentLfgMessage(guildId, channel.id, record.messageId);
+          const isV2 = existing.flags?.has(MessageFlags.IsComponentsV2);
+          if (isV2) {
+            await existing.edit({ ...panelPayload, allowedMentions: { parse: [] } });
+            await configStore.setPersistentLfgMessage(guildId, channel.id, record.messageId);
+            return;
+          }
+
+          const promoted = await client.rest
+            .patch(Routes.channelMessage(channel.id, existing.id), {
+              body: {
+                content: null,
+                embeds: [],
+                components: (panelPayload.components || []).map((c) =>
+                  c && typeof c.toJSON === 'function' ? c.toJSON() : c
+                ),
+                flags: MessageFlags.IsComponentsV2,
+                allowed_mentions: { parse: [] },
+              },
+            })
+            .then(() => true)
+            .catch((error) => {
+              console.warn('Persistent LFG V2 promotion failed, replacing message instead:', error?.message || error);
+              return false;
+            });
+
+          if (promoted) {
+            await configStore.setPersistentLfgMessage(guildId, channel.id, record.messageId);
+            return;
+          }
+
+          const sent = await channel.send({ ...panelPayload, allowedMentions: { parse: [] } });
+          if (existing.pinned) await sent.pin().catch(() => null);
+          await tryDeleteMessage(record.channelId, record.messageId);
+          await configStore.setPersistentLfgMessage(guildId, channel.id, sent.id);
           return;
         }
       }
