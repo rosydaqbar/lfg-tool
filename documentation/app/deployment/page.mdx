@@ -1,6 +1,6 @@
 ---
 title: Deployment
-description: How to deploy the bot, dashboard, landing app, and documentation site.
+description: How to deploy the bot, dashboard, and documentation site.
 ---
 
 # Deployment
@@ -13,7 +13,6 @@ This repository has separate deployable apps:
 | --- | --- | --- |
 | Discord bot | repository root | `npm start` |
 | Dashboard | `dashboard/` | `npm --prefix dashboard run build` |
-| Landing page | `landing/` | `npm run landing:build` |
 | Documentation | `documentation/` | `npm --prefix documentation run build` |
 
 Each app has its own dependency installation. The repository is intentionally not configured as an npm workspace.
@@ -92,15 +91,3 @@ npm --prefix documentation run start
 ```
 
 Deploy it like a normal Next.js site. If deploying to a platform from the repository root, set the project root or install command to `documentation/`.
-
-## Landing deployment
-
-The landing app is also separate:
-
-```bash
-npm --prefix landing install
-npm run landing:build
-npm run landing:start
-```
-
-Root scripts proxy the common landing commands.

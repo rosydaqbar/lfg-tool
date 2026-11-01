@@ -1,11 +1,10 @@
 # Agent Notes
 
 ## Repo Shape
-- This is not an npm workspace: root, `dashboard/`, and `landing/` each have their own `package.json` and lockfile.
+- This is not an npm workspace: root and `dashboard/` each have their own `package.json` and lockfile.
 - Root app is the Discord bot. Entrypoint: `src/index.js`; DB/config store: `src/config-store.js`; JTC flow: `src/bot/join-to-create.js`; LFG flow: `src/bot/lfg/*`; stats/voicecheck: `src/bot/stats.js`.
 - Spam Catcher runtime is in `src/bot/spam-catcher.js`; dashboard UI is `dashboard/src/components/dashboard/spam-catcher-section.tsx`; config save/notice delivery is `dashboard/src/app/api/guilds/[id]/config/route.ts`.
 - Dashboard is a Next.js app under `dashboard/`. App/API routes live in `dashboard/src/app/*`; shared dashboard DB/env logic is in `dashboard/src/lib/*`.
-- Landing page is a separate Next.js app under `landing/`; root npm scripts proxy to it as `landing:*`.
 
 ## Interpretation Before Work
 - The owner demands interpretation FIRST: before implementing any change, restate what was asked — scope (which surfaces), mechanism (e.g. embeds vs Components V2 vs markdown links vs buttons), and fallback behavior — and explicitly ask when anything is ambiguous. Never build on assumptions.
@@ -16,12 +15,10 @@
 - Deploy Discord commands: `npm run deploy:commands`.
 - Root DB/perf helpers: `npm run migrate:postgres`, `npm run db:verify-indexes`, `npm run perf:voice-queries`.
 - Dashboard: `npm --prefix dashboard run dev`, `npm --prefix dashboard run build`, `npm --prefix dashboard run lint`, `npm --prefix dashboard run start`.
-- Landing: `npm run landing:dev`, `npm run landing:build`, `npm run landing:start`.
 - There is no root test/lint script; use focused checks such as `node --check src/path/file.js` for bot JS changes.
 
 ## Verification
 - For dashboard changes, run `npm --prefix dashboard run build`; it performs Next compile/type checks and is the most reliable verification currently present.
-- For landing changes, run `npm run landing:build`.
 - For bot-only JS changes, run `node --check` on every edited JS file; add dashboard build too if schemas or shared setup docs/scripts changed.
 - `dashboard` has an ESLint script (`npm --prefix dashboard run lint`), but root bot code has no configured lint command.
 

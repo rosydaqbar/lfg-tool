@@ -17,7 +17,6 @@ LFG Tool is a Discord voice-room automation app with a web dashboard. It helps a
 - Auto-role requests based on voice time.
 - Spam Catcher moderation helpers.
 - A Next.js dashboard for setup, guild configuration, active temp channels, logs, and leaderboards.
-- A separate landing page app.
 
 ## Repository layout
 
@@ -25,7 +24,6 @@ LFG Tool is a Discord voice-room automation app with a web dashboard. It helps a
 .
 ├── src/                 # Discord bot runtime
 ├── dashboard/           # Next.js dashboard and API routes
-├── landing/             # Separate Next.js landing page
 ├── scripts/             # Discord command, database, and verification scripts
 ├── docs/                # Existing planning and security notes
 └── documentation/       # This Nextra documentation site
@@ -33,7 +31,7 @@ LFG Tool is a Discord voice-room automation app with a web dashboard. It helps a
 
 ## Important boundaries
 
-The repository is not an npm workspace. The root bot app, `dashboard/`, `landing/`, and `documentation/` each have their own `package.json` and install lifecycle.
+The repository is not an npm workspace. The root bot app, `dashboard/`, and `documentation/` each have their own `package.json` and install lifecycle.
 
 Configuration is shared by the bot and dashboard through environment variables, `.setup-state.json`, and Postgres tables. Keep `.env`, `.setup-state.json`, bot tokens, database URLs, Discord client secrets, and setup secrets private.
 

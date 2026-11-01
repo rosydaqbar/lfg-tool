@@ -136,8 +136,6 @@ This is where the main parts of the project live.
   - Pages and API routes: `dashboard/src/app/*`
   - UI components: `dashboard/src/components/*`
   - Dashboard helpers: `dashboard/src/lib/*`
-- Landing page code
-  - `landing/*`
 - Scripts
   - Deploy Discord slash commands: `scripts/deploy-commands.js`
   - Database and performance helper scripts: `scripts/*`
@@ -327,14 +325,6 @@ Dashboard commands:
 npm --prefix dashboard run dev
 npm --prefix dashboard run build
 npm --prefix dashboard run start
-```
-
-Landing commands:
-
-```bash
-npm run landing:dev
-npm run landing:build
-npm run landing:start
 ```
 
 Discord commands:
